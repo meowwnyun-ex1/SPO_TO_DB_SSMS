@@ -1,0 +1,11 @@
+SHAREPOINT_SITE = "https://yourdomain.sharepoint.com/sites/YourSite"
+SHAREPOINT_LIST = "data_samples_py"
+SHAREPOINT_CLIENT_ID = "your-client-id"
+SHAREPOINT_CLIENT_SECRET = "your-client-secret"
+TENANT_ID = "your-tenant-id"
+
+SQL_SERVER = "your_sql_server.database.windows.net"
+SQL_DATABASE = "your_database"
+SQL_USERNAME = "your_username"
+SQL_PASSWORD = "your_password"
+SQL_TABLE_NAME = "data_samples_py"
