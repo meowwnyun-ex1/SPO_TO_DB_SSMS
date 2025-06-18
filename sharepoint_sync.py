@@ -2,10 +2,11 @@
 import requests
 import pandas as pd
 from config import *
-from db import create_table_if_not_exists, insert_dataframe
 import time
 import logging
 from typing import List, Dict, Optional
+from config import Config
+from db import DatabaseConnector
 
 logging.basicConfig(
     filename="sync.log",
@@ -140,21 +141,35 @@ def test_sharepoint_connection(
         raise
 
 
-def sync_data(
-    site_url: str, list_name: str, client_id: str, client_secret: str, tenant_id: str
-) -> bool:
+def sync_data(config: Config) -> bool:
     """Main sync function with error handling"""
     try:
         start_time = time.time()
-        connector = SharePointConnector(site_url, client_id, client_secret, tenant_id)
-        df = connector.fetch_data(list_name)
+        connector = SharePointConnector(
+            config.sharepoint_site,
+            config.sharepoint_client_id,
+            config.sharepoint_client_secret,
+            config.tenant_id,
+        )
+        df = connector.fetch_data(config.sharepoint_list)
 
         if df is None or df.empty:
             logging.warning("No data to sync")
             return False
 
-        create_table_if_not_exists(df)
-        insert_dataframe(df)
+        db_connector = DatabaseConnector(config)
+
+        if config.database_type == "sqlserver":
+            table_name = config.sql_table_name
+        else:
+            table_name = config.sqlite_table_name
+
+        if (config.database_type == "sqlserver" and config.sql_create_table) or (
+            config.database_type == "sqlite" and config.sqlite_create_table
+        ):
+            db_connector.create_table(df, table_name)
+
+        db_connector.insert_data(df, table_name)
 
         duration = time.time() - start_time
         logging.info(f"✅ Data synced in {duration:.2f} seconds. Rows: {len(df)}")

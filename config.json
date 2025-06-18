@@ -1,0 +1,30 @@
+{
+    "sharepoint": {
+        "site": "https://yourdomain.sharepoint.com/sites/YourSite",
+        "list": "your_list_name",
+        "client_id": "your_client_id",
+        "client_secret": "your_secret",
+        "tenant_id": "your_tenant",
+        "use_graph_api": false
+    },
+    "database": {
+        "type": "sqlserver",
+        "sqlserver": {
+            "server": "your_sql_server.database.windows.net",
+            "database": "your_db",
+            "username": "your_user",
+            "password": "your_password",
+            "table_name": "your_table",
+            "create_table": true
+        },
+        "sqlite": {
+            "file": "data.db",
+            "table_name": "data",
+            "create_table": true
+        }
+    },
+    "sync": {
+        "interval": 3600,
+        "mode": "full"
+    }
+}
