@@ -1,4 +1,5 @@
-PyQt5
-pandas
-requests
-pyodbc
+PyQt5>=5.15
+pandas>=1.3
+requests>=2.26
+pyodbc>=4.0
+python-dotenv>=0.19
