@@ -24,8 +24,31 @@ from ..styles.theme import (
     get_ultra_modern_card_style,
 )
 import logging
+import os
+import tempfile
+import shutil
 
 logger = logging.getLogger(__name__)
+
+
+class AppController:
+    def __init__(self):
+        self.sync_running = False
+
+    def get_sync_status(self):
+        return {"is_running": self.sync_running}
+
+    def clear_system_cache(self):
+        try:
+            temp_dir = tempfile.gettempdir()
+            app_cache_dir = os.path.join(temp_dir, "spo_to_db_cache")
+            if os.path.exists(app_cache_dir):
+                shutil.rmtree(app_cache_dir)
+            os.makedirs(app_cache_dir, exist_ok=True)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to clear cache: {e}")
+            return False
 
 
 class HolographicFrame(QFrame):
@@ -136,8 +159,6 @@ class Dashboard(QWidget):
     stop_sync_requested = pyqtSignal()
     clear_logs_requested = pyqtSignal()
     auto_sync_toggled = pyqtSignal(bool, int)
-    # เพิ่ม signal
-    clear_cache_requested = pyqtSignal()
 
     def __init__(self, controller):
         super().__init__()
@@ -375,19 +396,8 @@ class Dashboard(QWidget):
         )
         self.auto_sync_check.toggled.connect(self._toggle_auto_sync)
 
-        # เพิ่มปุ่มล้างแคช
-        self.clear_cache_btn = QPushButton("🗑️ Clear Cache")
-        self.clear_cache_btn.setStyleSheet(self.get_modern_warning_button_style())
-        self.clear_cache_btn.setMinimumHeight(40)
-        self.clear_cache_btn.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
-        )
-        self.clear_cache_btn.clicked.connect(self.clear_cache_requested.emit)
-
         secondary_layout.addWidget(self.clear_btn)
         secondary_layout.addWidget(self.auto_sync_check)
-        # เพิ่มปุ่มเข้าไปใน secondary layout
-        secondary_layout.addWidget(self.clear_cache_btn)
 
         content_layout.addWidget(main_buttons_container)
         content_layout.addWidget(secondary_container)
@@ -540,16 +550,6 @@ class Dashboard(QWidget):
     def set_auto_sync_enabled(self, enabled):
         """ตั้งค่า auto sync"""
         self.auto_sync_check.setChecked(enabled)
-
-    def clear_cache(self):
-        """ล้างแคชของระบบ"""
-        self.add_log_message("Clearing system cache...", "info")
-        # ส่งคำขอไปยัง controller
-        success = self.controller.clear_system_cache()
-        if success:
-            self.add_log_message("Cache cleared successfully", "info")
-        else:
-            self.add_log_message("Failed to clear cache", "error")
 
     def resizeEvent(self, event):
         """Handle responsive behavior"""

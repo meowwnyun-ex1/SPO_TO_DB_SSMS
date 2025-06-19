@@ -104,7 +104,7 @@ class NeuralStatusIndicator(QLabel):
 
     def setup_neural_style(self):
         """Setup neural indicator styling"""
-        self.setFont(QFont("Inter", 14, QFont.Bold))
+        self.setFont(QFont("Inter", 14, QFont.Weight.Bold))
         self.setAlignment(Qt.AlignCenter)
         self.setText("◯")
 
@@ -191,7 +191,7 @@ class QuantumMetricDisplay(QWidget):
 
         # Metric label
         self.label = QLabel(self.label_text)
-        self.label.setFont(QFont("Inter", 9, QFont.Medium))
+        self.label.setFont(QFont("Inter", 9, QFont.Weight.Medium))
         self.label.setStyleSheet(
             f"""
             color: {UltraModernColors.TEXT_MUTED};
@@ -201,7 +201,7 @@ class QuantumMetricDisplay(QWidget):
 
         # Metric value
         self.value = QLabel("--")
-        self.value.setFont(QFont("Inter", 11, QFont.Bold))
+        self.value.setFont(QFont("Inter", 11, QFont.Weight.Bold))
         self.value.setStyleSheet(
             f"""
             color: {UltraModernColors.NEON_BLUE};
@@ -269,7 +269,7 @@ class UltraModernProgressCard(QFrame):
 
         # Title
         self.title_label = QLabel("Quantum Progress Tracking")
-        self.title_label.setFont(QFont("Inter", 14, QFont.Bold))
+        self.title_label.setFont(QFont("Inter", 14, QFont.Weight.Bold))
         self.title_label.setStyleSheet(
             f"""
             QLabel {{
@@ -294,7 +294,7 @@ class UltraModernProgressCard(QFrame):
 
         # Progress message
         self.progress_message = QLabel("◦ Neural matrix ready for quantum operations ◦")
-        self.progress_message.setFont(QFont("Inter", 12, QFont.Medium))
+        self.progress_message.setFont(QFont("Inter", 12, QFont.Weight.Medium))
         self.progress_message.setStyleSheet(
             f"""
             QLabel {{
@@ -511,13 +511,13 @@ class CompactProgressIndicator(QWidget):
 
         # Compact neural indicator
         self.indicator = QLabel("◯")
-        self.indicator.setFont(QFont("Inter", 10, QFont.Bold))
+        self.indicator.setFont(QFont("Inter", 10, QFont.Weight.Bold))
         self.indicator.setFixedSize(16, 16)
         self.indicator.setAlignment(Qt.AlignCenter)
 
         # Compact text
         self.text_label = QLabel("Ready")
-        self.text_label.setFont(QFont("Inter", 9, QFont.Medium))
+        self.text_label.setFont(QFont("Inter", 9, QFont.Weight.Medium))
         self.text_label.setStyleSheet(
             f"""
             color: {UltraModernColors.TEXT_LUMINOUS};
@@ -675,7 +675,7 @@ class NeuralSyncProgressWidget(QFrame):
 
         # Sync header
         header = QLabel("◈ Neural Synchronization Protocol")
-        header.setFont(QFont("Inter", 14, QFont.Bold))
+        header.setFont(QFont("Inter", 14, QFont.Weight.Bold))
         header.setStyleSheet(
             f"""
             color: {UltraModernColors.TEXT_LUMINOUS};
@@ -690,7 +690,7 @@ class NeuralSyncProgressWidget(QFrame):
 
         # Current stage display
         self.stage_label = QLabel("Initializing neural pathways...")
-        self.stage_label.setFont(QFont("Inter", 11, QFont.Medium))
+        self.stage_label.setFont(QFont("Inter", 11, QFont.Weight.Medium))
         self.stage_label.setStyleSheet(
             f"""
             color: {UltraModernColors.TEXT_GLOW};

@@ -12,9 +12,9 @@ class UltraModernColors:
 
     # Neon accent colors
     NEON_BLUE = "#00d4ff"
-    NEON_PURPLE = "#bd5eff"
-    NEON_PINK = "#ff6b9d"
-    NEON_GREEN = "#39ff14"
+    NEON_PURPLE = "#bf00ff"
+    NEON_PINK = "#ff00bf"
+    NEON_GREEN = "#00ff9d"
     NEON_YELLOW = "#ffff00"
 
     # Glassmorphism backgrounds
@@ -39,7 +39,7 @@ class UltraModernColors:
 
     # Text with luminosity
     TEXT_LUMINOUS = "#ffffff"
-    TEXT_GLOW = "#e6f7ff"
+    TEXT_GLOW = "rgba(255, 255, 255, 0.95)"
     TEXT_NEON = "#00ffff"
 
 
@@ -123,21 +123,16 @@ def get_ultra_modern_card_style(variant="default"):
     variants = {
         "elevated": f"""
             QFrame {{
-                background: rgba(255, 255, 255, 0.1);
-                border: 2px solid rgba(102, 126, 234, 0.3);
-                box-shadow: 
-                    0 25px 50px rgba(0, 0, 0, 0.25),
-                    0 0 30px rgba(102, 126, 234, 0.2),
-                    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+                background: rgba(25, 25, 35, 0.8);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 16px;
             }}
         """,
         "neon": f"""
             QFrame {{
-                border: 2px solid {UltraModernColors.NEON_BLUE};
-                box-shadow: 
-                    0 0 20px rgba(0, 212, 255, 0.4),
-                    0 0 40px rgba(0, 212, 255, 0.2),
-                    inset 0 0 20px rgba(0, 212, 255, 0.1);
+                background: rgba(20, 20, 30, 0.7);
+                border: 1px solid {UltraModernColors.NEON_BLUE};
+                border-radius: 16px;
             }}
         """,
         "holographic": f"""
@@ -599,6 +594,11 @@ get_gradient_button_style = get_ultra_modern_button_style
 get_input_style = get_ultra_modern_input_style
 get_combobox_style = get_ultra_modern_input_style
 get_checkbox_style = get_neon_checkbox_style
+get_progress_bar_style = get_holographic_progress_style
+get_textedit_style = get_cyber_log_style
+get_tab_style = get_holographic_tab_style
+get_groupbox_style = get_holographic_groupbox_style
+apply_gradient_theme = apply_ultra_modern_theme
 get_progress_bar_style = get_holographic_progress_style
 get_textedit_style = get_cyber_log_style
 get_tab_style = get_holographic_tab_style

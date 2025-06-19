@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QGraphicsOpacityEffect,
     QFrame,
     QLabel,
+    QVBoxLayout,
 )
 from PyQt6.QtCore import Qt, pyqtSlot, QTimer, QPropertyAnimation
 from PyQt6.QtGui import QCloseEvent, QFont, QColor
@@ -45,14 +46,14 @@ class HolographicStatusBar(QStatusBar):
                     stop:0.5 rgba(0, 212, 255, 0.1),
                     stop:1 rgba(0, 0, 0, 0.6)
                 );
-                backdrop-filter: blur(20px);
+
                 color: {UltraModernColors.TEXT_LUMINOUS};
                 border-top: 2px solid rgba(0, 212, 255, 0.4);
                 padding: 12px 24px;
                 font-size: 13px;
                 font-weight: 500;
                 font-family: 'Inter', 'Segoe UI', sans-serif;
-                text-shadow: 0 0 8px {UltraModernColors.NEON_BLUE}60;
+
             }}
             QStatusBar::item {{
                 border: none;
@@ -185,7 +186,7 @@ class QuantumLoadingOverlay(QWidget):
             f"""
             QWidget {{
                 background: rgba(0, 0, 0, 0.8);
-                backdrop-filter: blur(15px);
+
             }}
         """
         )
@@ -223,7 +224,7 @@ class QuantumLoadingOverlay(QWidget):
         self.loading_text.setStyleSheet(
             f"""
             color: {UltraModernColors.TEXT_LUMINOUS};
-            text-shadow: 0 0 10px {UltraModernColors.NEON_BLUE}60;
+
         """
         )
 
@@ -309,7 +310,7 @@ class UltraModernMainWindow(QMainWindow):
         main_layout.setSpacing(0)
 
         # Holographic splitter
-        splitter = HolographicSplitter(Qt.Horizontal)
+        splitter = HolographicSplitter(Qt.Orientation.Horizontal)
 
         # Create ultra modern components
         self.neural_dashboard = UltraModernDashboard(self.controller)
@@ -664,8 +665,27 @@ class UltraModernMainWindow(QMainWindow):
             event.accept()
 
 
-# Backward compatibility
-class MainWindow(UltraModernMainWindow):
-    """Alias สำหรับ backward compatibility"""
+class MainWindow(QMainWindow):
+    """Main window สำหรับโปรเจคนี้ ใช้แสดงผล Dashboard"""
 
-    pass
+    def __init__(self, controller):
+        super().__init__()
+        self.controller = controller
+        self.setup_holographic_ui()
+
+    def setup_holographic_ui(self):
+        """ตั้งค่า UI แบบ holographic สำหรับ MainWindow"""
+        self.setWindowTitle("SharePoint to SQL Sync")
+        self.setMinimumSize(1000, 700)
+
+        # Central widget setup
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+
+        # Main layout
+        main_layout = QVBoxLayout(central_widget)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Initialize and add dashboard
+        self.neural_dashboard = UltraModernDashboard(self.controller)
+        main_layout.addWidget(self.neural_dashboard)

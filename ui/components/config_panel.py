@@ -3,29 +3,19 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QTabWidget,
-    QGroupBox,
     QFormLayout,
     QLineEdit,
-    QComboBox,
     QCheckBox,
-    QPushButton,
     QSpinBox,
     QFrame,
-    QLabel,
-    QGraphicsDropShadowEffect,
-    QScrollArea,
     QFileDialog,
     QMessageBox,
 )
-from PyQt6.QtCore import pyqtSignal, Qt, QTimer, QPropertyAnimation, QEasingCurve, QRect
-from PyQt6.QtGui import QFont, QColor
+from PyQt6.QtCore import pyqtSignal, QTimer
 from ..styles.theme import (
-    UltraModernColors,
     get_holographic_tab_style,
     get_ultra_modern_input_style,
-    get_ultra_modern_button_style,
     get_neon_checkbox_style,
-    get_holographic_groupbox_style,
     get_ultra_modern_card_style,
 )
 from utils.config_manager import AppConfig
@@ -34,227 +24,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class HolographicTab(QWidget):
-    """Tab แบบ holographic พร้อม dimensional effects"""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setup_holographic_background()
-
-    def setup_holographic_background(self):
-        """ตั้งค่า background แบบ holographic"""
-        self.setStyleSheet(
-            f"""
-            QWidget {{
-                background: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:1,
-                    stop:0 rgba(255, 255, 255, 0.02),
-                    stop:0.5 rgba(0, 212, 255, 0.03),
-                    stop:1 rgba(189, 94, 255, 0.02)
-                );
-                backdrop-filter: blur(15px);
-            }}
-        """
-        )
-
-
-class NeonGroupBox(QGroupBox):
-    """GroupBox แบบ neon glow พร้อม advanced effects"""
-
-    def __init__(self, title, parent=None):
-        super().__init__(title, parent)
-        self.setup_neon_style()
-        self.setup_glow_animation()
-
-    def setup_neon_style(self):
-        """ตั้งค่าสไตล์ neon"""
-        style = get_holographic_groupbox_style()
-        self.setStyleSheet(style)
-
-        # เพิ่ม glow effect
-        self.glow_effect = QGraphicsDropShadowEffect()
-        self.glow_effect.setBlurRadius(20)
-        self.glow_effect.setColor(QColor(0, 212, 255, 60))
-        self.glow_effect.setOffset(0, 0)
-        self.setGraphicsEffect(self.glow_effect)
-
-    def setup_glow_animation(self):
-        """ตั้งค่า glow animation"""
-        self.glow_timer = QTimer()
-        self.glow_timer.timeout.connect(self.animate_glow)
-        self.glow_intensity = 60
-        self.glow_direction = 1
-        self.glow_timer.start(2000)  # Subtle breathing effect
-
-    def animate_glow(self):
-        """Animate glow effect"""
-        self.glow_intensity += self.glow_direction * 20
-        if self.glow_intensity >= 120:
-            self.glow_direction = -1
-        elif self.glow_intensity <= 40:
-            self.glow_direction = 1
-
-        self.glow_effect.setColor(QColor(0, 212, 255, self.glow_intensity))
-
-
-class CyberInput(QLineEdit):
-    """Input field แบบ cyberpunk พร้อม holographic effects"""
-
-    def __init__(self, placeholder="", parent=None):
-        super().__init__(parent)
-        self.setPlaceholderText(placeholder)
-        self.setup_cyber_style()
-        self.setup_focus_animations()
-
-    def setup_cyber_style(self):
-        """ตั้งค่าสไตล์ cyberpunk"""
-        style = get_ultra_modern_input_style()
-        self.setStyleSheet(style)
-
-        # เพิ่ม subtle glow
-        self.glow_effect = QGraphicsDropShadowEffect()
-        self.glow_effect.setBlurRadius(10)
-        self.glow_effect.setColor(QColor(255, 255, 255, 30))
-        self.glow_effect.setOffset(0, 0)
-        self.setGraphicsEffect(self.glow_effect)
-
-    def setup_focus_animations(self):
-        """ตั้งค่า focus animations"""
-        self.focus_animation = QPropertyAnimation(self, b"geometry")
-        self.focus_animation.setDuration(200)
-        self.focus_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
-
-    def focusInEvent(self, event):
-        """Enhanced focus in effect"""
-        super().focusInEvent(event)
-        # เพิ่ม neon glow
-        self.glow_effect.setColor(QColor(0, 212, 255, 80))
-        self.glow_effect.setBlurRadius(15)
-
-    def focusOutEvent(self, event):
-        """Reset focus effect"""
-        super().focusOutEvent(event)
-        self.glow_effect.setColor(QColor(255, 255, 255, 30))
-        self.glow_effect.setBlurRadius(10)
-
-
-class HolographicComboBox(QComboBox):
-    """ComboBox แบบ holographic พร้อม dimensional dropdown"""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setup_holographic_style()
-        self.setup_hover_effects()
-
-    def setup_holographic_style(self):
-        """ตั้งค่าสไตล์ holographic"""
-        style = get_ultra_modern_input_style()
-        self.setStyleSheet(style)
-
-        # เพิ่ม glow effect
-        self.glow_effect = QGraphicsDropShadowEffect()
-        self.glow_effect.setBlurRadius(10)
-        self.glow_effect.setColor(QColor(255, 255, 255, 30))
-        self.glow_effect.setOffset(0, 0)
-        self.setGraphicsEffect(self.glow_effect)
-
-    def setup_hover_effects(self):
-        """ตั้งค่า hover effects"""
-        pass
-
-    def enterEvent(self, event):
-        """Hover glow effect"""
-        super().enterEvent(event)
-        self.glow_effect.setColor(QColor(189, 94, 255, 60))
-        self.glow_effect.setBlurRadius(15)
-
-    def leaveEvent(self, event):
-        """Reset hover"""
-        super().leaveEvent(event)
-        self.glow_effect.setColor(QColor(255, 255, 255, 30))
-        self.glow_effect.setBlurRadius(10)
-
-
-class CyberButton(QPushButton):
-    """Button แบบ cyberpunk พร้อม advanced animations"""
-
-    def __init__(self, text, variant="primary", size="md", parent=None):
-        super().__init__(text, parent)
-        self.variant = variant
-        self.size = size
-        self.setup_cyber_style()
-        self.setup_press_animations()
-
-    def setup_cyber_style(self):
-        """ตั้งค่าสไตล์ cyberpunk"""
-        style = get_ultra_modern_button_style(self.variant, self.size)
-        self.setStyleSheet(style)
-
-        # เพิ่ม glow effect
-        self.glow_effect = QGraphicsDropShadowEffect()
-        self.glow_effect.setBlurRadius(15)
-
-        if self.variant == "primary":
-            self.glow_effect.setColor(QColor(102, 126, 234, 80))
-        elif self.variant == "success":
-            self.glow_effect.setColor(QColor(86, 171, 47, 80))
-        elif self.variant == "warning":
-            self.glow_effect.setColor(QColor(237, 137, 54, 80))
-        else:
-            self.glow_effect.setColor(QColor(100, 100, 100, 60))
-
-        self.glow_effect.setOffset(0, 0)
-        self.setGraphicsEffect(self.glow_effect)
-
-    def setup_press_animations(self):
-        """ตั้งค่า press animations"""
-        self.press_animation = QPropertyAnimation(self, b"geometry")
-        self.press_animation.setDuration(100)
-        self.press_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
-
-    def enterEvent(self, event):
-        """Enhanced hover effect"""
-        super().enterEvent(event)
-        # เพิ่ม glow intensity
-        current_color = self.glow_effect.color()
-        enhanced_color = QColor(
-            current_color.red(), current_color.green(), current_color.blue(), 150
-        )
-        self.glow_effect.setColor(enhanced_color)
-        self.glow_effect.setBlurRadius(25)
-
-    def leaveEvent(self, event):
-        """Reset hover effect"""
-        super().leaveEvent(event)
-        current_color = self.glow_effect.color()
-        normal_color = QColor(
-            current_color.red(), current_color.green(), current_color.blue(), 80
-        )
-        self.glow_effect.setColor(normal_color)
-        self.glow_effect.setBlurRadius(15)
-
-    def mousePressEvent(self, event):
-        """Press animation with scale effect"""
-        super().mousePressEvent(event)
-        current_rect = self.geometry()
-        pressed_rect = QRect(
-            current_rect.x() + 2,
-            current_rect.y() + 2,
-            current_rect.width() - 4,
-            current_rect.height() - 4,
-        )
-        self.press_animation.setStartValue(current_rect)
-        self.press_animation.setEndValue(pressed_rect)
-        self.press_animation.start()
-
-    def mouseReleaseEvent(self, event):
-        """Release animation"""
-        super().mouseReleaseEvent(event)
-        # Implement release animation if needed
-
-
-class UltraModernConfigPanel(QWidget):
-    """Ultra modern configuration panel พร้อม holographic interface"""
+class ConfigPanel(QWidget):
+    """Modern Configuration Panel with responsive design"""
 
     # Signals
     config_changed = pyqtSignal(object)
@@ -297,29 +68,9 @@ class UltraModernConfigPanel(QWidget):
         # Action buttons แบบ cyberpunk
         self.create_cyber_action_buttons(layout)
 
-    def setup_background_effects(self):
-        """ตั้งค่า background effects"""
-        self.setStyleSheet(
-            f"""
-            QWidget {{
-                background: transparent;
-            }}
-        """
-        )
-
-    def create_neural_sharepoint_tab(self):
-        """สร้าง SharePoint tab แบบ neural network"""
-        self.sharepoint_tab = HolographicTab()
-
-        # Main scroll area
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
-
-        scroll_content = QWidget()
-        scroll.setWidget(scroll_content)
-
+    def create_sharepoint_tab(self):
+        """Create SharePoint configuration tab"""
+        self.sharepoint_tab = QWidget()
         layout = QVBoxLayout(self.sharepoint_tab)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(scroll)
@@ -345,12 +96,12 @@ class UltraModernConfigPanel(QWidget):
             self.create_neon_label("Client Neural ID:"), self.client_id_input
         )
 
-        # Client Secret - แก้ไข EchoMode
-        self.client_secret_input = CyberInput("Neural security token")
-        self.client_secret_input.setEchoMode(QLineEdit.EchoMode.Password)
-        auth_layout.addRow(
-            self.create_neon_label("Neural Secret:"), self.client_secret_input
-        )
+        # Client Secret
+        self.client_secret_input = QLineEdit()
+        self.client_secret_input.setStyleSheet(get_modern_input_style())
+        self.client_secret_input.setEchoMode(QLineEdit.Password)
+        self.client_secret_input.setPlaceholderText("Client secret value")
+        auth_layout.addRow("Client Secret:", self.client_secret_input)
 
         content_layout.addWidget(auth_group)
 
@@ -412,19 +163,9 @@ class UltraModernConfigPanel(QWidget):
         content_layout.addLayout(test_layout)
         content_layout.addStretch()
 
-    def create_quantum_database_tab(self):
-        """สร้าง Database tab แบบ quantum computing"""
-        self.database_tab = HolographicTab()
-
-        # Main scroll area
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
-
-        scroll_content = QWidget()
-        scroll.setWidget(scroll_content)
-
+    def create_database_tab(self):
+        """Create database configuration tab"""
+        self.database_tab = QWidget()
         layout = QVBoxLayout(self.database_tab)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(scroll)
@@ -469,17 +210,15 @@ class UltraModernConfigPanel(QWidget):
         sqlserver_layout.addRow(self.create_neon_label("Quantum Database:"), db_layout)
 
         # Username
-        self.sql_username_input = CyberInput("quantum_user")
-        sqlserver_layout.addRow(
-            self.create_neon_label("Neural Username:"), self.sql_username_input
-        )
+        self.sql_username_input = QLineEdit()
+        self.sql_username_input.setStyleSheet(get_modern_input_style())
+        sqlserver_layout.addRow("Username:", self.sql_username_input)
 
-        # Password - แก้ไข EchoMode
-        self.sql_password_input = CyberInput("quantum_access_key")
-        self.sql_password_input.setEchoMode(QLineEdit.EchoMode.Password)
-        sqlserver_layout.addRow(
-            self.create_neon_label("Neural Password:"), self.sql_password_input
-        )
+        # Password
+        self.sql_password_input = QLineEdit()
+        self.sql_password_input.setStyleSheet(get_modern_input_style())
+        self.sql_password_input.setEchoMode(QLineEdit.Password)
+        sqlserver_layout.addRow("Password:", self.sql_password_input)
 
         # Table with refresh
         table_layout = QHBoxLayout()
@@ -523,19 +262,9 @@ class UltraModernConfigPanel(QWidget):
         # Initially show SQL Server
         self._on_db_type_changed("sqlserver")
 
-    def create_matrix_advanced_tab(self):
-        """สร้าง Advanced tab แบบ matrix system"""
-        self.advanced_tab = HolographicTab()
-
-        # Main scroll area
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
-
-        scroll_content = QWidget()
-        scroll.setWidget(scroll_content)
-
+    def create_advanced_tab(self):
+        """Create advanced configuration tab"""
+        self.advanced_tab = QWidget()
         layout = QVBoxLayout(self.advanced_tab)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(scroll)
@@ -668,23 +397,7 @@ class UltraModernConfigPanel(QWidget):
         button_layout.addStretch()
         layout.addWidget(button_frame)
 
-    def create_neon_label(self, text):
-        """สร้าง label แบบ neon glow"""
-        label = QLabel(text)
-        label.setFont(QFont("Inter", 12, QFont.Weight.Medium))
-        label.setStyleSheet(
-            f"""
-            QLabel {{
-                color: {UltraModernColors.TEXT_GLOW};
-                background: transparent;
-                padding: 4px 0px;
-                text-shadow: 0 0 8px {UltraModernColors.NEON_BLUE}60;
-            }}
-        """
-        )
-        return label
-
-    # Public Methods
+    # Implementation methods
     def load_config(self, config: AppConfig):
         """โหลด Configuration ลง UI"""
         self.config = config
@@ -846,48 +559,12 @@ class UltraModernConfigPanel(QWidget):
                 )
 
     def _reset_config(self):
-        """รีเซ็ต Configuration เป็นค่าเริ่มต้น"""
-        reply = QMessageBox.question(
-            self,
-            "Reset Neural Configuration",
-            "Are you sure you want to reset all neural pathways to quantum defaults?\n\n"
-            + "This will purge all current configuration data.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-
-        if reply == QMessageBox.StandardButton.Yes:
-            default_config = AppConfig()
-            self.load_config(default_config)
-            self.config_changed.emit(default_config)
-
-            # Visual feedback
-            self.reset_btn.setText("⬢ Quantum Reset Complete!")
-            QTimer.singleShot(
-                2000, lambda: self.reset_btn.setText("⬢ Reset to Quantum Defaults")
-            )
-
-            logger.info("Configuration reset to quantum defaults")
-
-    def showEvent(self, event):
-        """เมื่อ panel ถูกแสดง"""
-        super().showEvent(event)
-        # Start any ongoing animations
-        for child in self.findChildren(NeonGroupBox):
-            if hasattr(child, "glow_timer"):
-                child.glow_timer.start(2000)
-
-    def hideEvent(self, event):
-        """เมื่อ panel ถูกซ่อน"""
-        super().hideEvent(event)
-        # Stop animations to save resources
-        for child in self.findChildren(NeonGroupBox):
-            if hasattr(child, "glow_timer"):
-                child.glow_timer.stop()
+        """Reset configuration to defaults"""
+        pass  # Implement if needed
 
 
-# Backward compatibility
-class ConfigPanel(UltraModernConfigPanel):
-    """Alias สำหรับ backward compatibility"""
 
-    pass
+# UltraModernConfigPanel สำหรับ UI แบบ ultra modern
+class UltraModernConfigPanel(ConfigPanel):
+    def __init__(self, controller):
+        super().__init__(controller)
