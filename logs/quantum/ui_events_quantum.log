@@ -1,0 +1,25 @@
+[23:41:28.887] ◆ ui.main_window → Failed to create UI components: name 'QGraphicsDropShadowEffect' is not defined
+[23:42:29.207] ◆ ui.main_window → Failed to create UI components: name 'QGraphicsDropShadowEffect' is not defined
+[23:42:45.704] ◆ ui.main_window → Failed to create UI components: name 'QGraphicsDropShadowEffect' is not defined
+[23:42:53.055] ◆ ui.main_window → Failed to create UI components: name 'QGraphicsDropShadowEffect' is not defined
+[23:43:49.498] ◆ ui.main_window → Failed to create UI components: name 'QGraphicsDropShadowEffect' is not defined
+[23:47:29.979] ◆ ui.main_window → Failed to create UI components: 'NeonGroupBox' object has no attribute 'animation'
+[23:52:10.077] ◉ ui.components.config_panel → Configuration updated
+[23:52:10.077] ◉ ui.components.config_panel → Configuration loaded to UI
+[23:52:10.234] ◉ ui.main_window → ✅ Signal connections established
+[23:52:10.234] ◉ ui.main_window → UI log handler initialized
+[23:53:03.499] ◉ ui.components.config_panel → Configuration updated
+[23:53:03.499] ◉ ui.components.config_panel → Configuration loaded to UI
+[23:53:03.541] ◉ ui.main_window → ✅ Signal connections established
+[23:53:03.541] ◉ ui.main_window → UI log handler initialized
+[23:54:51.754] ◉ ui.components.dashboard → 🧹 Dashboard cleanup completed
+[23:54:51.755] ◉ ui.main_window → 🧹 Resources cleaned
+[00:01:09.656] ◉ ui.components.config_panel → Configuration updated
+[00:01:09.656] ◉ ui.components.config_panel → Configuration loaded to UI
+[00:01:09.699] ◉ ui.main_window → ✅ Signal connections established
+[00:01:09.699] ◉ ui.main_window → UI log handler initialized
+[00:01:26.646] ◉ ui.components.config_panel → Configuration updated
+[00:01:29.982] ◉ ui.components.config_panel → Configuration updated
+[00:01:42.652] ◉ ui.components.config_panel → Configuration updated
+[00:02:03.736] ◉ ui.components.dashboard → 🧹 Dashboard cleanup completed
+[00:02:03.736] ◉ ui.main_window → 🧹 Resources cleaned

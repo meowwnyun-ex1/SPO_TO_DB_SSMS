@@ -5,39 +5,57 @@ SharePoint to SQL Sync by เฮียตอม😎
 
 import sys
 import os
+import atexit
+import signal
 import logging
 from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QPalette, QColor
 
 # Add project root to path
-# เพิ่ม path ของ root project เพื่อให้ import โมดูลอื่นๆ ได้
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from ui.main_window import MainWindow
 from controller.app_controller import AppController
-from utils.logger import setup_logging
-from ui.styles.theme import (
-    apply_ultra_modern_theme,
-    UltraModernColors,
-)  # Import UltraModernColors
+from utils.logger import setup_neural_logging
+from ui.styles.theme import apply_ultra_modern_theme, UltraModernColors
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Global references for cleanup
+app_instance = None
+main_window_instance = None
+controller_instance = None
+
+
+def cleanup_resources():
+    """ทำความสะอาดทรัพยากรก่อนปิดโปรแกรม"""
+    try:
+        if controller_instance:
+            controller_instance.cleanup()
+        if main_window_instance:
+            main_window_instance.close()
+        logger.info("🧹 Resources cleaned up successfully")
+    except Exception as e:
+        logger.error(f"Error during cleanup: {e}")
+
+
+def signal_handler(signum, frame):
+    """จัดการ signal เมื่อถูกบังคับปิด"""
+    logger.info(f"Received signal {signum}, shutting down gracefully...")
+    cleanup_resources()
+    if app_instance:
+        app_instance.quit()
+    sys.exit(0)
+
 
 def setup_app_theme(app):
-    """
-    Setup modern dark theme with the new color palette and apply global styles.
-    ตั้งค่าธีมสมัยใหม่โทนเข้มพร้อมพาเลทสีใหม่และใช้สไตล์ทั่วทั้งแอปพลิเคชัน
-    """
+    """Setup modern dark theme with the new color palette"""
     app.setStyle("Fusion")
 
-    # Dark palette - Adjusted for white, purple, black theme
-    # พาเลทสีเข้ม - ปรับสำหรับธีมขาว ม่วง ดำ
     dark_palette = QPalette()
-    dark_palette.setColor(
-        QPalette.ColorRole.Window, QColor(20, 20, 20)
-    )  # Dark background for areas not covered by image
+    dark_palette.setColor(QPalette.ColorRole.Window, QColor(20, 20, 20))
     dark_palette.setColor(
         QPalette.ColorRole.WindowText, QColor(UltraModernColors.TEXT_PRIMARY)
     )
@@ -56,99 +74,99 @@ def setup_app_theme(app):
     )
     dark_palette.setColor(
         QPalette.ColorRole.BrightText, QColor(UltraModernColors.NEON_PINK)
-    )  # Use neon pink for bright text
-    dark_palette.setColor(
-        QPalette.ColorRole.Link, QColor(UltraModernColors.NEON_BLUE)
-    )  # Use neon blue for links
+    )
+    dark_palette.setColor(QPalette.ColorRole.Link, QColor(UltraModernColors.NEON_BLUE))
     dark_palette.setColor(
         QPalette.ColorRole.Highlight, QColor(UltraModernColors.NEON_PURPLE)
-    )  # Use neon purple for highlights
-    dark_palette.setColor(
-        QPalette.ColorRole.HighlightedText, QColor(0, 0, 0)
-    )  # Black text on highlight
+    )
+    dark_palette.setColor(QPalette.ColorRole.HighlightedText, QColor(0, 0, 0))
 
     app.setPalette(dark_palette)
-
-    # Apply global styles defined in theme.py
-    # ใช้สไตล์ทั่วทั้งแอปพลิเคชันที่กำหนดไว้ใน theme.py
     apply_ultra_modern_theme(app)
 
 
 def main():
-    """Application entry point"""
-    # Setup logging early
-    # ตั้งค่าการบันทึกข้อมูลตั้งแต่เริ่มต้น
-    setup_logging()
+    """Application entry point with proper cleanup"""
+    global app_instance, main_window_instance, controller_instance
 
-    app = QApplication(sys.argv)
-    setup_app_theme(app)
+    # Setup signal handlers
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
 
-    # Set initial window size (e.g., 1280x720 for 16:9 aspect ratio, smaller than 1920x1080)
-    # ตั้งค่าขนาดเริ่มต้นของหน้าต่าง (เช่น 1280x720 สำหรับอัตราส่วน 16:9 ซึ่งเล็กกว่า 1920x1080)
-    initial_width = 1280
-    initial_height = 720
-    screen_rect = app.primaryScreen().availableGeometry()
-    x = (screen_rect.width() - initial_width) // 2
-    y = (screen_rect.height() - initial_height) // 2
+    # Register cleanup function
+    atexit.register(cleanup_resources)
 
-    # Initialize controller before main window
-    # เริ่มต้น Controller ก่อน MainWindow
-    controller = AppController()
+    try:
+        # Setup logging early
+        setup_neural_logging()
 
-    main_window = MainWindow(controller)
-    main_window.setGeometry(
-        x, y, initial_width, initial_height
-    )  # Set initial position and size
+        app_instance = QApplication(sys.argv)
+        app_instance.setQuitOnLastWindowClosed(True)  # ให้แอปปิดเมื่อหน้าต่างสุดท้ายปิด
 
-    # Set background image for QMainWindow
-    # ตั้งค่ารูปภาพพื้นหลังสำหรับ QMainWindow
-    background_path = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "assets", "background.jpg"
-    )
-    if os.path.exists(background_path):
-        # Using QPalette for background image with scaling and proper tiling
-        # ใช้ QPalette สำหรับรูปภาพพื้นหลังพร้อมการปรับขนาดและการจัดเรียงที่เหมาะสม
-        # Note: QMainWindow's background can also be set via stylesheet with `background-image: url(...)`
-        # but QPalette offers more control over scaling/tiling directly.
-        # สำหรับการปรับขนาดและวางภาพให้เต็มพื้นที่ ให้ใช้ stylesheet แทนได้ถ้าต้องการควบคุมด้วย CSS
-        # หรือถ้าใช้ QPalette ต้อง setAutoFillBackground(True) ใน MainWindow ด้วย
+        setup_app_theme(app_instance)
 
-        # Using stylesheet for background image as it's more flexible with dynamic resizing
-        main_window.setStyleSheet(
-            f"""
-            QMainWindow {{
-                background-image: url('{background_path.replace(os.sep, "/")}');
-                background-repeat: no-repeat;
-                background-position: center;
-                background-attachment: fixed; /* Ensures background stays fixed during scroll, though we aim for no scroll */
-                background-size: cover; /* This will scale the image to cover the entire window */
-                border: 1px solid {UltraModernColors.NEON_PURPLE}; /* Add a subtle border */
-                border-radius: 15px; /* Optional: rounded corners for the main window */
-            }}
-            {main_window.styleSheet()}
-        """
+        # Set initial window size
+        initial_width = 1280
+        initial_height = 720
+        screen_rect = app_instance.primaryScreen().availableGeometry()
+        x = (screen_rect.width() - initial_width) // 2
+        y = (screen_rect.height() - initial_height) // 2
+
+        # Initialize controller before main window
+        controller_instance = AppController()
+
+        main_window_instance = MainWindow(controller_instance)
+        main_window_instance.setGeometry(x, y, initial_width, initial_height)
+
+        # Set background image
+        background_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "assets", "background.jpg"
         )
-        main_window.setAutoFillBackground(
-            True
-        )  # Important for background to show correctly with QPalette/setStyleSheet
-    else:
-        logger.warning(
-            f"Background image not found at: {background_path}. Using solid color background."
-        )
-        # Fallback to a solid color if image is not found, adjusted for new theme
-        main_window.setStyleSheet(
-            f"""
-            QMainWindow {{
-                background-color: #1a1a1a; /* Dark background */
-                border: 1px solid {UltraModernColors.NEON_PURPLE};
-                border-radius: 15px;
-            }}
-            {main_window.styleSheet()}
-        """
-        )
+        if os.path.exists(background_path):
+            main_window_instance.setStyleSheet(
+                f"""
+                QMainWindow {{
+                    background-image: url('{background_path.replace(os.sep, "/")}');
+                    background-repeat: no-repeat;
+                    background-position: center;
+                    background-attachment: fixed;
+                    background-size: cover;
+                    border: 1px solid {UltraModernColors.NEON_PURPLE};
+                    border-radius: 15px;
+                }}
+                {main_window_instance.styleSheet()}
+            """
+            )
+            main_window_instance.setAutoFillBackground(True)
+        else:
+            logger.warning(f"Background image not found at: {background_path}")
+            main_window_instance.setStyleSheet(
+                f"""
+                QMainWindow {{
+                    background-color: #1a1a1a;
+                    border: 1px solid {UltraModernColors.NEON_PURPLE};
+                    border-radius: 15px;
+                }}
+                {main_window_instance.styleSheet()}
+            """
+            )
 
-    main_window.show()
-    sys.exit(app.exec())
+        main_window_instance.show()
+
+        # เพิ่ม timer เพื่อให้แอปตอบสนอง signal ได้ดีขึ้น
+        timer = QTimer()
+        timer.timeout.connect(lambda: None)
+        timer.start(100)
+
+        exit_code = app_instance.exec()
+
+    except Exception as e:
+        logger.error(f"Critical error in main: {e}")
+        exit_code = 1
+    finally:
+        cleanup_resources()
+
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":

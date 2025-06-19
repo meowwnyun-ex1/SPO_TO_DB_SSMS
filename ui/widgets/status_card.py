@@ -4,36 +4,23 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QFrame,
-    QGraphicsDropShadowEffect,
-    QGraphicsOpacityEffect,
     QSizePolicy,
 )
 from PyQt6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, QPoint
 from PyQt6.QtGui import QFont, QColor, QPainter
 
-# Import UltraModernColors for theming
 from ..styles.theme import UltraModernColors, get_ultra_modern_card_style
 
 
 class StatusIndicator(QWidget):
-    """
-    ไฟแสดงสถานะวงกลมพร้อมสีและเอฟเฟกต์การกระพริบเมื่อสถานะมีการเปลี่ยนแปลง
-    """
+    """ไฟแสดงสถานะวงกลมพร้อมสีและเอฟเฟกต์"""
 
     def __init__(self, status="disconnected", parent=None):
         super().__init__(parent)
         self.status = status
-        self.setFixedSize(16, 16)  # Slightly larger indicator
-        self.opacity_effect = QGraphicsOpacityEffect(self)
-        self.setGraphicsEffect(self.opacity_effect)
-        self.animation = QPropertyAnimation(self.opacity_effect, b"opacity")
-        self.animation.setDuration(800)
-        self.animation.setStartValue(1.0)
-        self.animation.setEndValue(0.2)
-        self.animation.setLoopCount(2)
-        self.animation.finished.connect(
-            lambda: self.opacity_effect.setOpacity(1.0)
-        )  # Reset opacity after animation
+        self.setFixedSize(16, 16)
+        self.pulse_strength = 0.0
+        self.pulse_direction = 1
 
     def paintEvent(self, event):
         """วาดวงกลมแสดงสถานะ"""
@@ -41,36 +28,34 @@ class StatusIndicator(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         colors = {
-            "connected": UltraModernColors.SUCCESS_COLOR,
-            "disconnected": UltraModernColors.ERROR_COLOR,
-            "error": UltraModernColors.ERROR_COLOR,
-            "success": UltraModernColors.SUCCESS_COLOR,
-            "never": UltraModernColors.TEXT_SECONDARY,
-            "syncing": UltraModernColors.NEON_BLUE,
-            "warning": UltraModernColors.NEON_YELLOW,
-            "in_progress": UltraModernColors.NEON_PURPLE,
+            "connected": "#7CFC00",  # SUCCESS_COLOR
+            "disconnected": "#FF6347",  # ERROR_COLOR
+            "error": "#FF6347",
+            "success": "#7CFC00",
+            "never": "#C0C0C0",  # TEXT_SECONDARY
+            "syncing": "#87CEEB",  # NEON_BLUE
+            "warning": "#FFFF99",  # NEON_YELLOW
+            "in_progress": "#8A2BE2",  # NEON_PURPLE
         }
 
-        color = colors.get(self.status, colors["disconnected"])
+        color_str = colors.get(self.status, colors["disconnected"])
+        # แก้: แปลง string เป็น QColor
+        color = QColor(color_str)
         painter.setBrush(color)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawEllipse(self.rect())
 
     def set_status(self, new_status):
-        """ตั้งค่าสถานะใหม่และเรียกใช้แอนิเมชั่น"""
+        """ตั้งค่าสถานะใหม่"""
         if self.status != new_status:
             self.status = new_status
-            self.animation.start()
             self.update()
         else:
             self.update()
 
 
 class StatusCard(QWidget):
-    """
-    การ์ดแสดงสถานะแบบ Ultra Modern พร้อมไฟแสดงสถานะและข้อความ
-    มีการปรับปรุงเอฟเฟกต์เงาและการเคลื่อนไหว
-    """
+    """การ์ดแสดงสถานะแบบ Ultra Modern"""
 
     def __init__(self, title, status="disconnected", parent=None):
         super().__init__(parent)
@@ -78,8 +63,6 @@ class StatusCard(QWidget):
         self.status = status
         self.description = ""
 
-        # Initialize attributes BEFORE calling setup_ui or update_status_display
-        # ต้อง Initialized attribute เหล่านี้ก่อนเรียก setup_ui หรือ update_status_display
         self.pulse_timer = QTimer(self)
         self.pulse_timer.timeout.connect(self._animate_pulse)
         self.pulse_strength = 0.0
@@ -89,18 +72,13 @@ class StatusCard(QWidget):
         self.hover_animation.setDuration(200)
         self.hover_animation.setEasingCurve(QEasingCurve.Type.OutQuad)
 
-        self.setup_ui()  # Now safe to call
-        self.update_status_display()  # Now safe to call
+        self.setup_ui()
+        self.update_status_display()
 
     def setup_ui(self):
         """ตั้งค่า UI ของการ์ดสถานะ"""
         self.outer_frame = QFrame(self)
         self.outer_frame.setStyleSheet(get_ultra_modern_card_style("default"))
-
-        self.shadow_effect = QGraphicsDropShadowEffect(self.outer_frame)
-        self.shadow_effect.setBlurRadius(25)
-        self.shadow_effect.setColor(QColor(0, 0, 0, 100))
-        self.outer_frame.setGraphicsEffect(self.shadow_effect)
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -149,42 +127,34 @@ class StatusCard(QWidget):
             "connected": {
                 "symbol": "✔",
                 "color": UltraModernColors.SUCCESS_COLOR,
-                "shadow_color": UltraModernColors.SUCCESS_COLOR,
             },
             "disconnected": {
                 "symbol": "✖",
                 "color": UltraModernColors.ERROR_COLOR,
-                "shadow_color": UltraModernColors.ERROR_COLOR,
             },
             "error": {
                 "symbol": "❗",
                 "color": UltraModernColors.ERROR_COLOR,
-                "shadow_color": UltraModernColors.ERROR_COLOR,
             },
             "success": {
                 "symbol": "✔",
                 "color": UltraModernColors.SUCCESS_COLOR,
-                "shadow_color": UltraModernColors.SUCCESS_COLOR,
             },
             "never": {
                 "symbol": "…",
                 "color": UltraModernColors.TEXT_SECONDARY,
-                "shadow_color": UltraModernColors.TEXT_SECONDARY,
             },
             "syncing": {
                 "symbol": "⟳",
                 "color": UltraModernColors.NEON_BLUE,
-                "shadow_color": UltraModernColors.NEON_BLUE,
             },
             "warning": {
                 "symbol": "⚠",
                 "color": UltraModernColors.NEON_YELLOW,
-                "shadow_color": UltraModernColors.NEON_YELLOW,
             },
             "in_progress": {
                 "symbol": "⟳",
                 "color": UltraModernColors.NEON_PURPLE,
-                "shadow_color": UltraModernColors.NEON_PURPLE,
             },
         }
 
@@ -193,29 +163,21 @@ class StatusCard(QWidget):
         self.indicator_symbol.setText(current_config["symbol"])
         self.indicator_symbol.setStyleSheet(f"color: {current_config['color']};")
 
-        # To simulate text shadow/glow, a QGraphicsDropShadowEffect could be applied to self.indicator_symbol
-        # self.symbol_shadow_effect = QGraphicsDropShadowEffect(self.indicator_symbol)
-        # self.symbol_shadow_effect.setBlurRadius(10)
-        # self.symbol_shadow_effect.setColor(QColor(current_config['shadow_color']))
-        # self.indicator_symbol.setGraphicsEffect(self.symbol_shadow_effect)
-
         # Handle description based on status
-        if self.status == "connected":
-            self.description_label.setText("Online and operational.")
-        elif self.status == "disconnected":
-            self.description_label.setText("Offline or connection lost.")
-        elif self.status == "error":
-            self.description_label.setText("An error occurred during operation.")
-        elif self.status == "success":
-            self.description_label.setText("Operation completed successfully.")
-        elif self.status == "never":
-            self.description_label.setText("No previous operations recorded.")
-        elif self.status == "syncing":
-            self.description_label.setText("Synchronization in progress...")
-        elif self.status == "warning":
-            self.description_label.setText("Operation completed with warnings.")
-        elif self.status == "in_progress":
-            self.description_label.setText("Operation ongoing...")
+        status_descriptions = {
+            "connected": "Online and operational.",
+            "disconnected": "Offline or connection lost.",
+            "error": "An error occurred during operation.",
+            "success": "Operation completed successfully.",
+            "never": "No previous operations recorded.",
+            "syncing": "Synchronization in progress...",
+            "warning": "Operation completed with warnings.",
+            "in_progress": "Operation ongoing...",
+        }
+
+        self.description_label.setText(
+            status_descriptions.get(self.status, "Status unknown.")
+        )
 
         # Start/Stop pulse animation
         if self.status == "in_progress" or self.status == "syncing":
@@ -226,7 +188,6 @@ class StatusCard(QWidget):
         else:
             if self.pulse_timer and self.pulse_timer.isActive():
                 self.pulse_timer.stop()
-                self.shadow_effect.setBlurRadius(25)
                 self.indicator_symbol.setStyleSheet(
                     f"color: {current_config['color']};"
                 )
@@ -248,11 +209,6 @@ class StatusCard(QWidget):
             self.pulse_strength = 0.0
             self.pulse_direction = 1
 
-        current_blur = 20 + 10 * self.pulse_strength
-        self.shadow_effect.setBlurRadius(current_blur)
-
-        current_symbol_glow = 5 + 10 * self.pulse_strength
-
         symbol_config = {
             "syncing": UltraModernColors.NEON_BLUE,
             "in_progress": UltraModernColors.NEON_PURPLE,
@@ -270,9 +226,6 @@ class StatusCard(QWidget):
         self.hover_animation.setStartValue(current_pos)
         self.hover_animation.setEndValue(target_pos)
         self.hover_animation.start()
-        self.shadow_effect.setBlurRadius(30)
-        self.shadow_effect.setColor(QColor(0, 0, 0, 150))
-        self.outer_frame.update()
 
     def leaveEvent(self, event):
         """Handle mouse hover leave event."""
@@ -282,9 +235,13 @@ class StatusCard(QWidget):
         self.hover_animation.setStartValue(current_pos)
         self.hover_animation.setEndValue(target_pos)
         self.hover_animation.start()
-        self.shadow_effect.setBlurRadius(25)
-        self.shadow_effect.setColor(QColor(0, 0, 0, 100))
-        self.outer_frame.update()
+
+    def cleanup_animations(self):
+        """ทำความสะอาด animations"""
+        if hasattr(self, "pulse_timer"):
+            self.pulse_timer.stop()
+        if hasattr(self, "hover_animation"):
+            self.hover_animation.stop()
 
 
 # Backward compatibility

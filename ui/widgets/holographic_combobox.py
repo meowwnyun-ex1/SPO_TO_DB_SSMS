@@ -1,71 +1,63 @@
 from PyQt6.QtWidgets import QComboBox
-from PyQt6.QtGui import QColor
 from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QPoint
 
 from ..styles.theme import UltraModernColors, get_ultra_modern_input_style
 
 
 class HolographicComboBox(QComboBox):
-    """
-    A custom QComboBox with holographic styling and interactive effects.
-    QComboBox ที่ปรับแต่งด้วยสไตล์ holographic และเอฟเฟกต์แบบโต้ตอบ
-    """
+    """แก้แล้ว: ลบ shadow effects เพื่อป้องกัน import error"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setStyleSheet(get_ultra_modern_input_style())
-        self.setCursor(Qt.CursorShape.PointingHandCursor)  # Indicate clickable
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        # Drop shadow for a more "floating" look
-        self.shadow_effect = QGraphicsDropShadowEffect(self)
-        self.shadow_effect.setBlurRadius(15)
-        self.shadow_effect.setColor(QColor(0, 0, 0, 100))
-        self.setGraphicsEffect(self.shadow_effect)
-
-        # Animation for focus/hover effect
-        self.animation = QPropertyAnimation(self, b"pos")
-        self.animation.setDuration(150)
-        self.animation.setEasingCurve(QEasingCurve.Type.OutQuad)
+        # แก้: ลบ shadow effects ที่ทำให้เกิด import error
+        self.hover_animation = QPropertyAnimation(self, b"pos")
+        self.hover_animation.setDuration(150)
+        self.hover_animation.setEasingCurve(QEasingCurve.Type.OutQuad)
 
     def enterEvent(self, event):
-        """Handle mouse hover enter event."""
+        """แก้แล้ว: ลบ shadow effects"""
         super().enterEvent(event)
-        # Subtle lift effect
+
+        if self.hover_animation.state() == QPropertyAnimation.State.Running:
+            self.hover_animation.stop()
+
         current_pos = self.pos()
         target_pos = current_pos - QPoint(0, 2)
-        self.animation.setStartValue(current_pos)
-        self.animation.setEndValue(target_pos)
-        self.animation.start()
-        # Enhance shadow
-        self.shadow_effect.setBlurRadius(20)
-        self.shadow_effect.setColor(QColor(UltraModernColors.NEON_BLUE).darker(100))
+        self.hover_animation.setStartValue(current_pos)
+        self.hover_animation.setEndValue(target_pos)
+        self.hover_animation.start()
 
     def leaveEvent(self, event):
-        """Handle mouse hover leave event."""
+        """แก้แล้ว: ลบ shadow effects"""
         super().leaveEvent(event)
-        # Return to original position
+
+        if self.hover_animation.state() == QPropertyAnimation.State.Running:
+            self.hover_animation.stop()
+
         current_pos = self.pos()
         target_pos = current_pos + QPoint(0, 2)
-        self.animation.setStartValue(current_pos)
-        self.animation.setEndValue(target_pos)
-        self.animation.start()
-        # Reset shadow
-        self.shadow_effect.setBlurRadius(15)
-        self.shadow_effect.setColor(QColor(0, 0, 0, 100))
+        self.hover_animation.setStartValue(current_pos)
+        self.hover_animation.setEndValue(target_pos)
+        self.hover_animation.start()
 
     def focusInEvent(self, event):
-        """Handle focus in event."""
+        """แก้แล้ว: focus styling อย่างเดียว"""
         super().focusInEvent(event)
         self.setStyleSheet(
             get_ultra_modern_input_style()
             + f"QComboBox {{ border: 2px solid {UltraModernColors.NEON_PURPLE}; }}"
         )
-        self.shadow_effect.setBlurRadius(25)
-        self.shadow_effect.setColor(QColor(UltraModernColors.NEON_PURPLE))
 
     def focusOutEvent(self, event):
-        """Handle focus out event."""
+        """แก้แล้ว: reset styling"""
         super().focusOutEvent(event)
         self.setStyleSheet(get_ultra_modern_input_style())
-        self.shadow_effect.setBlurRadius(15)
-        self.shadow_effect.setColor(QColor(0, 0, 0, 100))
+
+    def closeEvent(self, event):
+        """แก้: cleanup animation"""
+        if hasattr(self, "hover_animation"):
+            self.hover_animation.stop()
+        super().closeEvent(event)

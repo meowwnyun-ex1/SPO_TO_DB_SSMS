@@ -2,379 +2,308 @@ from PyQt6.QtCore import QObject, pyqtSignal, QTimer
 from .sync_engine import SyncEngine
 from .connection_manager import ConnectionManager
 from utils.config_manager import ConfigManager
+from utils.cache_cleaner import AutoCacheManager
 import logging
-
 
 logger = logging.getLogger(__name__)
 
 
 class AppController(QObject):
-    # Signals for UI communication
-    status_changed = pyqtSignal(str, str)  # service_name, status
-    progress_updated = pyqtSignal(str, int, str)  # message, progress, level
-    sync_completed = pyqtSignal(bool, str, dict)  # Added dict for sync stats
-    log_message = pyqtSignal(str, str)  # message, level
+    """แก้แล้ว: แยก business logic ออกไป, เหลือแค่ coordination"""
 
-    # New signals for dashboard/config panel updates
+    # Core signals
+    status_changed = pyqtSignal(str, str)
+    progress_updated = pyqtSignal(str, int, str)
+    sync_completed = pyqtSignal(bool, str, dict)
+    log_message = pyqtSignal(str, str)
+
+    # UI update signals
     sharepoint_sites_updated = pyqtSignal(list)
     sharepoint_lists_updated = pyqtSignal(list)
     database_names_updated = pyqtSignal(list)
     database_tables_updated = pyqtSignal(list)
-    ui_enable_request = pyqtSignal(bool)  # To enable/disable UI during operations
+    ui_enable_request = pyqtSignal(bool)
 
-    # Specific status update signals for status cards
-    sharepoint_status_update = pyqtSignal(
-        str
-    )  # "connected", "disconnected", "error", etc.
-    database_status_update = pyqtSignal(
-        str
-    )  # "connected", "disconnected", "error", etc.
-    last_sync_status_update = pyqtSignal(
-        str
-    )  # "success", "error", "never", "in_progress"
-    auto_sync_status_update = pyqtSignal(bool)  # True/False
-    progress_update = pyqtSignal(int)  # Overall progress 0-100%
-    current_task_update = pyqtSignal(str)  # Description of current task
+    # Status signals
+    sharepoint_status_update = pyqtSignal(str)
+    database_status_update = pyqtSignal(str)
+    last_sync_status_update = pyqtSignal(str)
+    auto_sync_status_update = pyqtSignal(bool)
+    progress_update = pyqtSignal(int)
+    current_task_update = pyqtSignal(str)
 
     def __init__(self):
         super().__init__()
 
-        # Initialize core components
+        # แก้: แยก services ออกมา
         self.config_manager = ConfigManager()
         self.connection_manager = ConnectionManager()
         self.sync_engine = SyncEngine()
+        self.cache_manager = AutoCacheManager()
 
         # Auto-sync timer
         self.auto_sync_timer = QTimer()
         self.auto_sync_enabled = False
 
-        # Setup internal connections
         self._setup_connections()
+        self._start_cache_manager()
 
-        logger.info("🎉 AppController initialized successfully")
+        logger.info("🎉 AppController initialized")
 
     def _setup_connections(self):
-        """Setup internal signal connections"""
-        # Sync engine signals
+        """แก้แล้ว: ลด connections, เฉพาะที่จำเป็น"""
         self.sync_engine.progress_updated.connect(self.progress_updated)
-        self.sync_engine.sync_completed.connect(
-            self._handle_sync_completion
-        )  # Connect to internal handler
+        self.sync_engine.sync_completed.connect(self._handle_sync_completion)
         self.sync_engine.log_message.connect(self.log_message)
 
-        # Connection manager signals
         self.connection_manager.status_changed.connect(
             self._handle_connection_status_change
         )
         self.connection_manager.log_message.connect(self.log_message)
 
-        # Auto-sync timer
         self.auto_sync_timer.timeout.connect(self._auto_sync_triggered)
 
-        logger.debug("Internal signal connections established")
+        # Cache manager
+        self.cache_manager.cleanup_completed.connect(self._on_cache_cleaned)
+        self.cache_manager.log_message.connect(self.log_message)
 
-    def _handle_sync_completion(self, success, message, stats):
-        """Handle sync completion, update UI and log."""
-        self.sync_completed.emit(success, message, stats)  # Re-emit for other listeners
-        if success:
-            self.last_sync_status_update.emit("success")
-            self.log_message.emit(f"✅ Sync completed: {message}", "success")
-        else:
-            self.last_sync_status_update.emit("error")
-            self.log_message.emit(f"❌ Sync failed: {message}", "error")
-        self.progress_update.emit(0)  # Reset overall progress
-        self.current_task_update.emit("Idle")  # Reset current task
-        self.ui_enable_request.emit(True)  # Re-enable UI
-
-    def _handle_connection_status_change(self, service_name, status):
-        """Handle connection status changes and propagate to UI."""
-        if service_name == "SharePoint":
-            self.sharepoint_status_update.emit(status)
-        elif service_name == "Database":
-            self.database_status_update.emit(status)
-        self.status_changed.emit(service_name, status)  # Re-emit generic status_changed
+    def _start_cache_manager(self):
+        """เริ่ม cache manager"""
+        self.cache_manager.start_auto_cleanup()
 
     # Configuration Management
     def get_config(self):
-        """Get current configuration"""
         return self.config_manager.get_config()
 
     def update_config(self, config_object):
-        """Update and save configuration from UI"""
-        # This method is called from ConfigPanel via config_changed signal
         self.config_manager.save_config(config_object)
-        self.log_message.emit("💾 การตั้งค่าได้รับการอัปเดตแล้ว", "success")
-        # After config update, you might want to re-test connections or update UI elements
-        # For simplicity, we just save here. More complex logic might involve emitting
-        # signals back to UI to update specific fields if config values change validation.
+        self.log_message.emit("💾 Configuration updated", "success")
 
-    # Connection Testing (updated to emit specific status signals)
+    # Connection Testing - แก้แล้ว: ลด duplicate code
     def test_sharepoint_connection(self):
-        """Test SharePoint connection"""
-        self.ui_enable_request.emit(False)  # Disable UI during test
-        try:
-            config = self.get_config()
-            if not all(
-                [
-                    config.sharepoint_client_id,  # Updated from client_id
-                    config.sharepoint_client_secret,  # Updated from client_secret
-                    config.tenant_id,
-                    config.sharepoint_site,  # Updated from site_url
-                ]
-            ):
-                self.log_message.emit("⚠️ กรุณากรอกข้อมูล SharePoint ให้ครบถ้วน", "warning")
-                self.sharepoint_status_update.emit("warning")
-                self.ui_enable_request.emit(True)
-                return False
-
-            self.sharepoint_status_update.emit("connecting")
-            self.log_message.emit("🔍 กำลังทดสอบการเชื่อมต่อ SharePoint...", "info")
-
-            success = self.connection_manager.test_sharepoint_connection(config)
-
-            if success:
-                self.sharepoint_status_update.emit("connected")
-                self.log_message.emit("✅ เชื่อมต่อ SharePoint สำเร็จ", "success")
-            else:
-                self.sharepoint_status_update.emit("error")
-                self.log_message.emit("❌ เชื่อมต่อ SharePoint ล้มเหลว", "error")
-
-            self.ui_enable_request.emit(True)
-            return success
-
-        except Exception as e:
-            self.sharepoint_status_update.emit("error")
-            self.log_message.emit(f"❌ ข้อผิดพลาดการเชื่อมต่อ SharePoint: {str(e)}", "error")
-            self.ui_enable_request.emit(True)
-            return False
+        return self._test_connection("sharepoint")
 
     def test_database_connection(self):
-        """Test database connection"""
-        self.ui_enable_request.emit(False)  # Disable UI during test
+        return self._test_connection("database")
+
+    def _test_connection(self, conn_type):
+        """แก้แล้ว: generic connection test method"""
+        self.ui_enable_request.emit(False)
+
         try:
             config = self.get_config()
 
-            # Validate database config
-            if config.database_type == "sqlserver":
-                if not all(
-                    [config.sql_server, config.sql_database, config.sql_username]
-                ):
-                    self.log_message.emit(
-                        "⚠️ กรุณากรอกข้อมูล SQL Server ให้ครบถ้วน", "warning"
-                    )
-                    self.database_status_update.emit("warning")
-                    self.ui_enable_request.emit(True)
+            if conn_type == "sharepoint":
+                if not self._validate_sharepoint_config(config):
                     return False
-            else:  # SQLite
-                if not config.sqlite_file:
-                    self.log_message.emit("⚠️ กรุณาเลือกไฟล์ SQLite", "warning")
-                    self.database_status_update.emit("warning")
-                    self.ui_enable_request.emit(True)
+                self.sharepoint_status_update.emit("connecting")
+                success = self.connection_manager.test_sharepoint_connection(config)
+                status = "connected" if success else "error"
+                self.sharepoint_status_update.emit(status)
+
+            else:  # database
+                if not self._validate_database_config(config):
                     return False
+                self.database_status_update.emit("connecting")
+                success = self.connection_manager.test_database_connection(config)
+                status = "connected" if success else "error"
+                self.database_status_update.emit(status)
 
-            self.database_status_update.emit("connecting")
-            self.log_message.emit("🔍 กำลังทดสอบการเชื่อมต่อฐานข้อมูล...", "info")
+            msg = (
+                f"✅ {conn_type.title()} connected"
+                if success
+                else f"❌ {conn_type.title()} failed"
+            )
+            self.log_message.emit(msg, "success" if success else "error")
 
-            success = self.connection_manager.test_database_connection(config)
-
-            if success:
-                self.database_status_update.emit("connected")
-                self.log_message.emit("✅ เชื่อมต่อฐานข้อมูลสำเร็จ", "success")
-            else:
-                self.database_status_update.emit("error")
-                self.log_message.emit("❌ เชื่อมต่อฐานข้อมูลล้มเหลว", "error")
-
-            self.ui_enable_request.emit(True)
             return success
 
         except Exception as e:
-            self.database_status_update.emit("error")
-            self.log_message.emit(f"❌ ข้อผิดพลาดการเชื่อมต่อฐานข้อมูล: {str(e)}", "error")
-            self.ui_enable_request.emit(True)
+            self.log_message.emit(f"❌ {conn_type.title()} error: {str(e)}", "error")
             return False
+        finally:
+            self.ui_enable_request.emit(True)
+
+    def _validate_sharepoint_config(self, config):
+        """แก้แล้ว: แยก validation logic"""
+        required_fields = [
+            config.sharepoint_client_id,
+            config.sharepoint_client_secret,
+            config.tenant_id,
+            config.sharepoint_site,
+        ]
+        if not all(required_fields):
+            self.log_message.emit("⚠️ SharePoint config incomplete", "warning")
+            self.sharepoint_status_update.emit("warning")
+            return False
+        return True
+
+    def _validate_database_config(self, config):
+        """แก้แล้ว: แยก validation logic"""
+        if config.database_type == "sqlserver":
+            required_fields = [
+                config.sql_server,
+                config.sql_database,
+                config.sql_username,
+            ]
+        else:  # SQLite
+            required_fields = [config.sqlite_file]
+
+        if not all(required_fields):
+            self.log_message.emit("⚠️ Database config incomplete", "warning")
+            self.database_status_update.emit("warning")
+            return False
+        return True
 
     def test_all_connections(self):
-        """Test both SharePoint and database connections"""
-        self.log_message.emit("🔍 ทดสอบการเชื่อมต่อทั้งหมด...", "info")
+        """ทดสอบการเชื่อมต่อทั้งหมด"""
+        self.log_message.emit("🔍 Testing all connections...", "info")
 
         sp_result = self.test_sharepoint_connection()
         db_result = self.test_database_connection()
 
         if sp_result and db_result:
-            self.log_message.emit("🎉 ทดสอบการเชื่อมต่อทั้งหมดสำเร็จ!", "success")
+            self.log_message.emit("🎉 All connections successful!", "success")
         else:
-            self.log_message.emit("⚠️ การทดสอบการเชื่อมต่อมีปัญหา", "warning")
+            self.log_message.emit("⚠️ Some connections failed", "warning")
 
         return sp_result and db_result
 
-    # SharePoint Data Browse (updated to emit specific update signals for UI)
+    # Data refresh methods - แก้แล้ว: ลด boilerplate
     def refresh_sharepoint_sites(self):
-        """Refresh and populate SharePoint sites in UI."""
-        self.ui_enable_request.emit(False)
-        try:
-            sites = self.connection_manager.get_sharepoint_sites(self.get_config())
-            self.sharepoint_sites_updated.emit(sites)
-            self.log_message.emit(f"📡 พบไซต์ SharePoint {len(sites)} รายการ", "success")
-        except Exception as e:
-            self.log_message.emit(f"❌ ไม่สามารถดึงรายการไซต์: {str(e)}", "error")
-        finally:
-            self.ui_enable_request.emit(True)
+        self._refresh_data(
+            "sites",
+            self.connection_manager.get_sharepoint_sites,
+            self.sharepoint_sites_updated,
+        )
 
     def refresh_sharepoint_lists(self):
-        """Refresh and populate SharePoint lists for the selected site."""
-        self.ui_enable_request.emit(False)
-        try:
-            config = self.get_config()
-            site_url = config.sharepoint_site  # Get selected site from config
-            if site_url:
-                lists = self.connection_manager.get_sharepoint_lists(config, site_url)
-                self.sharepoint_lists_updated.emit(lists)
-                self.log_message.emit(
-                    f"📋 พบลิสต์ SharePoint {len(lists)} รายการ", "success"
-                )
-            else:
-                self.log_message.emit("⚠️ กรุณาเลือก SharePoint Site ก่อน", "warning")
-        except Exception as e:
-            self.log_message.emit(f"❌ ไม่สามารถดึงรายการลิสต์: {str(e)}", "error")
-        finally:
-            self.ui_enable_request.emit(True)
+        self._refresh_data(
+            "lists",
+            self.connection_manager.get_sharepoint_lists,
+            self.sharepoint_lists_updated,
+        )
 
-    # Database Browse (updated to emit specific update signals for UI)
     def refresh_database_names(self):
-        """Refresh and populate database names in UI."""
-        self.ui_enable_request.emit(False)
-        try:
-            databases = self.connection_manager.get_databases(self.get_config())
-            self.database_names_updated.emit(databases)
-            self.log_message.emit(f"🗄️ พบฐานข้อมูล {len(databases)} รายการ", "success")
-        except Exception as e:
-            self.log_message.emit(f"❌ ไม่สามารถดึงรายการฐานข้อมูล: {str(e)}", "error")
-        finally:
-            self.ui_enable_request.emit(True)
+        self._refresh_data(
+            "databases",
+            self.connection_manager.get_databases,
+            self.database_names_updated,
+        )
 
     def refresh_database_tables(self):
-        """Refresh and populate database tables for the selected database."""
+        self._refresh_data(
+            "tables", self.connection_manager.get_tables, self.database_tables_updated
+        )
+
+    def _refresh_data(self, data_type, fetch_method, signal):
+        """แก้แล้ว: generic data refresh method"""
         self.ui_enable_request.emit(False)
         try:
             config = self.get_config()
-            tables = self.connection_manager.get_tables(config)
-            self.database_tables_updated.emit(tables)
-            self.log_message.emit(f"📊 พบตาราง {len(tables)} รายการ", "success")
+            data = fetch_method(config)
+            signal.emit(data)
+            self.log_message.emit(f"📡 Found {len(data)} {data_type}", "success")
         except Exception as e:
-            self.log_message.emit(f"❌ ไม่สามารถดึงรายการตาราง: {str(e)}", "error")
+            self.log_message.emit(f"❌ Failed to get {data_type}: {str(e)}", "error")
         finally:
             self.ui_enable_request.emit(True)
 
-    # Synchronization
-    def run_full_sync(self):  # Renamed from start_sync
-        """Start synchronization process (manual trigger)"""
-        self.ui_enable_request.emit(False)  # Disable UI during sync
-        self.last_sync_status_update.emit("in_progress")  # Set status to in progress
+    # Synchronization - แก้แล้ว: ลด complexity
+    def run_full_sync(self):
+        """เริ่มการซิงค์"""
+        self.ui_enable_request.emit(False)
+        self.last_sync_status_update.emit("in_progress")
+
         try:
-            # Validate configuration
             config = self.get_config()
             validation_result = self._validate_sync_config(config)
 
             if not validation_result["valid"]:
                 self.log_message.emit(f"⚠️ {validation_result['message']}", "warning")
-                self.ui_enable_request.emit(True)  # Re-enable UI on validation failure
-                self.last_sync_status_update.emit("error")  # Set status to error
+                self._sync_failed()
                 return False
 
-            # Check if sync is already running
             if self.sync_engine.is_sync_running():
-                self.log_message.emit("⚠️ การซิงค์กำลังดำเนินการอยู่", "warning")
-                self.ui_enable_request.emit(True)  # Re-enable UI
-                self.last_sync_status_update.emit(
-                    "in_progress"
-                )  # Keep status in progress
+                self.log_message.emit("⚠️ Sync already running", "warning")
+                self.ui_enable_request.emit(True)
                 return False
 
-            self.log_message.emit("🚀 เริ่มการซิงค์ข้อมูล...", "info")
-
-            # Start sync (sync_engine will emit progress and completion signals)
-            # No need to return success here, as _handle_sync_completion will manage UI updates
+            self.log_message.emit("🚀 Starting sync...", "info")
             self.sync_engine.start_sync(config)
             return True
 
         except Exception as e:
-            self.log_message.emit(f"❌ ไม่สามารถเริ่มการซิงค์: {str(e)}", "error")
-            self.ui_enable_request.emit(True)  # Re-enable UI on error
-            self.last_sync_status_update.emit("error")  # Set status to error
+            self.log_message.emit(f"❌ Sync start failed: {str(e)}", "error")
+            self._sync_failed()
             return False
 
+    def _sync_failed(self):
+        """แก้แล้ว: centralize sync failure handling"""
+        self.ui_enable_request.emit(True)
+        self.last_sync_status_update.emit("error")
+
     def stop_sync(self):
-        """Stop current synchronization"""
+        """หยุดการซิงค์"""
         try:
             if self.sync_engine.is_sync_running():
                 self.sync_engine.stop_sync()
-                self.log_message.emit("⏹️ หยุดการซิงค์แล้ว", "info")
-                self.ui_enable_request.emit(True)  # Re-enable UI
-                self.last_sync_status_update.emit(
-                    "never"
-                )  # Set status to never or disconnected
+                self.log_message.emit("⏹️ Sync stopped", "info")
+                self.ui_enable_request.emit(True)
+                self.last_sync_status_update.emit("never")
                 return True
             else:
-                self.log_message.emit("ℹ️ ไม่มีการซิงค์ที่กำลังทำงาน", "info")
+                self.log_message.emit("ℹ️ No sync running", "info")
                 return False
         except Exception as e:
-            self.log_message.emit(f"❌ ไม่สามารถหยุดการซิงค์: {str(e)}", "error")
+            self.log_message.emit(f"❌ Stop sync failed: {str(e)}", "error")
             return False
 
     # Auto-sync Management
-    def toggle_auto_sync(
-        self, enabled
-    ):  # Removed interval parameter as it's from config now
-        """Toggle automatic synchronization"""
+    def toggle_auto_sync(self, enabled):
+        """เปิด/ปิดการซิงค์อัตโนมัติ"""
         try:
             self.auto_sync_enabled = enabled
-            config = self.get_config()  # Get interval from config
-            interval = (
-                config.sync_interval
-            )  # Assuming sync_interval is in minutes from config_panel
+            config = self.get_config()
+            interval = config.sync_interval
 
             if enabled:
-                # Convert minutes to milliseconds for QTimer
                 self.auto_sync_timer.start(interval * 60 * 1000)
                 self.log_message.emit(
-                    f"⏰ เปิดการซิงค์อัตโนมัติ (ทุก {interval} นาที)", "success"
+                    f"⏰ Auto sync enabled ({interval}min)", "success"
                 )
             else:
                 self.auto_sync_timer.stop()
-                self.log_message.emit("⏸️ หยุดการซิงค์อัตโนมัติ", "info")
+                self.log_message.emit("⏸️ Auto sync disabled", "info")
 
-            self.auto_sync_status_update.emit(enabled)  # Update UI checkbox
+            self.auto_sync_status_update.emit(enabled)
             return True
 
         except Exception as e:
-            self.log_message.emit(
-                f"❌ ไม่สามารถเปลี่ยนการตั้งค่าการซิงค์อัตโนมัติ: {str(e)}", "error"
-            )
+            self.log_message.emit(f"❌ Auto sync toggle failed: {str(e)}", "error")
             return False
 
     def _auto_sync_triggered(self):
-        """Handle auto-sync timer trigger"""
+        """จัดการ auto-sync trigger"""
         if not self.sync_engine.is_sync_running():
-            self.log_message.emit("🔄 การซิงค์อัตโนมัติ", "info")
-            self.run_full_sync()  # Call the new run_full_sync
+            self.log_message.emit("🔄 Auto sync triggered", "info")
+            self.run_full_sync()
         else:
-            self.log_message.emit("⏭️ ข้ามการซิงค์อัตโนมัติ (กำลังซิงค์อยู่)", "info")
+            self.log_message.emit("⏭️ Auto sync skipped (running)", "info")
 
     # Utility Methods
     def clear_system_cache(self):
-        """Clears the system cache (placeholder for actual implementation)."""
-        self.log_message.emit("🧹 กำลังล้างแคชระบบ...", "info")
-        # --- Placeholder for actual cache clearing logic ---
-        # In a real application, this would involve clearing temporary files,
-        # resetting internal states, or interacting with a cache manager.
-        # For now, it's just a logging message.
-        # ---------------------------------------------------
-        logger.info("System cache cleared (placeholder).")
-        self.log_message.emit("✅ ล้างแคชระบบสำเร็จ", "success")
-        return True
+        """ล้างแคชระบบ"""
+        try:
+            self.log_message.emit("🧹 Clearing system cache...", "info")
+            self.cache_manager.force_cleanup()
+            return True
+        except Exception as e:
+            self.log_message.emit(f"❌ Cache clear failed: {str(e)}", "error")
+            return False
 
     def _validate_sync_config(self, config):
-        """Validate configuration for sync operation"""
+        """ตรวจสอบการตั้งค่าสำหรับซิงค์"""
         # SharePoint validation
         if not all(
             [
@@ -384,44 +313,73 @@ class AppController(QObject):
                 config.sharepoint_site,
             ]
         ):
-            return {"valid": False, "message": "กรุณากรอกข้อมูล SharePoint ให้ครบถ้วน"}
+            return {"valid": False, "message": "SharePoint config incomplete"}
 
-        if not config.sharepoint_list:  # Updated from list_name
-            return {"valid": False, "message": "กรุณาเลือกรายการ SharePoint"}
+        if not config.sharepoint_list:
+            return {"valid": False, "message": "No SharePoint list selected"}
 
         # Database validation
         if config.database_type == "sqlserver":
             if not all([config.sql_server, config.sql_database, config.sql_table_name]):
-                return {"valid": False, "message": "กรุณากรอกข้อมูล SQL Server ให้ครบถ้วน"}
-        elif config.database_type == "sqlite":  # SQLite
+                return {"valid": False, "message": "SQL Server config incomplete"}
+        else:  # SQLite
             if not all([config.sqlite_file, config.sqlite_table_name]):
-                return {"valid": False, "message": "กรุณากรอกข้อมูล SQLite ให้ครบถ้วน"}
-        else:  # Handle other database types if added
-            return {"valid": False, "message": "ประเภทฐานข้อมูลไม่ถูกต้อง"}
+                return {"valid": False, "message": "SQLite config incomplete"}
 
-        return {"valid": True, "message": "การตั้งค่าถูกต้อง"}
+        return {"valid": True, "message": "Configuration valid"}
+
+    # Event Handlers
+    def _handle_sync_completion(self, success, message, stats):
+        """จัดการเมื่อซิงค์เสร็จสิ้น"""
+        self.sync_completed.emit(success, message, stats)
+
+        if success:
+            self.last_sync_status_update.emit("success")
+            self.log_message.emit(f"✅ Sync completed: {message}", "success")
+        else:
+            self.last_sync_status_update.emit("error")
+            self.log_message.emit(f"❌ Sync failed: {message}", "error")
+
+        self.progress_update.emit(0)
+        self.current_task_update.emit("Idle")
+        self.ui_enable_request.emit(True)
+
+    def _handle_connection_status_change(self, service_name, status):
+        """จัดการการเปลี่ยนสถานะการเชื่อมต่อ"""
+        if service_name == "SharePoint":
+            self.sharepoint_status_update.emit(status)
+        elif service_name == "Database":
+            self.database_status_update.emit(status)
+        self.status_changed.emit(service_name, status)
+
+    def _on_cache_cleaned(self, result):
+        """จัดการเมื่อล้างแคชเสร็จ"""
+        self.log_message.emit(
+            f"✅ Cache cleaned: {result.space_freed_mb:.1f}MB freed", "success"
+        )
 
     def get_sync_status(self):
-        """Get current sync status"""
+        """ดึงสถานะการซิงค์"""
         return {
             "is_running": self.sync_engine.is_sync_running(),
             "auto_sync_enabled": self.auto_sync_enabled,
             "auto_sync_interval": (
-                self.auto_sync_timer.interval()
-                // (1000 * 60)  # Convert milliseconds to minutes
+                self.auto_sync_timer.interval() // (1000 * 60)
                 if self.auto_sync_timer.isActive()
                 else 0
             ),
         }
 
     def cleanup(self):
-        """Cleanup resources before application exit"""
+        """ทำความสะอาดก่อนปิดโปรแกรม"""
         try:
             if self.sync_engine.is_sync_running():
                 self.sync_engine.stop_sync()
 
             self.auto_sync_timer.stop()
-            self.log_message.emit("� ล้างทรัพยากรเสร็จสิ้น", "info")
+            self.cache_manager.stop_auto_cleanup()
+
+            self.log_message.emit("🧹 Resources cleaned", "info")
 
         except Exception as e:
-            logger.error(f"Error during cleanup: {str(e)}")
+            logger.error(f"Cleanup error: {str(e)}")
