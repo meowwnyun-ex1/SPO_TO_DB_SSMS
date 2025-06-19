@@ -132,3 +132,23 @@ IndexError: list index out of range
 2025-06-19 09:58:38 - utils.logger - INFO - Log directory: D:\GitHub\Project\SPO_TO_DB_SSMS\logs
 2025-06-19 09:58:38 - core.app_controller - INFO - 🎉 AppController initialized successfully
 2025-06-19 09:58:39 - connectors.database_connector - INFO - Database engine created for sqlserver
+2025-06-19 11:19:45 - utils.logger - INFO - Logging initialized - Level: INFO
+2025-06-19 11:19:45 - utils.logger - INFO - Log directory: D:\GitHub\Project\SPO_TO_DB_SSMS\logs
+2025-06-19 11:19:45 - core.app_controller - INFO - 🎉 AppController initialized successfully
+2025-06-19 11:19:47 - connectors.database_connector - INFO - Database engine created for sqlite
+2025-06-19 11:19:47 - connectors.database_connector - INFO - Database connection test successful (returned: 1)
+2025-06-19 11:21:02 - utils.logger - INFO - Logging initialized - Level: INFO
+2025-06-19 11:21:02 - utils.logger - INFO - Log directory: D:\GitHub\Project\SPO_TO_DB_SSMS\logs
+2025-06-19 11:21:02 - core.app_controller - INFO - 🎉 AppController initialized successfully
+2025-06-19 11:21:04 - connectors.database_connector - INFO - Database engine created for sqlite
+2025-06-19 11:21:04 - connectors.database_connector - INFO - Database connection test successful (returned: 1)
+2025-06-19 11:21:46 - utils.logger - INFO - Logging initialized - Level: INFO
+2025-06-19 11:21:46 - utils.logger - INFO - Log directory: D:\GitHub\Project\SPO_TO_DB_SSMS\logs
+2025-06-19 11:21:46 - core.app_controller - INFO - 🎉 AppController initialized successfully
+2025-06-19 11:21:48 - connectors.database_connector - INFO - Database engine created for sqlite
+2025-06-19 11:21:48 - connectors.database_connector - INFO - Database connection test successful (returned: 1)
+2025-06-19 11:23:02 - utils.logger - INFO - Logging initialized - Level: INFO
+2025-06-19 11:23:02 - utils.logger - INFO - Log directory: D:\GitHub\Project\SPO_TO_DB_SSMS\logs
+2025-06-19 11:23:02 - core.app_controller - INFO - 🎉 AppController initialized successfully
+2025-06-19 11:23:04 - connectors.database_connector - INFO - Database engine created for sqlite
+2025-06-19 11:23:04 - connectors.database_connector - INFO - Database connection test successful (returned: 1)

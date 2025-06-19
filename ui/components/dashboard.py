@@ -8,17 +8,118 @@ from PyQt5.QtWidgets import (
     QCheckBox,
     QTextEdit,
     QProgressBar,
+    QScrollArea,
+    QSizePolicy,
+    QGraphicsDropShadowEffect,
 )
 from PyQt5.QtCore import Qt, pyqtSignal, pyqtSlot
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QFont, QColor
 from ..widgets.status_card import StatusCard
 import logging
 
 logger = logging.getLogger(__name__)
 
 
+class ModernFrame(QFrame):
+    """Enhanced frame with glassmorphism effect"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setStyleSheet(
+            """
+            QFrame {
+                background: rgba(45, 55, 72, 0.95);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 16px;
+                backdrop-filter: blur(10px);
+            }
+        """
+        )
+
+        # Add shadow effect
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(20)
+        shadow.setColor(QColor(0, 0, 0, 80))
+        shadow.setOffset(0, 10)
+        self.setGraphicsEffect(shadow)
+
+
+class GradientHeaderFrame(QFrame):
+    """Enhanced gradient header with animations"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setStyleSheet(
+            """
+            QFrame {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #667eea, 
+                    stop:0.3 #764ba2, 
+                    stop:0.6 #f093fb, 
+                    stop:1 #f5576c);
+                border: none;
+                border-radius: 20px;
+            }
+            QLabel {
+                background: transparent;
+                color: #ffffff;
+            }
+        """
+        )
+
+        # Add glow effect
+        glow = QGraphicsDropShadowEffect()
+        glow.setBlurRadius(30)
+        glow.setColor(QColor(102, 126, 234, 100))
+        glow.setOffset(0, 0)
+        self.setGraphicsEffect(glow)
+
+
+class SectionHeader(QFrame):
+    """Modern section header with icon support"""
+
+    def __init__(self, title, icon="", parent=None):
+        super().__init__(parent)
+        self.title = title
+        self.icon = icon
+        self.setup_ui()
+
+    def setup_ui(self):
+        self.setStyleSheet(
+            """
+            QFrame {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #00d4ff, 
+                    stop:0.5 #5b73ff, 
+                    stop:1 #00d4ff);
+                border: none;
+                border-radius: 10px;
+                min-height: 50px;
+                max-height: 50px;
+            }
+            QLabel {
+                background: transparent;
+                color: #ffffff;
+                font-weight: 700;
+                font-size: 14px;
+                text-shadow: 0px 2px 4px rgba(0,0,0,0.3);
+            }
+        """
+        )
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(20, 12, 20, 12)
+
+        label_text = f"{self.icon} {self.title}" if self.icon else self.title
+        label = QLabel(label_text)
+        label.setFont(QFont("Segoe UI", 14, QFont.Bold))
+
+        layout.addWidget(label)
+        layout.addStretch()
+
+
 class Dashboard(QWidget):
-    """Symmetrical Dashboard Layout - เหมือนฝั่งขวา"""
+    """Modern Responsive Dashboard with Glassmorphism Design"""
 
     # Signals
     test_connections_requested = pyqtSignal()
@@ -33,194 +134,180 @@ class Dashboard(QWidget):
         self.setup_ui()
 
     def setup_ui(self):
-        """Layout แบบสมมาตร - จัดเป็น sections ชัดเจน"""
-        # Main container with consistent spacing
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(25, 25, 25, 25)
-        main_layout.setSpacing(20)
-
-        # Brand Header
-        self.create_brand_header(main_layout)
-
-        # Connection Status Section
-        self.create_connection_section(main_layout)
-
-        # Sync Progress Section
-        self.create_progress_section(main_layout)
-
-        # Control Panel Section
-        self.create_control_section(main_layout)
-
-        # System Logs Section
-        self.create_logs_section(main_layout)
-
-    def create_brand_header(self, layout):
-        """Brand header เหมือนฝั่งขวา"""
-        header = QFrame()
-        header.setStyleSheet(
+        """Responsive layout with modern design"""
+        # Main scroll area for responsiveness
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setStyleSheet(
             """
-            QFrame {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #667eea, stop:1 #764ba2);
-                border-radius: 12px;
-            }
-            QLabel {
+            QScrollArea {
+                border: none;
                 background: transparent;
-                color: #ffffff;
+            }
+            QScrollBar:vertical {
+                background: rgba(26, 32, 44, 0.5);
+                width: 8px;
+                border-radius: 4px;
+                margin: 0;
+            }
+            QScrollBar::handle:vertical {
+                background: rgba(0, 212, 255, 0.7);
+                border-radius: 4px;
+                min-height: 30px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: rgba(0, 212, 255, 0.9);
             }
         """
         )
-        header.setFixedHeight(80)
+
+        # Scroll content
+        scroll_content = QWidget()
+        scroll.setWidget(scroll_content)
+
+        # Main layout
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.addWidget(scroll)
+
+        # Content layout with responsive margins
+        content_layout = QVBoxLayout(scroll_content)
+        content_layout.setContentsMargins(30, 30, 30, 30)
+        content_layout.setSpacing(25)
+
+        # Create sections
+        self.create_brand_header(content_layout)
+        self.create_connection_section(content_layout)
+        self.create_progress_section(content_layout)
+        self.create_control_section(content_layout)
+        self.create_logs_section(content_layout)
+
+    def create_brand_header(self, layout):
+        """Enhanced brand header with modern typography"""
+        header = GradientHeaderFrame()
+        header.setMinimumHeight(100)
+        header.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         header_layout = QVBoxLayout(header)
-        header_layout.setContentsMargins(20, 12, 20, 12)
-        header_layout.setSpacing(4)
+        header_layout.setContentsMargins(30, 20, 30, 20)
+        header_layout.setSpacing(8)
 
-        title = QLabel("SharePoint to SQL Sync")
-        title.setFont(QFont("Segoe UI", 18, QFont.Bold))
+        # Main title with enhanced typography
+        title = QLabel("SharePoint to Microsoft SQL")
+        title.setFont(QFont("Segoe UI", 22, QFont.Bold))
         title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet(
+            """
+            color: #ffffff;
+            text-shadow: 0px 3px 6px rgba(0,0,0,0.4);
+            letter-spacing: 0.5px;
+        """
+        )
 
-        subtitle = QLabel("Powered by เฮียตอม 😎")
-        subtitle.setFont(QFont("Segoe UI", 11))
+        # Enhanced subtitle
+        subtitle = QLabel("Thammaphon Chittasuwanna (SDM) | Innovation")
+        subtitle.setFont(QFont("Segoe UI", 12, QFont.Normal))
         subtitle.setAlignment(Qt.AlignCenter)
-        subtitle.setStyleSheet("color: rgba(255,255,255,0.85);")
+        subtitle.setStyleSheet(
+            """
+            color: rgba(255,255,255,0.9);
+            text-shadow: 0px 2px 4px rgba(0,0,0,0.3);
+            font-weight: 500;
+            letter-spacing: 0.3px;
+        """
+        )
 
         header_layout.addWidget(title)
         header_layout.addWidget(subtitle)
-
         layout.addWidget(header)
 
     def create_connection_section(self, layout):
-        """Connection Status - เหมือน Authentication section"""
-        conn_frame = QFrame()
-        conn_frame.setStyleSheet(
-            """
-            QFrame {
-                background: #2d3748;
-                border: 1px solid #4a5568;
-                border-radius: 8px;
-            }
-        """
-        )
+        """Enhanced connection status section"""
+        conn_frame = ModernFrame()
 
         conn_layout = QVBoxLayout(conn_frame)
-        conn_layout.setContentsMargins(20, 20, 20, 20)
-        conn_layout.setSpacing(15)
+        conn_layout.setContentsMargins(25, 25, 25, 25)
+        conn_layout.setSpacing(20)
 
-        # Section header with blue background
-        header_frame = QFrame()
-        header_frame.setStyleSheet(
-            """
-            QFrame {
-                background: #00d4ff;
-                border-radius: 4px;
-            }
-            QLabel {
-                background: transparent;
-                color: #1a202c;
-                font-weight: bold;
-            }
-        """
-        )
-        header_frame.setFixedHeight(40)
+        # Modern section header
+        header = SectionHeader("Connection Status", "🔗")
+        conn_layout.addWidget(header)
 
-        header_layout = QHBoxLayout(header_frame)
-        header_layout.setContentsMargins(16, 10, 16, 10)
-
-        header_label = QLabel("Connection Status")
-        header_label.setFont(QFont("Segoe UI", 13, QFont.Bold))
-        header_layout.addWidget(header_label)
-
-        conn_layout.addWidget(header_frame)
-
-        # Status cards in horizontal layout
-        cards_layout = QHBoxLayout()
-        cards_layout.setSpacing(12)
+        # Responsive status cards layout
+        cards_container = QWidget()
+        cards_layout = QHBoxLayout(cards_container)
+        cards_layout.setSpacing(15)
 
         self.sp_status = StatusCard("SharePoint", "disconnected")
         self.db_status = StatusCard("Database", "disconnected")
         self.sync_status = StatusCard("Last Sync", "never")
 
+        # Make cards responsive
+        for card in [self.sp_status, self.db_status, self.sync_status]:
+            card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
         cards_layout.addWidget(self.sp_status)
         cards_layout.addWidget(self.db_status)
         cards_layout.addWidget(self.sync_status)
 
-        conn_layout.addLayout(cards_layout)
+        conn_layout.addWidget(cards_container)
         layout.addWidget(conn_frame)
 
     def create_progress_section(self, layout):
-        """Sync Progress - เหมือน Site Configuration"""
-        progress_frame = QFrame()
-        progress_frame.setStyleSheet(
-            """
-            QFrame {
-                background: #2d3748;
-                border: 1px solid #4a5568;
-                border-radius: 8px;
-            }
-        """
-        )
+        """Enhanced progress section with animations"""
+        progress_frame = ModernFrame()
 
         prog_layout = QVBoxLayout(progress_frame)
-        prog_layout.setContentsMargins(20, 20, 20, 20)
-        prog_layout.setSpacing(15)
+        prog_layout.setContentsMargins(25, 25, 25, 25)
+        prog_layout.setSpacing(20)
 
-        # Section header
-        header_frame = QFrame()
-        header_frame.setStyleSheet(
-            """
-            QFrame {
-                background: #00d4ff;
-                border-radius: 4px;
-            }
-            QLabel {
-                background: transparent;
-                color: #1a202c;
-                font-weight: bold;
-            }
-        """
-        )
-        header_frame.setFixedHeight(40)
+        # Modern section header
+        header = SectionHeader("Sync Progress", "📊")
+        prog_layout.addWidget(header)
 
-        header_layout = QHBoxLayout(header_frame)
-        header_layout.setContentsMargins(16, 10, 16, 10)
-
-        header_label = QLabel("Sync Progress")
-        header_label.setFont(QFont("Segoe UI", 13, QFont.Bold))
-        header_layout.addWidget(header_label)
-
-        prog_layout.addWidget(header_frame)
-
-        # Progress content
+        # Progress content with better spacing
         content_layout = QVBoxLayout()
-        content_layout.setSpacing(10)
+        content_layout.setSpacing(15)
 
-        # Progress bar
+        # Enhanced progress bar
         self.progress_bar = QProgressBar()
         self.progress_bar.setStyleSheet(
             """
             QProgressBar {
                 border: none;
-                border-radius: 4px;
-                background: #1a202c;
+                border-radius: 8px;
+                background: rgba(26, 32, 44, 0.8);
                 text-align: center;
-                font-weight: bold;
+                font-weight: 600;
                 color: #ffffff;
-                min-height: 8px;
-                max-height: 8px;
+                min-height: 16px;
+                max-height: 16px;
+                font-size: 12px;
             }
             QProgressBar::chunk {
-                border-radius: 4px;
-                background: #48bb78;
+                border-radius: 8px;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #48bb78, 
+                    stop:0.5 #38a169, 
+                    stop:1 #2f855a);
             }
         """
         )
         self.progress_bar.setVisible(False)
 
-        # Progress message
-        self.progress_message = QLabel("Ready to sync")
-        self.progress_message.setFont(QFont("Segoe UI", 11))
-        self.progress_message.setStyleSheet("color: #a0aec0; background: transparent;")
+        # Enhanced progress message
+        self.progress_message = QLabel("Ready to synchronize data")
+        self.progress_message.setFont(QFont("Segoe UI", 12, QFont.Medium))
+        self.progress_message.setStyleSheet(
+            """
+            color: #e2e8f0; 
+            background: transparent;
+            padding: 8px 0px;
+        """
+        )
+        self.progress_message.setAlignment(Qt.AlignLeft)
 
         content_layout.addWidget(self.progress_bar)
         content_layout.addWidget(self.progress_message)
@@ -229,186 +316,109 @@ class Dashboard(QWidget):
         layout.addWidget(progress_frame)
 
     def create_control_section(self, layout):
-        """Control Panel - เหมือน Options section"""
-        control_frame = QFrame()
-        control_frame.setStyleSheet(
-            """
-            QFrame {
-                background: #2d3748;
-                border: 1px solid #4a5568;
-                border-radius: 8px;
-            }
-        """
-        )
+        """Enhanced control panel with modern buttons"""
+        control_frame = ModernFrame()
 
         ctrl_layout = QVBoxLayout(control_frame)
-        ctrl_layout.setContentsMargins(20, 20, 20, 20)
-        ctrl_layout.setSpacing(15)
+        ctrl_layout.setContentsMargins(25, 25, 25, 25)
+        ctrl_layout.setSpacing(20)
 
-        # Section header
-        header_frame = QFrame()
-        header_frame.setStyleSheet(
-            """
-            QFrame {
-                background: #00d4ff;
-                border-radius: 4px;
-            }
-            QLabel {
-                background: transparent;
-                color: #1a202c;
-                font-weight: bold;
-            }
-        """
-        )
-        header_frame.setFixedHeight(40)
+        # Modern section header
+        header = SectionHeader("Control Panel", "⚙️")
+        ctrl_layout.addWidget(header)
 
-        header_layout = QHBoxLayout(header_frame)
-        header_layout.setContentsMargins(16, 10, 16, 10)
-
-        header_label = QLabel("Control Panel")
-        header_label.setFont(QFont("Segoe UI", 13, QFont.Bold))
-        header_layout.addWidget(header_label)
-
-        ctrl_layout.addWidget(header_frame)
-
-        # Control content
+        # Control content with responsive layout
         content_layout = QVBoxLayout()
-        content_layout.setSpacing(12)
+        content_layout.setSpacing(18)
 
-        # Main action buttons
-        main_buttons = QHBoxLayout()
-        main_buttons.setSpacing(10)
+        # Main action buttons - responsive
+        main_buttons_container = QWidget()
+        main_buttons = QHBoxLayout(main_buttons_container)
+        main_buttons.setSpacing(15)
 
         self.test_btn = QPushButton("🔍 Test Connections")
-        self.test_btn.setStyleSheet(self.get_primary_button_style())
-        self.test_btn.setFixedHeight(42)
+        self.test_btn.setStyleSheet(self.get_modern_primary_button_style())
+        self.test_btn.setMinimumHeight(48)
+        self.test_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.test_btn.clicked.connect(self.test_connections_requested.emit)
 
         self.sync_btn = QPushButton("🚀 Start Sync")
-        self.sync_btn.setStyleSheet(self.get_success_button_style())
-        self.sync_btn.setFixedHeight(42)
+        self.sync_btn.setStyleSheet(self.get_modern_success_button_style())
+        self.sync_btn.setMinimumHeight(48)
+        self.sync_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.sync_btn.clicked.connect(self._toggle_sync)
 
         main_buttons.addWidget(self.test_btn)
         main_buttons.addWidget(self.sync_btn)
 
-        # Secondary controls
-        secondary_layout = QHBoxLayout()
-        secondary_layout.setSpacing(10)
+        # Secondary controls - responsive
+        secondary_container = QWidget()
+        secondary_layout = QHBoxLayout(secondary_container)
+        secondary_layout.setSpacing(15)
 
         self.clear_btn = QPushButton("🧹 Clear Logs")
-        self.clear_btn.setStyleSheet(self.get_warning_button_style())
-        self.clear_btn.setFixedHeight(36)
+        self.clear_btn.setStyleSheet(self.get_modern_warning_button_style())
+        self.clear_btn.setMinimumHeight(40)
+        self.clear_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.clear_btn.clicked.connect(self.clear_logs_requested.emit)
 
-        # Auto sync checkbox
-        self.auto_sync_check = QCheckBox("🔄 Auto Sync")
-        self.auto_sync_check.setStyleSheet(
-            """
-            QCheckBox {
-                color: #ffffff;
-                font-size: 12px;
-                font-family: 'Segoe UI';
-                spacing: 8px;
-                background: transparent;
-                padding: 8px;
-            }
-            QCheckBox::indicator {
-                width: 16px;
-                height: 16px;
-            }
-            QCheckBox::indicator:unchecked {
-                background: #1a202c;
-                border: 2px solid #4a5568;
-                border-radius: 3px;
-            }
-            QCheckBox::indicator:checked {
-                background: #48bb78;
-                border: 2px solid #48bb78;
-                border-radius: 3px;
-            }
-        """
-        )
+        # Enhanced auto sync checkbox
+        self.auto_sync_check = QCheckBox("🔄 Auto Sync Every Hour")
+        self.auto_sync_check.setStyleSheet(self.get_modern_checkbox_style())
+        self.auto_sync_check.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.auto_sync_check.toggled.connect(self._toggle_auto_sync)
 
         secondary_layout.addWidget(self.clear_btn)
         secondary_layout.addWidget(self.auto_sync_check)
 
-        content_layout.addLayout(main_buttons)
-        content_layout.addLayout(secondary_layout)
+        content_layout.addWidget(main_buttons_container)
+        content_layout.addWidget(secondary_container)
 
         ctrl_layout.addLayout(content_layout)
         layout.addWidget(control_frame)
 
     def create_logs_section(self, layout):
-        """System Logs - เหมือน bottom section ฝั่งขวา"""
-        logs_frame = QFrame()
-        logs_frame.setStyleSheet(
-            """
-            QFrame {
-                background: #2d3748;
-                border: 1px solid #4a5568;
-                border-radius: 8px;
-            }
-        """
-        )
+        """Enhanced logs section with modern console design"""
+        logs_frame = ModernFrame()
 
         logs_layout = QVBoxLayout(logs_frame)
-        logs_layout.setContentsMargins(20, 20, 20, 20)
-        logs_layout.setSpacing(15)
+        logs_layout.setContentsMargins(25, 25, 25, 25)
+        logs_layout.setSpacing(20)
 
-        # Section header
-        header_frame = QFrame()
-        header_frame.setStyleSheet(
-            """
-            QFrame {
-                background: #00d4ff;
-                border-radius: 4px;
-            }
-            QLabel {
-                background: transparent;
-                color: #1a202c;
-                font-weight: bold;
-            }
-        """
-        )
-        header_frame.setFixedHeight(40)
+        # Modern section header
+        header = SectionHeader("System Logs", "📋")
+        logs_layout.addWidget(header)
 
-        header_layout = QHBoxLayout(header_frame)
-        header_layout.setContentsMargins(16, 10, 16, 10)
-
-        header_label = QLabel("System Logs")
-        header_label.setFont(QFont("Segoe UI", 13, QFont.Bold))
-        header_layout.addWidget(header_label)
-
-        logs_layout.addWidget(header_frame)
-
-        # Log console
+        # Enhanced log console
         self.log_console = QTextEdit()
         self.log_console.setStyleSheet(
             """
             QTextEdit {
-                background: #0f1419;
-                border: 1px solid #374151;
-                border-radius: 6px;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #0f1419, 
+                    stop:1 #1a1f2e);
+                border: 2px solid rgba(0, 212, 255, 0.2);
+                border-radius: 12px;
                 color: #48bb78;
-                font-family: 'Consolas', 'Monaco', monospace;
+                font-family: 'JetBrains Mono', 'Consolas', 'Monaco', monospace;
                 font-size: 11px;
-                padding: 12px;
-                line-height: 1.3;
+                padding: 16px;
+                line-height: 1.4;
+                selection-background-color: rgba(0, 212, 255, 0.3);
             }
             QScrollBar:vertical {
-                background: #1a202c;
-                width: 8px;
-                border-radius: 4px;
+                background: rgba(26, 32, 44, 0.8);
+                width: 10px;
+                border-radius: 5px;
+                margin: 2px;
             }
             QScrollBar::handle:vertical {
-                background: #4a5568;
-                border-radius: 4px;
-                min-height: 20px;
+                background: rgba(0, 212, 255, 0.6);
+                border-radius: 5px;
+                min-height: 30px;
             }
             QScrollBar::handle:vertical:hover {
-                background: #718096;
+                background: rgba(0, 212, 255, 0.8);
             }
             QScrollBar::add-line:vertical, 
             QScrollBar::sub-line:vertical {
@@ -416,73 +426,145 @@ class Dashboard(QWidget):
             }
         """
         )
-        self.log_console.setFixedHeight(120)
+        self.log_console.setMinimumHeight(140)
+        self.log_console.setMaximumHeight(200)
         self.log_console.setReadOnly(True)
-        self.log_console.setPlaceholderText("System logs will appear here...")
+        self.log_console.setPlaceholderText(
+            "🔍 System logs and status messages will appear here..."
+        )
 
         logs_layout.addWidget(self.log_console)
         layout.addWidget(logs_frame)
 
-    def get_primary_button_style(self):
-        """Blue button style"""
+    def get_modern_primary_button_style(self):
+        """Enhanced primary button with gradients and effects"""
         return """
             QPushButton {
-                background: #3182ce;
-                color: white;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #4299e1, 
+                    stop:1 #3182ce);
+                color: #ffffff;
                 border: none;
-                border-radius: 6px;
+                border-radius: 12px;
+                padding: 14px 24px;
+                font-weight: 600;
+                font-size: 13px;
+                font-family: 'Segoe UI';
+                text-shadow: 0px 1px 2px rgba(0,0,0,0.2);
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #63b3ed, 
+                    stop:1 #4299e1);
+                transform: translateY(-1px);
+            }
+            QPushButton:pressed {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #2b77a8, 
+                    stop:1 #2c5aa0);
+                transform: translateY(0px);
+            }
+        """
+
+    def get_modern_success_button_style(self):
+        """Enhanced success button with gradients"""
+        return """
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #48bb78, 
+                    stop:1 #38a169);
+                color: #ffffff;
+                border: none;
+                border-radius: 12px;
+                padding: 14px 24px;
+                font-weight: 600;
+                font-size: 13px;
+                font-family: 'Segoe UI';
+                text-shadow: 0px 1px 2px rgba(0,0,0,0.2);
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #68d391, 
+                    stop:1 #48bb78);
+                transform: translateY(-1px);
+            }
+            QPushButton:pressed {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #2f855a, 
+                    stop:1 #276749);
+                transform: translateY(0px);
+            }
+        """
+
+    def get_modern_warning_button_style(self):
+        """Enhanced warning button with gradients"""
+        return """
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #ed8936, 
+                    stop:1 #dd6b20);
+                color: #ffffff;
+                border: none;
+                border-radius: 10px;
                 padding: 12px 20px;
                 font-weight: 600;
                 font-size: 12px;
                 font-family: 'Segoe UI';
+                text-shadow: 0px 1px 2px rgba(0,0,0,0.2);
             }
             QPushButton:hover {
-                background: #2c5aa0;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #f6ad55, 
+                    stop:1 #ed8936);
+                transform: translateY(-1px);
             }
             QPushButton:pressed {
-                background: #2a4d96;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #c05621, 
+                    stop:1 #9c4221);
+                transform: translateY(0px);
             }
         """
 
-    def get_success_button_style(self):
-        """Green button style"""
+    def get_modern_checkbox_style(self):
+        """Enhanced checkbox with modern styling"""
         return """
-            QPushButton {
-                background: #38a169;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                padding: 12px 20px;
-                font-weight: 600;
-                font-size: 12px;
+            QCheckBox {
+                color: #e2e8f0;
+                font-size: 13px;
                 font-family: 'Segoe UI';
+                font-weight: 500;
+                spacing: 12px;
+                background: transparent;
+                padding: 12px 16px;
+                border-radius: 8px;
             }
-            QPushButton:hover {
-                background: #2f855a;
+            QCheckBox:hover {
+                background: rgba(0, 212, 255, 0.1);
             }
-            QPushButton:pressed {
-                background: #276749;
+            QCheckBox::indicator {
+                width: 20px;
+                height: 20px;
+                border-radius: 4px;
             }
-        """
-
-    def get_warning_button_style(self):
-        """Orange button style"""
-        return """
-            QPushButton {
-                background: #ed8936;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-weight: 600;
-                font-size: 11px;
-                font-family: 'Segoe UI';
+            QCheckBox::indicator:unchecked {
+                background: rgba(26, 32, 44, 0.8);
+                border: 2px solid rgba(74, 85, 104, 0.8);
             }
-            QPushButton:hover {
-                background: #dd6b20;
+            QCheckBox::indicator:unchecked:hover {
+                background: rgba(45, 55, 72, 0.9);
+                border: 2px solid rgba(0, 212, 255, 0.5);
             }
-            QPushButton:pressed {
-                background: #c05621;
+            QCheckBox::indicator:checked {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #48bb78, 
+                    stop:1 #38a169);
+                border: 2px solid #48bb78;
+            }
+            QCheckBox::indicator:checked:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #68d391, 
+                    stop:1 #48bb78);
             }
         """
 
@@ -506,7 +588,7 @@ class Dashboard(QWidget):
 
     @pyqtSlot(str, int, str)
     def update_progress(self, message, progress, level):
-        self.progress_message.setText(message)
+        self.progress_message.setText(f"📍 {message}")
 
         if progress > 0:
             self.progress_bar.setVisible(True)
@@ -520,39 +602,80 @@ class Dashboard(QWidget):
 
         if success:
             self.sync_btn.setText("🚀 Start Sync")
-            self.sync_btn.setStyleSheet(self.get_success_button_style())
+            self.sync_btn.setStyleSheet(self.get_modern_success_button_style())
             self.sync_status.update_status("success", "Completed")
-            self.progress_message.setText("Sync completed successfully")
+            self.progress_message.setText("✅ Sync completed successfully")
         else:
             self.sync_btn.setText("🚀 Start Sync")
-            self.sync_btn.setStyleSheet(self.get_success_button_style())
+            self.sync_btn.setStyleSheet(self.get_modern_success_button_style())
             self.sync_status.update_status("error", "Failed")
-            self.progress_message.setText("Sync failed")
+            self.progress_message.setText("❌ Sync failed - Check logs for details")
 
     def add_log_message(self, message, level):
         from datetime import datetime
 
         timestamp = datetime.now().strftime("%H:%M:%S")
 
+        # Enhanced color scheme with better contrast
         colors = {
-            "info": "#48bb78",
-            "success": "#68d391",
-            "warning": "#ed8936",
-            "error": "#f56565",
+            "info": "#64b5f6",  # Light blue
+            "success": "#81c784",  # Light green
+            "warning": "#ffb74d",  # Light orange
+            "error": "#e57373",  # Light red
+            "debug": "#ba68c8",  # Light purple
         }
 
+        # Enhanced formatting with better typography
         color = colors.get(level, "#ffffff")
-        formatted = f'<span style="color: {color}">[{timestamp}] {message}</span>'
+        level_icon = {
+            "info": "ℹ️",
+            "success": "✅",
+            "warning": "⚠️",
+            "error": "❌",
+            "debug": "🔧",
+        }.get(level, "📝")
+
+        formatted = f"""
+        <div style="margin: 4px 0; padding: 6px 0; border-left: 3px solid {color}; padding-left: 12px;">
+            <span style="color: #718096; font-size: 10px;">[{timestamp}]</span>
+            <span style="color: {color}; font-weight: 500; margin-left: 8px;">{level_icon} {message}</span>
+        </div>
+        """
 
         self.log_console.append(formatted)
 
-        # Auto scroll
+        # Auto scroll to bottom
         cursor = self.log_console.textCursor()
         cursor.movePosition(cursor.End)
         self.log_console.setTextCursor(cursor)
 
     def clear_logs(self):
         self.log_console.clear()
+        self.add_log_message("Logs cleared", "info")
 
     def set_auto_sync_enabled(self, enabled):
         self.auto_sync_check.setChecked(enabled)
+
+    def resizeEvent(self, event):
+        """Handle responsive behavior on window resize"""
+        super().resizeEvent(event)
+
+        # Adjust margins based on window size
+        width = self.width()
+        if width < 800:
+            # Mobile/small screen
+            margins = (15, 15, 15, 15)
+            spacing = 15
+        elif width < 1200:
+            # Tablet/medium screen
+            margins = (25, 25, 25, 25)
+            spacing = 20
+        else:
+            # Desktop/large screen
+            margins = (30, 30, 30, 30)
+            spacing = 25
+
+        # Update layout margins
+        if hasattr(self, "content_layout"):
+            self.content_layout.setContentsMargins(*margins)
+            self.content_layout.setSpacing(spacing)
