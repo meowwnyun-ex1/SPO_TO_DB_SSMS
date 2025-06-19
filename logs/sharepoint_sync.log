@@ -152,3 +152,6 @@ IndexError: list index out of range
 2025-06-19 11:23:02 - core.app_controller - INFO - 🎉 AppController initialized successfully
 2025-06-19 11:23:04 - connectors.database_connector - INFO - Database engine created for sqlite
 2025-06-19 11:23:04 - connectors.database_connector - INFO - Database connection test successful (returned: 1)
+2025-06-19 18:47:07 - utils.logger - INFO - Logging initialized - Level: INFO
+2025-06-19 18:47:07 - utils.logger - INFO - Log directory: E:\GitHub\Project\spo_to_db_ssms\logs
+2025-06-19 18:47:07 - core.app_controller - INFO - 🎉 AppController initialized successfully
