@@ -1,39 +1,29 @@
 {
-  "sharepoint": {
-    "site": "https://globaldenso.sharepoint.com/sites/AP_000045",
-    "list": "spo_to_sql_ssms",
-    "client_id": "your_client_id",
-    "client_secret": "your_secret",
-    "tenant_id": "your_tenant",
-    "use_graph_api": false
-  },
-  "database": {
-    "sqlserver": {
-      "server": "XTS123\\MSSQL2S",
-      "database": "spo_to_sql_ssms",
-      "username": "TS00029",
-      "password": "Thammaphon@TS00029"
-    },
-    "sqlite": {
-      "file": "data.db",
-      "table_name": "spo_to_sql_ssms",
-      "create_table": true
-    }
-  },
-  "sync": {
-    "interval": 3600,
-    "mode": "full",
-    "auto_sync_enabled": false,
-    "batch_size": 1000
-  },
-  "advanced": {
-    "connection_timeout": 30,
-    "max_retries": 3,
-    "parallel_processing": false,
-    "log_level": "INFO"
-  },
-  "notifications": {
-    "success_notifications": true,
-    "error_notifications": true
-  }
+  "tenant_id": "",
+  "client_id": "",
+  "client_secret": "",
+  "site_url": "",
+  "list_name": "",
+  "use_graph_api": false,
+  "database_type": "sqlserver",
+  "sql_server": "XTS123\\MSSQL2S",
+  "sql_database": "spo_to_sql_ssms",
+  "sql_username": "TS00029",
+  "sql_password": "Thammaphon@TS00029",
+  "sql_table_name": "spo_to_sql_ssms",
+  "sql_create_table": true,
+  "sql_truncate_before": true,
+  "sqlite_file": "data.db",
+  "sqlite_table_name": "sharepoint_data",
+  "sqlite_create_table": true,
+  "sync_interval": 3600,
+  "sync_mode": "full",
+  "auto_sync_enabled": false,
+  "batch_size": 1000,
+  "connection_timeout": 30,
+  "max_retries": 3,
+  "log_level": "INFO",
+  "parallel_processing": false,
+  "success_notifications": true,
+  "error_notifications": true
 }
