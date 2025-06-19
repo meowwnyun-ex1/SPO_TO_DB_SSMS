@@ -1,4 +1,4 @@
-from PyQt5.QtCore import QThread, QObject, pyqtSignal
+from PyQt6.QtCore import QThread, QObject, pyqtSignal
 from connectors.sharepoint_connector import SharePointConnector
 from connectors.database_connector import DatabaseConnector
 import logging
