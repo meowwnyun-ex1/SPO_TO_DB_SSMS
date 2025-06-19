@@ -1,5 +1,0 @@
-2025-06-19 02:03:22,701 - WARNING - Token attempt 1 failed: Could not find a suitable TLS CA certificate bundle, invalid path: E:\PostgreSQL\17\ssl\certs\ca-bundle.crt
-2025-06-19 02:03:27,703 - WARNING - Token attempt 2 failed: Could not find a suitable TLS CA certificate bundle, invalid path: E:\PostgreSQL\17\ssl\certs\ca-bundle.crt
-2025-06-19 02:03:32,704 - WARNING - Token attempt 3 failed: Could not find a suitable TLS CA certificate bundle, invalid path: E:\PostgreSQL\17\ssl\certs\ca-bundle.crt
-2025-06-19 02:03:37,705 - ERROR - Failed to get access token after 3 attempts
-2025-06-19 02:03:37,705 - ERROR - SharePoint connection test failed: Authentication failed

@@ -31,16 +31,14 @@ class MainWindow(QMainWindow):
         """Window configuration"""
         self.setWindowTitle("SharePoint to SQL by เฮียตอม😎")
         self.setGeometry(100, 100, 1600, 1000)
-        self.setMinimumSize(900, 600)
+        self.setMinimumSize(1400, 900)
 
-        # Modern dark theme
+        # Clean dark theme
         self.setStyleSheet(
             """
             QMainWindow {
-                background: #181a24;
-                color: #f4f4f4;
-                font-family: 'Segoe UI', 'Arial', sans-serif;
-                font-size: 1.08em;
+                background: #1a1a2e;
+                color: #ffffff;
             }
             QSplitter {
                 background: transparent;
@@ -48,9 +46,9 @@ class MainWindow(QMainWindow):
             }
             QSplitter::handle {
                 background: #4a5568;
-                width: 3px;
-                margin: 12px;
-                border-radius: 2px;
+                width: 2px;
+                margin: 10px;
+                border-radius: 1px;
             }
             QSplitter::handle:hover {
                 background: #00d4ff;
@@ -63,18 +61,16 @@ class MainWindow(QMainWindow):
         self.status_bar.setStyleSheet(
             """
             QStatusBar {
-                background: #232946;
-                color: #00d4ff;
-                border-top: 2px solid #00d4ff;
-                padding: 14px 24px;
-                font-size: 1.12em;
-                font-family: 'Segoe UI', 'Arial', sans-serif;
-                font-weight: 600;
+                background: #16213e;
+                color: #ffffff;
+                border-top: 1px solid #4a5568;
+                padding: 8px 15px;
+                font-size: 12px;
             }
         """
         )
         self.setStatusBar(self.status_bar)
-        self.status_bar.showMessage("�� ระบบพร้อมใช้งาน")
+        self.status_bar.showMessage("🟢 ระบบพร้อมใช้งาน")
 
     def setup_ui(self):
         """Main layout - fixed spacing and alignment"""
@@ -83,8 +79,8 @@ class MainWindow(QMainWindow):
 
         # Main horizontal layout
         main_layout = QHBoxLayout(central_widget)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
+        main_layout.setContentsMargins(0, 0, 0, 0)  # Remove margins
+        main_layout.setSpacing(0)  # Remove spacing
 
         # Splitter for responsive design
         splitter = QSplitter(Qt.Horizontal)
@@ -94,23 +90,14 @@ class MainWindow(QMainWindow):
         self.dashboard = Dashboard(self.controller)
         self.config_panel = ConfigPanel(self.controller)
 
-        # Optionally wrap in QScrollArea for overflow
-        # from PyQt5.QtWidgets import QScrollArea
-        # dashboard_scroll = QScrollArea()
-        # dashboard_scroll.setWidget(self.dashboard)
-        # dashboard_scroll.setWidgetResizable(True)
-        # config_scroll = QScrollArea()
-        # config_scroll.setWidget(self.config_panel)
-        # config_scroll.setWidgetResizable(True)
-        # splitter.addWidget(dashboard_scroll)
-        # splitter.addWidget(config_scroll)
+        # Add to splitter
         splitter.addWidget(self.dashboard)
         splitter.addWidget(self.config_panel)
 
         # Set proportions (dashboard: config = 1:2)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 2)
-        splitter.setSizes([600, 1200])
+        splitter.setSizes([500, 1000])  # Fixed initial sizes
 
         main_layout.addWidget(splitter)
 
