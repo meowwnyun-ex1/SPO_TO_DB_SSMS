@@ -1,30 +1,39 @@
 {
-    "sharepoint": {
-        "site": "https://yourdomain.sharepoint.com/sites/YourSite",
-        "list": "your_list_name",
-        "client_id": "your_client_id",
-        "client_secret": "your_secret",
-        "tenant_id": "your_tenant",
-        "use_graph_api": false
+  "sharepoint": {
+    "site": "https://globaldenso.sharepoint.com/sites/AP_000045",
+    "list": "spo_to_sql_ssms",
+    "client_id": "your_client_id",
+    "client_secret": "your_secret",
+    "tenant_id": "your_tenant",
+    "use_graph_api": false
+  },
+  "database": {
+    "sqlserver": {
+      "server": "XTS123\\MSSQL2S",
+      "database": "spo_to_sql_ssms",
+      "username": "TS00029",
+      "password": "Thammaphon@TS00029"
     },
-    "database": {
-        "type": "sqlserver",
-        "sqlserver": {
-            "server": "your_sql_server.database.windows.net",
-            "database": "your_db",
-            "username": "your_user",
-            "password": "your_password",
-            "table_name": "your_table",
-            "create_table": true
-        },
-        "sqlite": {
-            "file": "data.db",
-            "table_name": "data",
-            "create_table": true
-        }
-    },
-    "sync": {
-        "interval": 3600,
-        "mode": "full"
+    "sqlite": {
+      "file": "data.db",
+      "table_name": "spo_to_sql_ssms",
+      "create_table": true
     }
+  },
+  "sync": {
+    "interval": 3600,
+    "mode": "full",
+    "auto_sync_enabled": false,
+    "batch_size": 1000
+  },
+  "advanced": {
+    "connection_timeout": 30,
+    "max_retries": 3,
+    "parallel_processing": false,
+    "log_level": "INFO"
+  },
+  "notifications": {
+    "success_notifications": true,
+    "error_notifications": true
+  }
 }
