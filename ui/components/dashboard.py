@@ -221,7 +221,7 @@ class UltraModernDashboard(QWidget):
     def clear_logs(self):
         """ล้าง logs"""
         self.log_console.clear()
-        self.add_log_message("🧹 Neural matrix purged - system ready", "info")
+        self.add_log_message("🧹 DENSO Neural matrix purged - system ready", "info")
 
     def set_auto_sync_enabled(self, enabled):
         """ตั้งค่า auto sync"""
