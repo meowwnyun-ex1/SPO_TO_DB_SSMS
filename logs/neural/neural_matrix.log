@@ -1,0 +1,9 @@
+[19:24:27.750] ◉ utils.logger → ◉ Neural logging system initialized
+[19:24:27.750] ◉ utils.logger → ◦ Log level: INFO
+[19:24:27.750] ◉ utils.logger → ◦ Quantum directory: E:\GitHub\Project\spo_to_db_ssms\logs
+[19:24:27.751] ◉ utils.logger → ◦ Quantum mode: enabled
+[19:24:28.297] ◉ core.app_controller → 🎉 AppController initialized successfully
+[19:38:14.305] ◉ utils.logger → ◉ Neural logging system initialized
+[19:38:14.305] ◉ utils.logger → ◦ Log level: INFO
+[19:38:14.305] ◉ utils.logger → ◦ Quantum directory: E:\GitHub\Project\spo_to_db_ssms\logs
+[19:38:14.305] ◉ utils.logger → ◦ Quantum mode: enabled

@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
@@ -12,114 +12,345 @@ from PyQt5.QtWidgets import (
     QSizePolicy,
     QGraphicsDropShadowEffect,
 )
-from PyQt5.QtCore import Qt, pyqtSignal, pyqtSlot
-from PyQt5.QtGui import QFont, QColor
-from ..widgets.status_card import StatusCard
+from PyQt6.QtCore import (
+    Qt,
+    pyqtSignal,
+    pyqtSlot,
+    QTimer,
+    QPropertyAnimation,
+    QEasingCurve,
+    QRect,
+)
+from PyQt6.QtGui import QFont, QColor
+from ..widgets.status_card import UltraModernStatusCard
+from ..styles.theme import (
+    UltraModernColors,
+    get_ultra_modern_card_style,
+    get_ultra_modern_button_style,
+    get_neon_checkbox_style,
+    get_cyber_log_style,
+    get_holographic_progress_style,
+    get_background_image_style,
+)
 import logging
 
 logger = logging.getLogger(__name__)
 
 
-class ModernFrame(QFrame):
-    """Enhanced frame with glassmorphism effect"""
+class HolographicFrame(QFrame):
+    """เฟรมแบบ holographic พร้อม dimensional effects"""
 
-    def __init__(self, parent=None):
+    def __init__(self, variant="default", parent=None):
         super().__init__(parent)
-        self.setStyleSheet(
-            """
-            QFrame {
-                background: rgba(45, 55, 72, 0.95);
-                border: 1px solid rgba(255, 255, 255, 0.1);
-                border-radius: 16px;
-                backdrop-filter: blur(10px);
-            }
-        """
-        )
+        self.variant = variant
+        self.setup_holographic_style()
+        self.setup_hover_effects()
 
-        # Add shadow effect
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(20)
-        shadow.setColor(QColor(0, 0, 0, 80))
-        shadow.setOffset(0, 10)
-        self.setGraphicsEffect(shadow)
+    def setup_holographic_style(self):
+        """ตั้งค่าสไตล์ holographic"""
+        style = get_ultra_modern_card_style(self.variant)
+        self.setStyleSheet(style)
 
+        # เพิ่ม shadow effects
+        self.shadow_effect = QGraphicsDropShadowEffect()
+        self.shadow_effect.setBlurRadius(20)
+        self.shadow_effect.setColor(QColor(0, 0, 0, 80))
+        self.shadow_effect.setOffset(0, 10)
+        self.setGraphicsEffect(self.shadow_effect)
 
-class GradientHeaderFrame(QFrame):
-    """Enhanced gradient header with animations"""
+    def setup_hover_effects(self):
+        """ตั้งค่า hover animations"""
+        self.hover_animation = QPropertyAnimation(self, b"geometry")
+        self.hover_animation.setDuration(200)
+        self.hover_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
 
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setStyleSheet(
-            """
-            QFrame {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #667eea, 
-                    stop:0.3 #764ba2, 
-                    stop:0.6 #f093fb, 
-                    stop:1 #f5576c);
-                border: none;
-                border-radius: 20px;
-            }
-            QLabel {
-                background: transparent;
-                color: #ffffff;
-            }
-        """
-        )
+    def enterEvent(self, event):
+        """Hover effect"""
+        super().enterEvent(event)
+        # เพิ่ม glow effect
+        self.shadow_effect.setColor(QColor(0, 212, 255, 120))
+        self.shadow_effect.setBlurRadius(30)
 
-        # Add glow effect
-        glow = QGraphicsDropShadowEffect()
-        glow.setBlurRadius(30)
-        glow.setColor(QColor(102, 126, 234, 100))
-        glow.setOffset(0, 0)
-        self.setGraphicsEffect(glow)
+    def leaveEvent(self, event):
+        """Reset hover"""
+        super().leaveEvent(event)
+        self.shadow_effect.setColor(QColor(0, 0, 0, 80))
+        self.shadow_effect.setBlurRadius(20)
 
 
-class SectionHeader(QFrame):
-    """Modern section header with icon support"""
+class NeonSectionHeader(QFrame):
+    """หัวข้อส่วนแบบ neon glow"""
 
     def __init__(self, title, icon="", parent=None):
         super().__init__(parent)
         self.title = title
         self.icon = icon
-        self.setup_ui()
+        self.setup_neon_ui()
 
-    def setup_ui(self):
+    def setup_neon_ui(self):
+        """ตั้งค่า UI แบบ neon"""
+        self.setFixedHeight(60)
+
+        # Holographic background
         self.setStyleSheet(
-            """
-            QFrame {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #00d4ff, 
-                    stop:0.5 #5b73ff, 
-                    stop:1 #00d4ff);
-                border: none;
-                border-radius: 10px;
-                min-height: 50px;
-                max-height: 50px;
-            }
-            QLabel {
+            f"""
+            QFrame {{
+                background: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:1,
+                    stop:0 {UltraModernColors.NEON_BLUE}40,
+                    stop:0.3 {UltraModernColors.NEON_PURPLE}30,
+                    stop:0.7 {UltraModernColors.NEON_PINK}40,
+                    stop:1 {UltraModernColors.NEON_BLUE}40
+                );
+                border: 2px solid {UltraModernColors.NEON_BLUE};
+                border-radius: 16px;
+                box-shadow: 
+                    0 0 20px rgba(0, 212, 255, 0.5),
+                    inset 0 0 20px rgba(0, 212, 255, 0.1);
+            }}
+            QLabel {{
                 background: transparent;
-                color: #ffffff;
+                color: {UltraModernColors.TEXT_LUMINOUS};
                 font-weight: 700;
-                font-size: 14px;
-                text-shadow: 0px 2px 4px rgba(0,0,0,0.3);
-            }
+                text-shadow: 
+                    0 0 10px {UltraModernColors.NEON_BLUE},
+                    0 2px 4px rgba(0, 0, 0, 0.5);
+            }}
         """
         )
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(20, 12, 20, 12)
+        layout.setContentsMargins(24, 16, 24, 16)
 
+        # Icon + Title
         label_text = f"{self.icon} {self.title}" if self.icon else self.title
         label = QLabel(label_text)
-        label.setFont(QFont("Segoe UI", 14, QFont.Bold))
+        label.setFont(QFont("Inter", 16, QFont.Weight.Bold))
 
         layout.addWidget(label)
         layout.addStretch()
 
+        # เพิ่ม glow effect
+        glow = QGraphicsDropShadowEffect()
+        glow.setBlurRadius(25)
+        glow.setColor(QColor(0, 212, 255, 100))
+        glow.setOffset(0, 0)
+        self.setGraphicsEffect(glow)
 
-class Dashboard(QWidget):
-    """Modern Responsive Dashboard with Glassmorphism Design"""
+
+class CyberButton(QPushButton):
+    """ปุ่มแบบ cyberpunk พร้อม advanced effects"""
+
+    def __init__(self, text, variant="primary", size="md", parent=None):
+        super().__init__(text, parent)
+        self.variant = variant
+        self.size = size
+        self.setup_cyber_style()
+        self.setup_animations()
+
+    def setup_cyber_style(self):
+        """ตั้งค่าสไตล์ cyberpunk"""
+        style = get_ultra_modern_button_style(self.variant, self.size)
+        self.setStyleSheet(style)
+
+        # เพิ่ม glow effect
+        self.glow_effect = QGraphicsDropShadowEffect()
+        self.glow_effect.setBlurRadius(15)
+
+        if self.variant == "primary":
+            self.glow_effect.setColor(QColor(102, 126, 234, 80))
+        elif self.variant == "success":
+            self.glow_effect.setColor(QColor(86, 171, 47, 80))
+        elif self.variant == "warning":
+            self.glow_effect.setColor(QColor(237, 137, 54, 80))
+        else:
+            self.glow_effect.setColor(QColor(100, 100, 100, 60))
+
+        self.glow_effect.setOffset(0, 0)
+        self.setGraphicsEffect(self.glow_effect)
+
+    def setup_animations(self):
+        """ตั้งค่า hover animations"""
+        self.press_animation = QPropertyAnimation(self, b"geometry")
+        self.press_animation.setDuration(100)
+        self.press_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+    def enterEvent(self, event):
+        """Enhanced hover effect"""
+        super().enterEvent(event)
+        # เพิ่ม glow intensity
+        current_color = self.glow_effect.color()
+        enhanced_color = QColor(
+            current_color.red(), current_color.green(), current_color.blue(), 150
+        )
+        self.glow_effect.setColor(enhanced_color)
+        self.glow_effect.setBlurRadius(25)
+
+    def leaveEvent(self, event):
+        """Reset glow"""
+        super().leaveEvent(event)
+        current_color = self.glow_effect.color()
+        normal_color = QColor(
+            current_color.red(), current_color.green(), current_color.blue(), 80
+        )
+        self.glow_effect.setColor(normal_color)
+        self.glow_effect.setBlurRadius(15)
+
+    def mousePressEvent(self, event):
+        """Press animation with scale effect"""
+        super().mousePressEvent(event)
+        current_rect = self.geometry()
+        pressed_rect = QRect(
+            current_rect.x() + 2,
+            current_rect.y() + 2,
+            current_rect.width() - 4,
+            current_rect.height() - 4,
+        )
+        self.press_animation.setStartValue(current_rect)
+        self.press_animation.setEndValue(pressed_rect)
+        self.press_animation.start()
+
+    def mouseReleaseEvent(self, event):
+        """Release animation"""
+        super().mouseReleaseEvent(event)
+        # Implement release animation if needed
+
+
+class HolographicProgressBar(QProgressBar):
+    """Progress bar แบบ holographic"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setup_holographic_style()
+        self.setup_glow_animation()
+
+    def setup_holographic_style(self):
+        """ตั้งค่าสไตล์ holographic"""
+        style = get_holographic_progress_style()
+        self.setStyleSheet(style)
+
+        # เพิ่ม glow effect
+        self.glow_effect = QGraphicsDropShadowEffect()
+        self.glow_effect.setBlurRadius(20)
+        self.glow_effect.setColor(QColor(102, 126, 234, 100))
+        self.glow_effect.setOffset(0, 0)
+        self.setGraphicsEffect(self.glow_effect)
+
+    def setup_glow_animation(self):
+        """ตั้งค่า glow animation"""
+        self.glow_timer = QTimer()
+        self.glow_timer.timeout.connect(self.animate_glow)
+        self.glow_intensity = 100
+        self.glow_direction = 1
+
+    def animate_glow(self):
+        """Animation สำหรับ glow effect"""
+        self.glow_intensity += self.glow_direction * 20
+        if self.glow_intensity >= 200:
+            self.glow_direction = -1
+        elif self.glow_intensity <= 50:
+            self.glow_direction = 1
+
+        self.glow_effect.setColor(QColor(102, 126, 234, self.glow_intensity))
+
+    def setVisible(self, visible):
+        """Override setVisible เพื่อควบคุม animation"""
+        super().setVisible(visible)
+        if visible:
+            self.glow_timer.start(100)
+        else:
+            self.glow_timer.stop()
+
+
+class CyberLogConsole(QTextEdit):
+    """Console แบบ cyberpunk terminal"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setup_cyber_style()
+        self.setup_typing_effect()
+
+    def setup_cyber_style(self):
+        """ตั้งค่าสไตล์ cyberpunk terminal"""
+        style = get_cyber_log_style()
+        self.setStyleSheet(style)
+
+        # เพิ่ม terminal properties
+        self.setReadOnly(True)
+        self.setPlaceholderText("🔍 Neural network activity monitoring initialized...")
+
+        # เพิ่ม glow effect
+        self.glow_effect = QGraphicsDropShadowEffect()
+        self.glow_effect.setBlurRadius(25)
+        self.glow_effect.setColor(QColor(0, 212, 255, 80))
+        self.glow_effect.setOffset(0, 0)
+        self.setGraphicsEffect(self.glow_effect)
+
+    def setup_typing_effect(self):
+        """ตั้งค่า typing effect"""
+        self.typing_timer = QTimer()
+        self.current_message = ""
+        self.typing_index = 0
+
+    def add_message_with_typing(self, message, level="info"):
+        """เพิ่มข้อความแบบ typing effect"""
+        from datetime import datetime
+
+        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+
+        # สีตาม level
+        colors = {
+            "info": UltraModernColors.NEON_BLUE,
+            "success": UltraModernColors.NEON_GREEN,
+            "warning": UltraModernColors.NEON_YELLOW,
+            "error": UltraModernColors.NEON_PINK,
+            "debug": UltraModernColors.NEON_PURPLE,
+        }
+
+        # ไอคอนตาม level
+        icons = {
+            "info": "◉",
+            "success": "◎",
+            "warning": "◈",
+            "error": "◆",
+            "debug": "◇",
+        }
+
+        color = colors.get(level, UltraModernColors.NEON_GREEN)
+        icon = icons.get(level, "◉")
+
+        # สร้าง HTML message พร้อม cyber styling
+        formatted_message = f"""
+        <div style="
+            margin: 8px 0; 
+            padding: 8px 0; 
+            border-left: 3px solid {color}; 
+            padding-left: 16px;
+            background: linear-gradient(90deg, {color}10, transparent);
+        ">
+            <span style="
+                color: #64748b; 
+                font-size: 11px; 
+                font-family: 'JetBrains Mono', monospace;
+            ">[{timestamp}]</span>
+            <span style="
+                color: {color}; 
+                font-weight: 600; 
+                margin-left: 12px;
+                text-shadow: 0 0 8px {color}80;
+            ">{icon} {message}</span>
+        </div>
+        """
+
+        self.append(formatted_message)
+
+        # Auto scroll with smooth animation
+        scrollbar = self.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
+
+
+class UltraModernDashboard(QWidget):
+    """Dashboard แบบ ultra modern holographic พร้อม dimensional effects"""
 
     # Signals
     test_connections_requested = pyqtSignal()
@@ -129,37 +360,40 @@ class Dashboard(QWidget):
     auto_sync_toggled = pyqtSignal(bool, int)
 
     def __init__(self, controller):
-        super().__init__()
+        super().__init__(controller)
         self.controller = controller
-        self.setup_ui()
+        self.setup_ultra_modern_ui()
+        self.setup_background_effects()
 
-    def setup_ui(self):
-        """Responsive layout with modern design"""
-        # Main scroll area for responsiveness
+    def setup_ultra_modern_ui(self):
+        """ตั้งค่า UI แบบ ultra modern"""
+        # Main scroll area สำหรับ responsive design
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         scroll.setStyleSheet(
-            """
-            QScrollArea {
+            f"""
+            QScrollArea {{
                 border: none;
                 background: transparent;
-            }
-            QScrollBar:vertical {
-                background: rgba(26, 32, 44, 0.5);
-                width: 8px;
-                border-radius: 4px;
-                margin: 0;
-            }
-            QScrollBar::handle:vertical {
-                background: rgba(0, 212, 255, 0.7);
-                border-radius: 4px;
+            }}
+            QScrollBar:vertical {{
+                background: rgba(0, 0, 0, 0.3);
+                width: 12px;
+                border-radius: 6px;
+                margin: 2px;
+            }}
+            QScrollBar::handle:vertical {{
+                background: {UltraModernColors.NEON_BLUE};
+                border-radius: 6px;
                 min-height: 30px;
-            }
-            QScrollBar::handle:vertical:hover {
-                background: rgba(0, 212, 255, 0.9);
-            }
+                box-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background: {UltraModernColors.NEON_PURPLE};
+                box-shadow: 0 0 15px rgba(189, 94, 255, 0.7);
+            }}
         """
         )
 
@@ -172,81 +406,112 @@ class Dashboard(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.addWidget(scroll)
 
-        # Content layout with responsive margins
+        # Content layout พร้อม responsive margins
         content_layout = QVBoxLayout(scroll_content)
         content_layout.setContentsMargins(30, 30, 30, 30)
-        content_layout.setSpacing(25)
+        content_layout.setSpacing(30)
 
-        # Create sections
-        self.create_brand_header(content_layout)
-        self.create_connection_section(content_layout)
-        self.create_progress_section(content_layout)
-        self.create_control_section(content_layout)
-        self.create_logs_section(content_layout)
+        # สร้างส่วนต่างๆ
+        self.create_holographic_header(content_layout)
+        self.create_neural_connection_section(content_layout)
+        self.create_quantum_progress_section(content_layout)
+        self.create_cyber_control_section(content_layout)
+        self.create_matrix_logs_section(content_layout)
 
-    def create_brand_header(self, layout):
-        """Enhanced brand header with modern typography"""
-        header = GradientHeaderFrame()
-        header.setMinimumHeight(100)
-        header.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-
-        header_layout = QVBoxLayout(header)
-        header_layout.setContentsMargins(30, 20, 30, 20)
-        header_layout.setSpacing(8)
-
-        # Main title with enhanced typography
-        title = QLabel("SharePoint to Microsoft SQL")
-        title.setFont(QFont("Segoe UI", 22, QFont.Bold))
-        title.setAlignment(Qt.AlignCenter)
-        title.setStyleSheet(
-            """
-            color: #ffffff;
-            text-shadow: 0px 3px 6px rgba(0,0,0,0.4);
-            letter-spacing: 0.5px;
+    def setup_background_effects(self):
+        """ตั้งค่า background effects"""
+        # ใช้ background image หรือ gradient
+        bg_style = get_background_image_style()
+        self.setStyleSheet(
+            f"""
+            QWidget {{
+                {bg_style}
+            }}
         """
         )
 
-        # Enhanced subtitle
-        subtitle = QLabel("Thammaphon Chittasuwanna (SDM) | Innovation")
-        subtitle.setFont(QFont("Segoe UI", 12, QFont.Normal))
-        subtitle.setAlignment(Qt.AlignCenter)
+    def create_holographic_header(self, layout):
+        """สร้าง brand header แบบ holographic"""
+        header = HolographicFrame("holographic")
+        header.setMinimumHeight(120)
+        header.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+        header_layout = QVBoxLayout(header)
+        header_layout.setContentsMargins(40, 24, 40, 24)
+        header_layout.setSpacing(12)
+
+        # Title แบบ holographic
+        title = QLabel("SharePoint ◈ Microsoft SQL")
+        title.setFont(QFont("Inter", 26, QFont.Weight.Bold))
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setStyleSheet(
+            f"""
+            color: {UltraModernColors.TEXT_LUMINOUS};
+            text-shadow: 
+                0 0 20px {UltraModernColors.NEON_BLUE},
+                0 4px 8px rgba(0, 0, 0, 0.5);
+            letter-spacing: 1px;
+        """
+        )
+
+        # Subtitle แบบ neon
+        subtitle = QLabel("◦ Neural Data Synchronization Matrix ◦")
+        subtitle.setFont(QFont("Inter", 14, QFont.Weight.Medium))
+        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         subtitle.setStyleSheet(
-            """
-            color: rgba(255,255,255,0.9);
-            text-shadow: 0px 2px 4px rgba(0,0,0,0.3);
-            font-weight: 500;
-            letter-spacing: 0.3px;
+            f"""
+            color: {UltraModernColors.NEON_BLUE};
+            text-shadow: 
+                0 0 15px {UltraModernColors.NEON_BLUE},
+                0 2px 4px rgba(0, 0, 0, 0.3);
+            letter-spacing: 0.5px;
+            margin-top: 8px;
+        """
+        )
+
+        # Credit line
+        credit = QLabel("Thammaphon Chittasuwanna (SDM) | Innovation Department")
+        credit.setFont(QFont("Inter", 10, QFont.Weight.Normal))
+        credit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        credit.setStyleSheet(
+            f"""
+            color: rgba(255, 255, 255, 0.7);
+            text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+            margin-top: 4px;
         """
         )
 
         header_layout.addWidget(title)
         header_layout.addWidget(subtitle)
+        header_layout.addWidget(credit)
         layout.addWidget(header)
 
-    def create_connection_section(self, layout):
-        """Enhanced connection status section"""
-        conn_frame = ModernFrame()
+    def create_neural_connection_section(self, layout):
+        """สร้าง connection status section แบบ neural network"""
+        conn_frame = HolographicFrame("elevated")
 
         conn_layout = QVBoxLayout(conn_frame)
-        conn_layout.setContentsMargins(25, 25, 25, 25)
-        conn_layout.setSpacing(20)
+        conn_layout.setContentsMargins(28, 28, 28, 28)
+        conn_layout.setSpacing(24)
 
-        # Modern section header
-        header = SectionHeader("Connection Status", "🔗")
+        # Section header แบบ neon
+        header = NeonSectionHeader("Neural Network Status", "⬢")
         conn_layout.addWidget(header)
 
-        # Responsive status cards layout
+        # Status cards layout
         cards_container = QWidget()
         cards_layout = QHBoxLayout(cards_container)
-        cards_layout.setSpacing(15)
+        cards_layout.setSpacing(20)
 
-        self.sp_status = StatusCard("SharePoint", "disconnected")
-        self.db_status = StatusCard("Database", "disconnected")
-        self.sync_status = StatusCard("Last Sync", "never")
+        # สร้าง ultra modern status cards
+        self.sp_status = UltraModernStatusCard("SharePoint Matrix", "disconnected")
+        self.db_status = UltraModernStatusCard("Database Node", "disconnected")
+        self.sync_status = UltraModernStatusCard("Sync Protocol", "never")
 
-        # Make cards responsive
+        # Responsive sizing
         for card in [self.sp_status, self.db_status, self.sync_status]:
-            card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            card.status_clicked.connect(self.on_status_card_clicked)
 
         cards_layout.addWidget(self.sp_status)
         cards_layout.addWidget(self.db_status)
@@ -255,59 +520,38 @@ class Dashboard(QWidget):
         conn_layout.addWidget(cards_container)
         layout.addWidget(conn_frame)
 
-    def create_progress_section(self, layout):
-        """Enhanced progress section with animations"""
-        progress_frame = ModernFrame()
+    def create_quantum_progress_section(self, layout):
+        """สร้าง progress section แบบ quantum"""
+        progress_frame = HolographicFrame("neon")
 
         prog_layout = QVBoxLayout(progress_frame)
-        prog_layout.setContentsMargins(25, 25, 25, 25)
-        prog_layout.setSpacing(20)
+        prog_layout.setContentsMargins(28, 28, 28, 28)
+        prog_layout.setSpacing(24)
 
-        # Modern section header
-        header = SectionHeader("Sync Progress", "📊")
+        # Section header
+        header = NeonSectionHeader("Quantum Data Transfer", "◈")
         prog_layout.addWidget(header)
 
-        # Progress content with better spacing
+        # Progress content
         content_layout = QVBoxLayout()
-        content_layout.setSpacing(15)
+        content_layout.setSpacing(16)
 
-        # Enhanced progress bar
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setStyleSheet(
-            """
-            QProgressBar {
-                border: none;
-                border-radius: 8px;
-                background: rgba(26, 32, 44, 0.8);
-                text-align: center;
-                font-weight: 600;
-                color: #ffffff;
-                min-height: 16px;
-                max-height: 16px;
-                font-size: 12px;
-            }
-            QProgressBar::chunk {
-                border-radius: 8px;
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #48bb78, 
-                    stop:0.5 #38a169, 
-                    stop:1 #2f855a);
-            }
-        """
-        )
+        # Holographic progress bar
+        self.progress_bar = HolographicProgressBar()
         self.progress_bar.setVisible(False)
 
-        # Enhanced progress message
-        self.progress_message = QLabel("Ready to synchronize data")
-        self.progress_message.setFont(QFont("Segoe UI", 12, QFont.Medium))
+        # Progress message แบบ cyber
+        self.progress_message = QLabel("◦ System ready for neural synchronization ◦")
+        self.progress_message.setFont(QFont("Inter", 13, QFont.Weight.Medium))
         self.progress_message.setStyleSheet(
-            """
-            color: #e2e8f0; 
+            f"""
+            color: {UltraModernColors.TEXT_GLOW};
             background: transparent;
-            padding: 8px 0px;
+            padding: 12px 0px;
+            text-shadow: 0 0 8px {UltraModernColors.NEON_BLUE}80;
         """
         )
-        self.progress_message.setAlignment(Qt.AlignLeft)
+        self.progress_message.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         content_layout.addWidget(self.progress_bar)
         content_layout.addWidget(self.progress_message)
@@ -315,37 +559,37 @@ class Dashboard(QWidget):
         prog_layout.addLayout(content_layout)
         layout.addWidget(progress_frame)
 
-    def create_control_section(self, layout):
-        """Enhanced control panel with modern buttons"""
-        control_frame = ModernFrame()
+    def create_cyber_control_section(self, layout):
+        """สร้าง control panel แบบ cyberpunk"""
+        control_frame = HolographicFrame("elevated")
 
         ctrl_layout = QVBoxLayout(control_frame)
-        ctrl_layout.setContentsMargins(25, 25, 25, 25)
-        ctrl_layout.setSpacing(20)
+        ctrl_layout.setContentsMargins(28, 28, 28, 28)
+        ctrl_layout.setSpacing(24)
 
-        # Modern section header
-        header = SectionHeader("Control Panel", "⚙️")
+        # Section header
+        header = NeonSectionHeader("Command Matrix", "⬡")
         ctrl_layout.addWidget(header)
 
-        # Control content with responsive layout
+        # Control content
         content_layout = QVBoxLayout()
-        content_layout.setSpacing(18)
+        content_layout.setSpacing(20)
 
         # Main action buttons - responsive
         main_buttons_container = QWidget()
         main_buttons = QHBoxLayout(main_buttons_container)
-        main_buttons.setSpacing(15)
+        main_buttons.setSpacing(16)
 
-        self.test_btn = QPushButton("🔍 Test Connections")
-        self.test_btn.setStyleSheet(self.get_modern_primary_button_style())
-        self.test_btn.setMinimumHeight(48)
-        self.test_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.test_btn = CyberButton("◉ Neural Probe", "primary", "lg")
+        self.test_btn.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
         self.test_btn.clicked.connect(self.test_connections_requested.emit)
 
-        self.sync_btn = QPushButton("🚀 Start Sync")
-        self.sync_btn.setStyleSheet(self.get_modern_success_button_style())
-        self.sync_btn.setMinimumHeight(48)
-        self.sync_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.sync_btn = CyberButton("◈ Initiate Sync", "success", "lg")
+        self.sync_btn.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
         self.sync_btn.clicked.connect(self._toggle_sync)
 
         main_buttons.addWidget(self.test_btn)
@@ -354,18 +598,20 @@ class Dashboard(QWidget):
         # Secondary controls - responsive
         secondary_container = QWidget()
         secondary_layout = QHBoxLayout(secondary_container)
-        secondary_layout.setSpacing(15)
+        secondary_layout.setSpacing(16)
 
-        self.clear_btn = QPushButton("🧹 Clear Logs")
-        self.clear_btn.setStyleSheet(self.get_modern_warning_button_style())
-        self.clear_btn.setMinimumHeight(40)
-        self.clear_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.clear_btn = CyberButton("◇ Purge Logs", "warning", "md")
+        self.clear_btn.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
         self.clear_btn.clicked.connect(self.clear_logs_requested.emit)
 
         # Enhanced auto sync checkbox
-        self.auto_sync_check = QCheckBox("🔄 Auto Sync Every Hour")
-        self.auto_sync_check.setStyleSheet(self.get_modern_checkbox_style())
-        self.auto_sync_check.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.auto_sync_check = QCheckBox("◦ Autonomous Neural Sync")
+        self.auto_sync_check.setStyleSheet(get_neon_checkbox_style())
+        self.auto_sync_check.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
         self.auto_sync_check.toggled.connect(self._toggle_auto_sync)
 
         secondary_layout.addWidget(self.clear_btn)
@@ -377,210 +623,46 @@ class Dashboard(QWidget):
         ctrl_layout.addLayout(content_layout)
         layout.addWidget(control_frame)
 
-    def create_logs_section(self, layout):
-        """Enhanced logs section with modern console design"""
-        logs_frame = ModernFrame()
+    def create_matrix_logs_section(self, layout):
+        """สร้าง logs section แบบ matrix terminal"""
+        logs_frame = HolographicFrame("neon")
 
         logs_layout = QVBoxLayout(logs_frame)
-        logs_layout.setContentsMargins(25, 25, 25, 25)
-        logs_layout.setSpacing(20)
+        logs_layout.setContentsMargins(28, 28, 28, 28)
+        logs_layout.setSpacing(24)
 
-        # Modern section header
-        header = SectionHeader("System Logs", "📋")
+        # Section header
+        header = NeonSectionHeader("Neural Activity Matrix", "◎")
         logs_layout.addWidget(header)
 
-        # Enhanced log console
-        self.log_console = QTextEdit()
-        self.log_console.setStyleSheet(
-            """
-            QTextEdit {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #0f1419, 
-                    stop:1 #1a1f2e);
-                border: 2px solid rgba(0, 212, 255, 0.2);
-                border-radius: 12px;
-                color: #48bb78;
-                font-family: 'JetBrains Mono', 'Consolas', 'Monaco', monospace;
-                font-size: 11px;
-                padding: 16px;
-                line-height: 1.4;
-                selection-background-color: rgba(0, 212, 255, 0.3);
-            }
-            QScrollBar:vertical {
-                background: rgba(26, 32, 44, 0.8);
-                width: 10px;
-                border-radius: 5px;
-                margin: 2px;
-            }
-            QScrollBar::handle:vertical {
-                background: rgba(0, 212, 255, 0.6);
-                border-radius: 5px;
-                min-height: 30px;
-            }
-            QScrollBar::handle:vertical:hover {
-                background: rgba(0, 212, 255, 0.8);
-            }
-            QScrollBar::add-line:vertical, 
-            QScrollBar::sub-line:vertical {
-                height: 0px;
-            }
-        """
-        )
-        self.log_console.setMinimumHeight(140)
-        self.log_console.setMaximumHeight(200)
-        self.log_console.setReadOnly(True)
-        self.log_console.setPlaceholderText(
-            "🔍 System logs and status messages will appear here..."
-        )
+        # Cyber log console
+        self.log_console = CyberLogConsole()
+        self.log_console.setMinimumHeight(160)
+        self.log_console.setMaximumHeight(220)
 
         logs_layout.addWidget(self.log_console)
         layout.addWidget(logs_frame)
 
-    def get_modern_primary_button_style(self):
-        """Enhanced primary button with gradients and effects"""
-        return """
-            QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #4299e1, 
-                    stop:1 #3182ce);
-                color: #ffffff;
-                border: none;
-                border-radius: 12px;
-                padding: 14px 24px;
-                font-weight: 600;
-                font-size: 13px;
-                font-family: 'Segoe UI';
-                text-shadow: 0px 1px 2px rgba(0,0,0,0.2);
-            }
-            QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #63b3ed, 
-                    stop:1 #4299e1);
-                transform: translateY(-1px);
-            }
-            QPushButton:pressed {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #2b77a8, 
-                    stop:1 #2c5aa0);
-                transform: translateY(0px);
-            }
-        """
-
-    def get_modern_success_button_style(self):
-        """Enhanced success button with gradients"""
-        return """
-            QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #48bb78, 
-                    stop:1 #38a169);
-                color: #ffffff;
-                border: none;
-                border-radius: 12px;
-                padding: 14px 24px;
-                font-weight: 600;
-                font-size: 13px;
-                font-family: 'Segoe UI';
-                text-shadow: 0px 1px 2px rgba(0,0,0,0.2);
-            }
-            QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #68d391, 
-                    stop:1 #48bb78);
-                transform: translateY(-1px);
-            }
-            QPushButton:pressed {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #2f855a, 
-                    stop:1 #276749);
-                transform: translateY(0px);
-            }
-        """
-
-    def get_modern_warning_button_style(self):
-        """Enhanced warning button with gradients"""
-        return """
-            QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #ed8936, 
-                    stop:1 #dd6b20);
-                color: #ffffff;
-                border: none;
-                border-radius: 10px;
-                padding: 12px 20px;
-                font-weight: 600;
-                font-size: 12px;
-                font-family: 'Segoe UI';
-                text-shadow: 0px 1px 2px rgba(0,0,0,0.2);
-            }
-            QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #f6ad55, 
-                    stop:1 #ed8936);
-                transform: translateY(-1px);
-            }
-            QPushButton:pressed {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #c05621, 
-                    stop:1 #9c4221);
-                transform: translateY(0px);
-            }
-        """
-
-    def get_modern_checkbox_style(self):
-        """Enhanced checkbox with modern styling"""
-        return """
-            QCheckBox {
-                color: #e2e8f0;
-                font-size: 13px;
-                font-family: 'Segoe UI';
-                font-weight: 500;
-                spacing: 12px;
-                background: transparent;
-                padding: 12px 16px;
-                border-radius: 8px;
-            }
-            QCheckBox:hover {
-                background: rgba(0, 212, 255, 0.1);
-            }
-            QCheckBox::indicator {
-                width: 20px;
-                height: 20px;
-                border-radius: 4px;
-            }
-            QCheckBox::indicator:unchecked {
-                background: rgba(26, 32, 44, 0.8);
-                border: 2px solid rgba(74, 85, 104, 0.8);
-            }
-            QCheckBox::indicator:unchecked:hover {
-                background: rgba(45, 55, 72, 0.9);
-                border: 2px solid rgba(0, 212, 255, 0.5);
-            }
-            QCheckBox::indicator:checked {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #48bb78, 
-                    stop:1 #38a169);
-                border: 2px solid #48bb78;
-            }
-            QCheckBox::indicator:checked:hover {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #68d391, 
-                    stop:1 #48bb78);
-            }
-        """
-
     # Event handlers
     def _toggle_sync(self):
+        """Toggle sync operation"""
         if self.controller.get_sync_status()["is_running"]:
             self.stop_sync_requested.emit()
         else:
             self.start_sync_requested.emit()
 
     def _toggle_auto_sync(self, checked):
+        """Toggle auto sync"""
         self.auto_sync_toggled.emit(checked, 3600)
+
+    def on_status_card_clicked(self, status):
+        """Handle status card clicks"""
+        logger.info(f"Status card clicked: {status}")
 
     # Public update methods
     @pyqtSlot(str, str)
     def update_connection_status(self, service, status):
+        """อัปเดตสถานะการเชื่อมต่อ"""
         if service == "SharePoint":
             self.sp_status.update_status(status)
         elif service == "Database":
@@ -588,7 +670,9 @@ class Dashboard(QWidget):
 
     @pyqtSlot(str, int, str)
     def update_progress(self, message, progress, level):
-        self.progress_message.setText(f"📍 {message}")
+        """อัปเดต progress"""
+        cyber_message = f"◦ {message} ◦"
+        self.progress_message.setText(cyber_message)
 
         if progress > 0:
             self.progress_bar.setVisible(True)
@@ -598,84 +682,56 @@ class Dashboard(QWidget):
 
     @pyqtSlot(bool, str, dict)
     def on_sync_completed(self, success, message, stats):
+        """Handle sync completion"""
         self.progress_bar.setVisible(False)
 
         if success:
-            self.sync_btn.setText("🚀 Start Sync")
-            self.sync_btn.setStyleSheet(self.get_modern_success_button_style())
-            self.sync_status.update_status("success", "Completed")
-            self.progress_message.setText("✅ Sync completed successfully")
+            self.sync_btn.setText("◈ Initiate Sync")
+            self.sync_status.update_status("success", "Neural sync complete")
+            self.progress_message.setText("✓ Quantum data transfer successful")
         else:
-            self.sync_btn.setText("🚀 Start Sync")
-            self.sync_btn.setStyleSheet(self.get_modern_success_button_style())
-            self.sync_status.update_status("error", "Failed")
-            self.progress_message.setText("❌ Sync failed - Check logs for details")
+            self.sync_btn.setText("◈ Initiate Sync")
+            self.sync_status.update_status("error", "Sync protocol failed")
+            self.progress_message.setText("✗ Neural network disruption detected")
 
     def add_log_message(self, message, level):
-        from datetime import datetime
-
-        timestamp = datetime.now().strftime("%H:%M:%S")
-
-        # Enhanced color scheme with better contrast
-        colors = {
-            "info": "#64b5f6",  # Light blue
-            "success": "#81c784",  # Light green
-            "warning": "#ffb74d",  # Light orange
-            "error": "#e57373",  # Light red
-            "debug": "#ba68c8",  # Light purple
-        }
-
-        # Enhanced formatting with better typography
-        color = colors.get(level, "#ffffff")
-        level_icon = {
-            "info": "ℹ️",
-            "success": "✅",
-            "warning": "⚠️",
-            "error": "❌",
-            "debug": "🔧",
-        }.get(level, "📝")
-
-        formatted = f"""
-        <div style="margin: 4px 0; padding: 6px 0; border-left: 3px solid {color}; padding-left: 12px;">
-            <span style="color: #718096; font-size: 10px;">[{timestamp}]</span>
-            <span style="color: {color}; font-weight: 500; margin-left: 8px;">{level_icon} {message}</span>
-        </div>
-        """
-
-        self.log_console.append(formatted)
-
-        # Auto scroll to bottom
-        cursor = self.log_console.textCursor()
-        cursor.movePosition(cursor.End)
-        self.log_console.setTextCursor(cursor)
+        """เพิ่มข้อความ log แบบ cyber"""
+        self.log_console.add_message_with_typing(message, level)
 
     def clear_logs(self):
+        """ล้าง logs"""
         self.log_console.clear()
-        self.add_log_message("Logs cleared", "info")
+        self.add_log_message("Neural matrix purged - system ready", "info")
 
     def set_auto_sync_enabled(self, enabled):
+        """ตั้งค่า auto sync"""
         self.auto_sync_check.setChecked(enabled)
 
     def resizeEvent(self, event):
-        """Handle responsive behavior on window resize"""
+        """Handle responsive behavior"""
         super().resizeEvent(event)
 
-        # Adjust margins based on window size
+        # ปรับ margins ตาม window size
         width = self.width()
         if width < 800:
-            # Mobile/small screen
             margins = (15, 15, 15, 15)
             spacing = 15
         elif width < 1200:
-            # Tablet/medium screen
             margins = (25, 25, 25, 25)
             spacing = 20
         else:
-            # Desktop/large screen
             margins = (30, 30, 30, 30)
-            spacing = 25
+            spacing = 30
 
-        # Update layout margins
-        if hasattr(self, "content_layout"):
-            self.content_layout.setContentsMargins(*margins)
-            self.content_layout.setSpacing(spacing)
+        # อัปเดต layout margins
+        scroll_widget = self.findChild(QScrollArea).widget()
+        if scroll_widget and scroll_widget.layout():
+            scroll_widget.layout().setContentsMargins(*margins)
+            scroll_widget.layout().setSpacing(spacing)
+
+
+# Backward compatibility
+class Dashboard(UltraModernDashboard):
+    """Alias สำหรับ backward compatibility"""
+
+    pass

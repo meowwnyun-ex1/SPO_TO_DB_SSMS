@@ -1,4 +1,4 @@
-from PyQt5.QtCore import QObject, pyqtSignal, QTimer
+from PyQt6.QtCore import QObject, pyqtSignal, QTimer
 from .sync_engine import SyncEngine
 from .connection_manager import ConnectionManager
 from utils.config_manager import ConfigManager

@@ -18,7 +18,7 @@
 
 **Technical Requirements:**
 
-- PyQt5 + Modern gradient CSS theme
+- PyQt6 + Modern gradient CSS theme
 - Thai language UI with "เฮียตอม😎" branding
 - Signal-slot architecture: UI → Controller → Business Logic → Connectors
 - Real-time status updates, progress tracking, auto-sync capabilities
