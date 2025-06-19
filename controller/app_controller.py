@@ -1,582 +1,427 @@
-from PyQt6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QLabel,
-    QFrame,
-    QPushButton,
-    QCheckBox,
-    QScrollArea,
-    QSizePolicy,
-    QGraphicsDropShadowEffect,
-)
-from PyQt6.QtCore import (
-    Qt,
-    pyqtSignal,
-    pyqtSlot,
-)
-from PyQt6.QtGui import QFont, QColor
-from ..widgets.status_card import UltraModernStatusCard
-from ..widgets.cyber_log_console import CyberLogConsole
-from ..widgets.holographic_progress_bar import HolographicProgressBar
-from ..styles.theme import (
-    UltraModernColors,
-    get_ultra_modern_card_style,
-)
+from PyQt6.QtCore import QObject, pyqtSignal, QTimer
+from .sync_engine import SyncEngine
+from .connection_manager import ConnectionManager
+from utils.config_manager import ConfigManager
 import logging
-import os
-import tempfile
-import shutil
+
 
 logger = logging.getLogger(__name__)
 
 
-class AppController:
+class AppController(QObject):
+    # Signals for UI communication
+    status_changed = pyqtSignal(str, str)  # service_name, status
+    progress_updated = pyqtSignal(str, int, str)  # message, progress, level
+    sync_completed = pyqtSignal(bool, str, dict)  # Added dict for sync stats
+    log_message = pyqtSignal(str, str)  # message, level
+
+    # New signals for dashboard/config panel updates
+    sharepoint_sites_updated = pyqtSignal(list)
+    sharepoint_lists_updated = pyqtSignal(list)
+    database_names_updated = pyqtSignal(list)
+    database_tables_updated = pyqtSignal(list)
+    ui_enable_request = pyqtSignal(bool)  # To enable/disable UI during operations
+
+    # Specific status update signals for status cards
+    sharepoint_status_update = pyqtSignal(
+        str
+    )  # "connected", "disconnected", "error", etc.
+    database_status_update = pyqtSignal(
+        str
+    )  # "connected", "disconnected", "error", etc.
+    last_sync_status_update = pyqtSignal(
+        str
+    )  # "success", "error", "never", "in_progress"
+    auto_sync_status_update = pyqtSignal(bool)  # True/False
+    progress_update = pyqtSignal(int)  # Overall progress 0-100%
+    current_task_update = pyqtSignal(str)  # Description of current task
+
     def __init__(self):
-        self.sync_running = False
+        super().__init__()
 
-    def get_sync_status(self):
-        return {"is_running": self.sync_running}
+        # Initialize core components
+        self.config_manager = ConfigManager()
+        self.connection_manager = ConnectionManager()
+        self.sync_engine = SyncEngine()
 
-    def clear_system_cache(self):
+        # Auto-sync timer
+        self.auto_sync_timer = QTimer()
+        self.auto_sync_enabled = False
+
+        # Setup internal connections
+        self._setup_connections()
+
+        logger.info("🎉 AppController initialized successfully")
+
+    def _setup_connections(self):
+        """Setup internal signal connections"""
+        # Sync engine signals
+        self.sync_engine.progress_updated.connect(self.progress_updated)
+        self.sync_engine.sync_completed.connect(
+            self._handle_sync_completion
+        )  # Connect to internal handler
+        self.sync_engine.log_message.connect(self.log_message)
+
+        # Connection manager signals
+        self.connection_manager.status_changed.connect(
+            self._handle_connection_status_change
+        )
+        self.connection_manager.log_message.connect(self.log_message)
+
+        # Auto-sync timer
+        self.auto_sync_timer.timeout.connect(self._auto_sync_triggered)
+
+        logger.debug("Internal signal connections established")
+
+    def _handle_sync_completion(self, success, message, stats):
+        """Handle sync completion, update UI and log."""
+        self.sync_completed.emit(success, message, stats)  # Re-emit for other listeners
+        if success:
+            self.last_sync_status_update.emit("success")
+            self.log_message.emit(f"✅ Sync completed: {message}", "success")
+        else:
+            self.last_sync_status_update.emit("error")
+            self.log_message.emit(f"❌ Sync failed: {message}", "error")
+        self.progress_update.emit(0)  # Reset overall progress
+        self.current_task_update.emit("Idle")  # Reset current task
+        self.ui_enable_request.emit(True)  # Re-enable UI
+
+    def _handle_connection_status_change(self, service_name, status):
+        """Handle connection status changes and propagate to UI."""
+        if service_name == "SharePoint":
+            self.sharepoint_status_update.emit(status)
+        elif service_name == "Database":
+            self.database_status_update.emit(status)
+        self.status_changed.emit(service_name, status)  # Re-emit generic status_changed
+
+    # Configuration Management
+    def get_config(self):
+        """Get current configuration"""
+        return self.config_manager.get_config()
+
+    def update_config(self, config_object):
+        """Update and save configuration from UI"""
+        # This method is called from ConfigPanel via config_changed signal
+        self.config_manager.save_config(config_object)
+        self.log_message.emit("💾 การตั้งค่าได้รับการอัปเดตแล้ว", "success")
+        # After config update, you might want to re-test connections or update UI elements
+        # For simplicity, we just save here. More complex logic might involve emitting
+        # signals back to UI to update specific fields if config values change validation.
+
+    # Connection Testing (updated to emit specific status signals)
+    def test_sharepoint_connection(self):
+        """Test SharePoint connection"""
+        self.ui_enable_request.emit(False)  # Disable UI during test
         try:
-            temp_dir = tempfile.gettempdir()
-            app_cache_dir = os.path.join(temp_dir, "spo_to_db_cache")
-            if os.path.exists(app_cache_dir):
-                shutil.rmtree(app_cache_dir)
-            os.makedirs(app_cache_dir, exist_ok=True)
-            return True
+            config = self.get_config()
+            if not all(
+                [
+                    config.sharepoint_client_id,  # Updated from client_id
+                    config.sharepoint_client_secret,  # Updated from client_secret
+                    config.tenant_id,
+                    config.sharepoint_site,  # Updated from site_url
+                ]
+            ):
+                self.log_message.emit("⚠️ กรุณากรอกข้อมูล SharePoint ให้ครบถ้วน", "warning")
+                self.sharepoint_status_update.emit("warning")
+                self.ui_enable_request.emit(True)
+                return False
+
+            self.sharepoint_status_update.emit("connecting")
+            self.log_message.emit("🔍 กำลังทดสอบการเชื่อมต่อ SharePoint...", "info")
+
+            success = self.connection_manager.test_sharepoint_connection(config)
+
+            if success:
+                self.sharepoint_status_update.emit("connected")
+                self.log_message.emit("✅ เชื่อมต่อ SharePoint สำเร็จ", "success")
+            else:
+                self.sharepoint_status_update.emit("error")
+                self.log_message.emit("❌ เชื่อมต่อ SharePoint ล้มเหลว", "error")
+
+            self.ui_enable_request.emit(True)
+            return success
+
         except Exception as e:
-            logger.error(f"Failed to clear cache: {e}")
+            self.sharepoint_status_update.emit("error")
+            self.log_message.emit(f"❌ ข้อผิดพลาดการเชื่อมต่อ SharePoint: {str(e)}", "error")
+            self.ui_enable_request.emit(True)
             return False
 
-
-class HolographicFrame(QFrame):
-    """เฟรมแบบ holographic พร้อม dimensional effects"""
-
-    def __init__(self, variant="default", parent=None):
-        super().__init__(parent)
-        self.variant = variant
-        self.setup_holographic_style()
-        # If setup_hover_effects is not implemented, comment or remove the next line
-        # self.setup_hover_effects()
-
-    def setup_holographic_style(self):
-        """ตั้งค่าสไตล์ holographic"""
-        style = get_ultra_modern_card_style(self.variant)
-        self.setStyleSheet(style)
-
-        # เพิ่ม shadow effects
-        self.shadow_effect = QGraphicsDropShadowEffect()
-        self.shadow_effect.setBlurRadius(20)
-        self.shadow_effect.setColor(QColor(0, 0, 0, 80))
-        self.shadow_effect.setOffset(0, 10)
-        self.setGraphicsEffect(self.shadow_effect)
-
-
-class GradientHeaderFrame(QFrame):
-    """Enhanced gradient header with animations"""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setStyleSheet(
-            """
-            QFrame {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-            stop:0 #667eea,
-            stop:0.3 #764ba2,
-            stop:0.6 #f093fb,
-            stop:1 #f5576c);
-            border: none;
-            border-radius: 20px;
-            }
-            QLabel {
-            background: transparent;
-            color: #ffffff;
-            }
-            """
-        )
-
-        # Add glow effect
-        glow = QGraphicsDropShadowEffect()
-        glow.setBlurRadius(30)
-        glow.setColor(QColor(102, 126, 234, 100))
-        glow.setOffset(0, 0)
-        self.setGraphicsEffect(glow)
-
-
-class NeonSectionHeader(QFrame):
-    """หัวข้อส่วนแบบ neon glow"""
-
-    def __init__(self, title, icon="", parent=None):
-        super().__init__(parent)
-        self.title = title
-        self.icon = icon
-        self.setup_neon_ui()
-
-    def setup_neon_ui(self):
-        """ตั้งค่า UI แบบ neon"""
-        self.setFixedHeight(60)
-        self.setStyleSheet(
-            f"""
-            QFrame {{
-                background: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:1,
-                    stop:0 {UltraModernColors.NEON_BLUE}40,
-                    stop:0.3 {UltraModernColors.NEON_PURPLE}30,
-                    stop:0.7 {UltraModernColors.NEON_PINK}40,
-                    stop:1 {UltraModernColors.NEON_BLUE}40
-                );
-                border: 2px solid {UltraModernColors.NEON_BLUE};
-                border-radius: 16px;
-            }}
-            QLabel {{
-                background: transparent;
-                color: {UltraModernColors.TEXT_LUMINOUS};
-                font-weight: 700;
-            }}
-            """
-        )
-
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(24, 16, 24, 16)
-
-        # Icon + Title
-        label_text = f"{self.icon} {self.title}" if self.icon else self.title
-        label = QLabel(label_text)
-        label.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-
-        layout.addWidget(label)
-        layout.addStretch()
-
-
-class Dashboard(QWidget):
-    """Modern Responsive Dashboard with Glassmorphism Design"""
-
-    # Signals
-    test_connections_requested = pyqtSignal()
-    start_sync_requested = pyqtSignal()
-    stop_sync_requested = pyqtSignal()
-    clear_logs_requested = pyqtSignal()
-    auto_sync_toggled = pyqtSignal(bool, int)
-
-    def __init__(self, controller):
-        super().__init__()
-        self.controller = controller
-        self.setup_ultra_modern_ui()
-        # If setup_background_effects is not implemented, comment or remove the next line
-        # self.setup_background_effects()
-
-    def setup_ultra_modern_ui(self):
-        """ตั้งค่า UI แบบ ultra modern"""
-        # Main scroll area สำหรับ responsive design
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        scroll.setStyleSheet(
-            f"""
-            QScrollArea {{
-            border: none;
-            background: transparent;
-            }}
-            QScrollBar:vertical {{
-            background: rgba(0, 0, 0, 0.3);
-            width: 12px;
-            border-radius: 6px;
-            margin: 2px;
-            }}
-            QScrollBar::handle:vertical {{
-            background: {UltraModernColors.NEON_BLUE};
-            border-radius: 6px;
-            min-height: 30px;
-
-            }}
-            QScrollBar::handle:vertical:hover {{
-            background: {UltraModernColors.NEON_PURPLE};
-
-            }}
-            """
-        )
-
-        # Scroll content
-        scroll_content = QWidget()
-        scroll.setWidget(scroll_content)
-
-        # Main layout
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.addWidget(scroll)
-
-        # Content layout พร้อม responsive margins
-        content_layout = QVBoxLayout(scroll_content)
-        content_layout.setContentsMargins(30, 30, 30, 30)
-        content_layout.setSpacing(30)
-
-        # สร้างส่วนต่างๆ
-        self.create_holographic_header(content_layout)
-        self.create_neural_connection_section(content_layout)
-        self.create_quantum_progress_section(content_layout)
-        self.create_cyber_control_section(content_layout)
-        self.create_matrix_logs_section(content_layout)
-
-    def create_holographic_header(self, layout):
-        self.create_brand_header(layout)
-
-    def create_brand_header(self, layout):
-        """Enhanced brand header with modern typography"""
-        header = GradientHeaderFrame()
-        header.setMinimumHeight(100)
-        header.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-
-        header_layout = QVBoxLayout(header)
-        header_layout.setContentsMargins(40, 24, 40, 24)
-        header_layout.setSpacing(12)
-
-        # Main title with enhanced typography
-        title = QLabel("SharePoint to Microsoft SQL")
-        title.setFont(QFont("Segoe UI", 22, QFont.Weight.Bold))
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet(
-            """
-            color: #ffffff;
-
-            letter-spacing: 0.5px;
-            """
-        )
-
-        # Enhanced subtitle
-        subtitle = QLabel("Thammaphon Chittasuwanna (SDM) | Innovation")
-        subtitle.setFont(QFont("Segoe UI", 12, QFont.Weight.Normal))
-        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        subtitle.setStyleSheet(
-            """
-            color: rgba(255,255,255,0.9);
-
-            font-weight: 500;
-            letter-spacing: 0.3px;
-            """
-        )
-
-        header_layout.addWidget(title)
-        header_layout.addWidget(subtitle)
-        # If credit is not defined, comment or remove the next line
-        # header_layout.addWidget(credit)
-
-    def create_neural_connection_section(self, layout):
-        """สร้าง connection status section แบบ neural network"""
-        conn_frame = HolographicFrame("elevated")
-
-        conn_layout = QVBoxLayout(conn_frame)
-        conn_layout.setContentsMargins(28, 28, 28, 28)
-        conn_layout.setSpacing(24)
-
-        # Section header แบบ neon
-        header = NeonSectionHeader("Neural Network Status", "⬢")
-        conn_layout.addWidget(header)
-
-        # Status cards layout
-        cards_container = QWidget()
-        cards_layout = QHBoxLayout(cards_container)
-        cards_layout.setSpacing(20)
-
-        # สร้าง ultra modern status cards
-        self.sp_status = UltraModernStatusCard("SharePoint Matrix", "disconnected")
-        self.db_status = UltraModernStatusCard("Database Node", "disconnected")
-        self.sync_status = UltraModernStatusCard("Sync Protocol", "never")
-
-        # Responsive sizing
-        for card in [self.sp_status, self.db_status, self.sync_status]:
-            card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-
-        cards_layout.addWidget(self.sp_status)
-        cards_layout.addWidget(self.db_status)
-        cards_layout.addWidget(self.sync_status)
-
-        conn_layout.addWidget(cards_container)
-        layout.addWidget(conn_frame)
-
-    def create_quantum_progress_section(self, layout):
-        """สร้าง progress section แบบ quantum"""
-        progress_frame = HolographicFrame("neon")
-
-        prog_layout = QVBoxLayout(progress_frame)
-        prog_layout.setContentsMargins(28, 28, 28, 28)
-        prog_layout.setSpacing(24)
-
-        # Section header
-        header = NeonSectionHeader("Quantum Data Transfer", "◈")
-        prog_layout.addWidget(header)
-
-        # Progress content
-        content_layout = QVBoxLayout()
-        content_layout.setSpacing(16)
-
-        # Holographic progress bar
-        self.progress_bar = HolographicProgressBar()
-        self.progress_bar.setVisible(False)
-
-        # Enhanced progress message
-        self.progress_message = QLabel("Ready to synchronize data")
-        self.progress_message.setFont(QFont("Segoe UI", 12, QFont.Weight.Medium))
-        self.progress_message.setStyleSheet(
-            f"""
-            color: {UltraModernColors.TEXT_GLOW};
-            background: transparent;
-            padding: 12px 0px;
-
-            """
-        )
-        self.progress_message.setAlignment(Qt.AlignmentFlag.AlignLeft)
-
-        content_layout.addWidget(self.progress_bar)
-        content_layout.addWidget(self.progress_message)
-
-        prog_layout.addLayout(content_layout)
-        layout.addWidget(progress_frame)
-
-    def create_cyber_control_section(self, layout):
-        """สร้าง control panel แบบ cyberpunk"""
-        control_frame = HolographicFrame("elevated")
-
-        ctrl_layout = QVBoxLayout(control_frame)
-        ctrl_layout.setContentsMargins(28, 28, 28, 28)
-        ctrl_layout.setSpacing(24)
-
-        # Section header
-        header = NeonSectionHeader("Command Matrix", "⬡")
-        ctrl_layout.addWidget(header)
-
-        # Control content
-        content_layout = QVBoxLayout()
-        content_layout.setSpacing(20)
-
-        # Main action buttons - responsive
-        main_buttons_container = QWidget()
-        main_buttons = QHBoxLayout(main_buttons_container)
-        main_buttons.setSpacing(16)
-
-        self.test_btn = QPushButton("🔍 Test Connections")
-        self.test_btn.setStyleSheet(self.get_modern_primary_button_style())
-        self.test_btn.setMinimumHeight(48)
-        self.test_btn.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
-        )
-        self.test_btn.clicked.connect(self.test_connections_requested.emit)
-
-        self.sync_btn = QPushButton("🚀 Start Sync")
-        self.sync_btn.setStyleSheet(self.get_modern_success_button_style())
-        self.sync_btn.setMinimumHeight(48)
-        self.sync_btn.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
-        )
-        self.sync_btn.clicked.connect(self._toggle_sync)
-
-        main_buttons.addWidget(self.test_btn)
-        main_buttons.addWidget(self.sync_btn)
-
-        # Secondary controls - responsive
-        secondary_container = QWidget()
-        secondary_layout = QHBoxLayout(secondary_container)
-        secondary_layout.setSpacing(16)
-
-        self.clear_btn = QPushButton("🧹 Clear Logs")
-        self.clear_btn.setStyleSheet(self.get_modern_warning_button_style())
-        self.clear_btn.setMinimumHeight(40)
-        self.clear_btn.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
-        )
-        self.clear_btn.clicked.connect(self.clear_logs_requested.emit)
-
-        # Enhanced auto sync checkbox
-        self.auto_sync_check = QCheckBox("🔄 Auto Sync Every Hour")
-        self.auto_sync_check.setStyleSheet(self.get_modern_checkbox_style())
-        self.auto_sync_check.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
-        )
-        self.auto_sync_check.toggled.connect(self._toggle_auto_sync)
-
-        secondary_layout.addWidget(self.clear_btn)
-        secondary_layout.addWidget(self.auto_sync_check)
-
-        content_layout.addWidget(main_buttons_container)
-        content_layout.addWidget(secondary_container)
-
-        ctrl_layout.addLayout(content_layout)
-        layout.addWidget(control_frame)
-
-    def create_matrix_logs_section(self, layout):
-        """สร้าง logs section แบบ matrix terminal"""
-        logs_frame = HolographicFrame("neon")
-
-        logs_layout = QVBoxLayout(logs_frame)
-        logs_layout.setContentsMargins(28, 28, 28, 28)
-        logs_layout.setSpacing(24)
-
-        # Section header
-        header = NeonSectionHeader("Neural Activity Matrix", "◎")
-        logs_layout.addWidget(header)
-
-        # Cyber log console
-        self.log_console = CyberLogConsole()
-        self.log_console.setMinimumHeight(160)
-        self.log_console.setMaximumHeight(220)
-
-        logs_layout.addWidget(self.log_console)
-        layout.addWidget(logs_frame)
-
-    def get_modern_primary_button_style(self):
-        return """
-            QPushButton {
-                background: #2196F3;
-                border: none;
-                border-radius: 8px;
-                color: white;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background: #1976D2;
-            }
-        """
-
-    def get_modern_success_button_style(self):
-        return """
-            QPushButton {
-                background: #4CAF50;
-                border: none;
-                border-radius: 8px;
-                color: white;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background: #388E3C;
-            }
-        """
-
-    def get_modern_warning_button_style(self):
-        return """
-            QPushButton {
-                background: #FF9800;
-                border: none;
-                border-radius: 8px;
-                color: white;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background: #F57C00;
-            }
-        """
-
-    def get_modern_checkbox_style(self):
-        return """
-            QCheckBox {
-                color: white;
-                spacing: 8px;
-            }
-            QCheckBox::indicator {
-                width: 18px;
-                height: 18px;
-                border-radius: 4px;
-                border: 2px solid #2196F3;
-            }
-            QCheckBox::indicator:unchecked {
-                background: transparent;
-            }
-            QCheckBox::indicator:checked {
-                background: #2196F3;
-            }
-        """
-
-    # Event handlers
-    def _toggle_sync(self):
-        """Toggle sync operation"""
-        if self.controller.get_sync_status()["is_running"]:
-            self.stop_sync_requested.emit()
+    def test_database_connection(self):
+        """Test database connection"""
+        self.ui_enable_request.emit(False)  # Disable UI during test
+        try:
+            config = self.get_config()
+
+            # Validate database config
+            if config.database_type == "sqlserver":
+                if not all(
+                    [config.sql_server, config.sql_database, config.sql_username]
+                ):
+                    self.log_message.emit(
+                        "⚠️ กรุณากรอกข้อมูล SQL Server ให้ครบถ้วน", "warning"
+                    )
+                    self.database_status_update.emit("warning")
+                    self.ui_enable_request.emit(True)
+                    return False
+            else:  # SQLite
+                if not config.sqlite_file:
+                    self.log_message.emit("⚠️ กรุณาเลือกไฟล์ SQLite", "warning")
+                    self.database_status_update.emit("warning")
+                    self.ui_enable_request.emit(True)
+                    return False
+
+            self.database_status_update.emit("connecting")
+            self.log_message.emit("🔍 กำลังทดสอบการเชื่อมต่อฐานข้อมูล...", "info")
+
+            success = self.connection_manager.test_database_connection(config)
+
+            if success:
+                self.database_status_update.emit("connected")
+                self.log_message.emit("✅ เชื่อมต่อฐานข้อมูลสำเร็จ", "success")
+            else:
+                self.database_status_update.emit("error")
+                self.log_message.emit("❌ เชื่อมต่อฐานข้อมูลล้มเหลว", "error")
+
+            self.ui_enable_request.emit(True)
+            return success
+
+        except Exception as e:
+            self.database_status_update.emit("error")
+            self.log_message.emit(f"❌ ข้อผิดพลาดการเชื่อมต่อฐานข้อมูล: {str(e)}", "error")
+            self.ui_enable_request.emit(True)
+            return False
+
+    def test_all_connections(self):
+        """Test both SharePoint and database connections"""
+        self.log_message.emit("🔍 ทดสอบการเชื่อมต่อทั้งหมด...", "info")
+
+        sp_result = self.test_sharepoint_connection()
+        db_result = self.test_database_connection()
+
+        if sp_result and db_result:
+            self.log_message.emit("🎉 ทดสอบการเชื่อมต่อทั้งหมดสำเร็จ!", "success")
         else:
-            self.start_sync_requested.emit()
+            self.log_message.emit("⚠️ การทดสอบการเชื่อมต่อมีปัญหา", "warning")
 
-    def _toggle_auto_sync(self, checked):
-        """Toggle auto sync"""
-        self.auto_sync_toggled.emit(checked, 3600)
+        return sp_result and db_result
 
-    def on_status_card_clicked(self, status):
-        """Handle status card clicks"""
-        logger.info(f"Status card clicked: {status}")
+    # SharePoint Data Browse (updated to emit specific update signals for UI)
+    def refresh_sharepoint_sites(self):
+        """Refresh and populate SharePoint sites in UI."""
+        self.ui_enable_request.emit(False)
+        try:
+            sites = self.connection_manager.get_sharepoint_sites(self.get_config())
+            self.sharepoint_sites_updated.emit(sites)
+            self.log_message.emit(f"📡 พบไซต์ SharePoint {len(sites)} รายการ", "success")
+        except Exception as e:
+            self.log_message.emit(f"❌ ไม่สามารถดึงรายการไซต์: {str(e)}", "error")
+        finally:
+            self.ui_enable_request.emit(True)
 
-    # Public update methods
-    @pyqtSlot(str, str)
-    def update_connection_status(self, service, status):
-        """อัปเดตสถานะการเชื่อมต่อ"""
-        if service == "SharePoint":
-            self.sp_status.update_status(status)
-        elif service == "Database":
-            self.db_status.update_status(status)
+    def refresh_sharepoint_lists(self):
+        """Refresh and populate SharePoint lists for the selected site."""
+        self.ui_enable_request.emit(False)
+        try:
+            config = self.get_config()
+            site_url = config.sharepoint_site  # Get selected site from config
+            if site_url:
+                lists = self.connection_manager.get_sharepoint_lists(config, site_url)
+                self.sharepoint_lists_updated.emit(lists)
+                self.log_message.emit(
+                    f"📋 พบลิสต์ SharePoint {len(lists)} รายการ", "success"
+                )
+            else:
+                self.log_message.emit("⚠️ กรุณาเลือก SharePoint Site ก่อน", "warning")
+        except Exception as e:
+            self.log_message.emit(f"❌ ไม่สามารถดึงรายการลิสต์: {str(e)}", "error")
+        finally:
+            self.ui_enable_request.emit(True)
 
-    @pyqtSlot(str, int, str)
-    def update_progress(self, message, progress, level):
-        """อัปเดต progress"""
-        cyber_message = f"◦ {message} ◦"
-        self.progress_message.setText(cyber_message)
+    # Database Browse (updated to emit specific update signals for UI)
+    def refresh_database_names(self):
+        """Refresh and populate database names in UI."""
+        self.ui_enable_request.emit(False)
+        try:
+            databases = self.connection_manager.get_databases(self.get_config())
+            self.database_names_updated.emit(databases)
+            self.log_message.emit(f"🗄️ พบฐานข้อมูล {len(databases)} รายการ", "success")
+        except Exception as e:
+            self.log_message.emit(f"❌ ไม่สามารถดึงรายการฐานข้อมูล: {str(e)}", "error")
+        finally:
+            self.ui_enable_request.emit(True)
 
-        if progress > 0:
-            self.progress_bar.setVisible(True)
-            self.progress_bar.setValue(progress)
+    def refresh_database_tables(self):
+        """Refresh and populate database tables for the selected database."""
+        self.ui_enable_request.emit(False)
+        try:
+            config = self.get_config()
+            tables = self.connection_manager.get_tables(config)
+            self.database_tables_updated.emit(tables)
+            self.log_message.emit(f"📊 พบตาราง {len(tables)} รายการ", "success")
+        except Exception as e:
+            self.log_message.emit(f"❌ ไม่สามารถดึงรายการตาราง: {str(e)}", "error")
+        finally:
+            self.ui_enable_request.emit(True)
+
+    # Synchronization
+    def run_full_sync(self):  # Renamed from start_sync
+        """Start synchronization process (manual trigger)"""
+        self.ui_enable_request.emit(False)  # Disable UI during sync
+        self.last_sync_status_update.emit("in_progress")  # Set status to in progress
+        try:
+            # Validate configuration
+            config = self.get_config()
+            validation_result = self._validate_sync_config(config)
+
+            if not validation_result["valid"]:
+                self.log_message.emit(f"⚠️ {validation_result['message']}", "warning")
+                self.ui_enable_request.emit(True)  # Re-enable UI on validation failure
+                self.last_sync_status_update.emit("error")  # Set status to error
+                return False
+
+            # Check if sync is already running
+            if self.sync_engine.is_sync_running():
+                self.log_message.emit("⚠️ การซิงค์กำลังดำเนินการอยู่", "warning")
+                self.ui_enable_request.emit(True)  # Re-enable UI
+                self.last_sync_status_update.emit(
+                    "in_progress"
+                )  # Keep status in progress
+                return False
+
+            self.log_message.emit("🚀 เริ่มการซิงค์ข้อมูล...", "info")
+
+            # Start sync (sync_engine will emit progress and completion signals)
+            # No need to return success here, as _handle_sync_completion will manage UI updates
+            self.sync_engine.start_sync(config)
+            return True
+
+        except Exception as e:
+            self.log_message.emit(f"❌ ไม่สามารถเริ่มการซิงค์: {str(e)}", "error")
+            self.ui_enable_request.emit(True)  # Re-enable UI on error
+            self.last_sync_status_update.emit("error")  # Set status to error
+            return False
+
+    def stop_sync(self):
+        """Stop current synchronization"""
+        try:
+            if self.sync_engine.is_sync_running():
+                self.sync_engine.stop_sync()
+                self.log_message.emit("⏹️ หยุดการซิงค์แล้ว", "info")
+                self.ui_enable_request.emit(True)  # Re-enable UI
+                self.last_sync_status_update.emit(
+                    "never"
+                )  # Set status to never or disconnected
+                return True
+            else:
+                self.log_message.emit("ℹ️ ไม่มีการซิงค์ที่กำลังทำงาน", "info")
+                return False
+        except Exception as e:
+            self.log_message.emit(f"❌ ไม่สามารถหยุดการซิงค์: {str(e)}", "error")
+            return False
+
+    # Auto-sync Management
+    def toggle_auto_sync(
+        self, enabled
+    ):  # Removed interval parameter as it's from config now
+        """Toggle automatic synchronization"""
+        try:
+            self.auto_sync_enabled = enabled
+            config = self.get_config()  # Get interval from config
+            interval = (
+                config.sync_interval
+            )  # Assuming sync_interval is in minutes from config_panel
+
+            if enabled:
+                # Convert minutes to milliseconds for QTimer
+                self.auto_sync_timer.start(interval * 60 * 1000)
+                self.log_message.emit(
+                    f"⏰ เปิดการซิงค์อัตโนมัติ (ทุก {interval} นาที)", "success"
+                )
+            else:
+                self.auto_sync_timer.stop()
+                self.log_message.emit("⏸️ หยุดการซิงค์อัตโนมัติ", "info")
+
+            self.auto_sync_status_update.emit(enabled)  # Update UI checkbox
+            return True
+
+        except Exception as e:
+            self.log_message.emit(
+                f"❌ ไม่สามารถเปลี่ยนการตั้งค่าการซิงค์อัตโนมัติ: {str(e)}", "error"
+            )
+            return False
+
+    def _auto_sync_triggered(self):
+        """Handle auto-sync timer trigger"""
+        if not self.sync_engine.is_sync_running():
+            self.log_message.emit("🔄 การซิงค์อัตโนมัติ", "info")
+            self.run_full_sync()  # Call the new run_full_sync
         else:
-            self.progress_bar.setVisible(False)
+            self.log_message.emit("⏭️ ข้ามการซิงค์อัตโนมัติ (กำลังซิงค์อยู่)", "info")
 
-    @pyqtSlot(bool, str, dict)
-    def on_sync_completed(self, success, message, stats):
-        """Handle sync completion"""
-        self.progress_bar.setVisible(False)
+    # Utility Methods
+    def clear_system_cache(self):
+        """Clears the system cache (placeholder for actual implementation)."""
+        self.log_message.emit("🧹 กำลังล้างแคชระบบ...", "info")
+        # --- Placeholder for actual cache clearing logic ---
+        # In a real application, this would involve clearing temporary files,
+        # resetting internal states, or interacting with a cache manager.
+        # For now, it's just a logging message.
+        # ---------------------------------------------------
+        logger.info("System cache cleared (placeholder).")
+        self.log_message.emit("✅ ล้างแคชระบบสำเร็จ", "success")
+        return True
 
-        if success:
-            self.sync_btn.setText("◈ Initiate Sync")
-            self.sync_status.update_status("success", "Neural sync complete")
-            self.progress_message.setText("✓ Quantum data transfer successful")
-        else:
-            self.sync_btn.setText("◈ Initiate Sync")
-            self.sync_status.update_status("error", "Sync protocol failed")
-            self.progress_message.setText("✗ Neural network disruption detected")
+    def _validate_sync_config(self, config):
+        """Validate configuration for sync operation"""
+        # SharePoint validation
+        if not all(
+            [
+                config.sharepoint_client_id,
+                config.sharepoint_client_secret,
+                config.tenant_id,
+                config.sharepoint_site,
+            ]
+        ):
+            return {"valid": False, "message": "กรุณากรอกข้อมูล SharePoint ให้ครบถ้วน"}
 
-    def add_log_message(self, message, level):
-        """เพิ่มข้อความ log แบบ cyber"""
-        self.log_console.add_message_with_typing(message, level)
+        if not config.sharepoint_list:  # Updated from list_name
+            return {"valid": False, "message": "กรุณาเลือกรายการ SharePoint"}
 
-    def clear_logs(self):
-        """ล้าง logs"""
-        self.log_console.clear()
-        self.add_log_message("Neural matrix purged - system ready", "info")
+        # Database validation
+        if config.database_type == "sqlserver":
+            if not all([config.sql_server, config.sql_database, config.sql_table_name]):
+                return {"valid": False, "message": "กรุณากรอกข้อมูล SQL Server ให้ครบถ้วน"}
+        elif config.database_type == "sqlite":  # SQLite
+            if not all([config.sqlite_file, config.sqlite_table_name]):
+                return {"valid": False, "message": "กรุณากรอกข้อมูล SQLite ให้ครบถ้วน"}
+        else:  # Handle other database types if added
+            return {"valid": False, "message": "ประเภทฐานข้อมูลไม่ถูกต้อง"}
 
-    def set_auto_sync_enabled(self, enabled):
-        """ตั้งค่า auto sync"""
-        self.auto_sync_check.setChecked(enabled)
+        return {"valid": True, "message": "การตั้งค่าถูกต้อง"}
 
-    def resizeEvent(self, event):
-        """Handle responsive behavior"""
-        super().resizeEvent(event)
+    def get_sync_status(self):
+        """Get current sync status"""
+        return {
+            "is_running": self.sync_engine.is_sync_running(),
+            "auto_sync_enabled": self.auto_sync_enabled,
+            "auto_sync_interval": (
+                self.auto_sync_timer.interval()
+                // (1000 * 60)  # Convert milliseconds to minutes
+                if self.auto_sync_timer.isActive()
+                else 0
+            ),
+        }
 
-        # ปรับ margins ตาม window size
-        width = self.width()
-        if width < 800:
-            margins = (15, 15, 15, 15)
-            spacing = 15
-        elif width < 1200:
-            margins = (25, 25, 25, 25)
-            spacing = 20
-        else:
-            margins = (30, 30, 30, 30)
-            spacing = 30
+    def cleanup(self):
+        """Cleanup resources before application exit"""
+        try:
+            if self.sync_engine.is_sync_running():
+                self.sync_engine.stop_sync()
 
-        # อัปเดต layout margins
-        scroll_widget = self.findChild(QScrollArea).widget()
-        if scroll_widget and scroll_widget.layout():
-            scroll_widget.layout().setContentsMargins(*margins)
-            scroll_widget.layout().setSpacing(spacing)
+            self.auto_sync_timer.stop()
+            self.log_message.emit("� ล้างทรัพยากรเสร็จสิ้น", "info")
 
-
-# Backward compatibility
-class UltraModernDashboard(Dashboard):
-    """Alias สำหรับ backward compatibility"""
-
-    pass
-    pass
+        except Exception as e:
+            logger.error(f"Error during cleanup: {str(e)}")

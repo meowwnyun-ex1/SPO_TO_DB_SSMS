@@ -6,22 +6,21 @@ from PyQt6.QtWidgets import (
     QFrame,
     QPushButton,
     QCheckBox,
-    QScrollArea,
     QSizePolicy,
     QGraphicsDropShadowEffect,
+    QGridLayout,
 )
-from PyQt6.QtCore import (
-    Qt,
-    pyqtSignal,
-    pyqtSlot,
-)
-from PyQt6.QtGui import QFont, QColor
-from ..widgets.status_card import UltraModernStatusCard
+from PyQt6.QtCore import pyqtSignal, pyqtSlot
+from PyQt6.QtGui import QColor
+from ..widgets.status_card import StatusCard
 from ..widgets.cyber_log_console import CyberLogConsole
 from ..widgets.holographic_progress_bar import HolographicProgressBar
+from ..widgets.progress_card import UltraModernProgressCard
 from ..styles.theme import (
     UltraModernColors,
     get_ultra_modern_card_style,
+    get_gradient_button_style,
+    get_neon_checkbox_style,  # Added get_neon_checkbox_style
 )
 import logging
 
@@ -29,508 +28,194 @@ logger = logging.getLogger(__name__)
 
 
 class HolographicFrame(QFrame):
-    """เฟรมแบบ holographic พร้อม dimensional effects"""
+    """
+    เฟรมแบบ holographic พร้อม dimensional effects
+    ใช้สำหรับสร้างส่วนต่างๆ ของ UI ให้มีสไตล์
+    """
 
     def __init__(self, variant="default", parent=None):
         super().__init__(parent)
         self.variant = variant
         self.setup_holographic_style()
-        # If setup_hover_effects is not implemented, comment or remove the next line
-        # self.setup_hover_effects()
+        self.shadow_effect = QGraphicsDropShadowEffect(self)
+        self.shadow_effect.setBlurRadius(20)
+        self.shadow_effect.setColor(QColor(0, 0, 0, 80))
+        self.setGraphicsEffect(self.shadow_effect)
 
     def setup_holographic_style(self):
         """ตั้งค่าสไตล์ holographic"""
         style = get_ultra_modern_card_style(self.variant)
         self.setStyleSheet(style)
 
-        # เพิ่ม shadow effects
-        self.shadow_effect = QGraphicsDropShadowEffect()
-        self.shadow_effect.setBlurRadius(20)
-        self.shadow_effect.setColor(QColor(0, 0, 0, 80))
-        self.shadow_effect.setOffset(0, 10)
-        self.setGraphicsEffect(self.shadow_effect)
 
+class UltraModernDashboard(QWidget):
+    """
+    Dashboard หลักของระบบ แสดงสถานะการเชื่อมต่อ, ความคืบหน้า, และ Log
+    ปรับให้รองรับการแสดงผลในหน้าเดียวโดยไม่มี Scrollbar
+    """
 
-class GradientHeaderFrame(QFrame):
-    """Enhanced gradient header with animations"""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setStyleSheet(
-            """
-            QFrame {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-            stop:0 #667eea,
-            stop:0.3 #764ba2,
-            stop:0.6 #f093fb,
-            stop:1 #f5576c);
-            border: none;
-            border-radius: 20px;
-            }
-            QLabel {
-            background: transparent;
-            color: #ffffff;
-            }
-            """
-        )
-
-        # Add glow effect
-        glow = QGraphicsDropShadowEffect()
-        glow.setBlurRadius(30)
-        glow.setColor(QColor(102, 126, 234, 100))
-        glow.setOffset(0, 0)
-        self.setGraphicsEffect(glow)
-
-
-class NeonSectionHeader(QFrame):
-    """หัวข้อส่วนแบบ neon glow"""
-
-    def __init__(self, title, icon="", parent=None):
-        super().__init__(parent)
-        self.title = title
-        self.icon = icon
-        self.setup_neon_ui()
-
-    def setup_neon_ui(self):
-        """ตั้งค่า UI แบบ neon"""
-        self.setFixedHeight(60)
-        self.setStyleSheet(
-            f"""
-            QFrame {{
-                background: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:1,
-                    stop:0 {UltraModernColors.NEON_BLUE}40,
-                    stop:0.3 {UltraModernColors.NEON_PURPLE}30,
-                    stop:0.7 {UltraModernColors.NEON_PINK}40,
-                    stop:1 {UltraModernColors.NEON_BLUE}40
-                );
-                border: 2px solid {UltraModernColors.NEON_BLUE};
-                border-radius: 16px;
-            }}
-            QLabel {{
-                background: transparent;
-                color: {UltraModernColors.TEXT_LUMINOUS};
-                font-weight: 700;
-            }}
-            """
-        )
-
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(24, 16, 24, 16)
-
-        # Icon + Title
-        label_text = f"{self.icon} {self.title}" if self.icon else self.title
-        label = QLabel(label_text)
-        label.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-
-        layout.addWidget(label)
-        layout.addStretch()
-
-
-class Dashboard(QWidget):
-    """Modern Responsive Dashboard with Glassmorphism Design"""
-
-    # Signals
-    test_connections_requested = pyqtSignal()
-    start_sync_requested = pyqtSignal()
-    stop_sync_requested = pyqtSignal()
-    clear_logs_requested = pyqtSignal()
-    auto_sync_toggled = pyqtSignal(bool, int)
-    # เพิ่ม signal
     clear_cache_requested = pyqtSignal()
 
     def __init__(self, controller):
         super().__init__()
         self.controller = controller
         self.setup_ultra_modern_ui()
-        # If setup_background_effects is not implemented, comment or remove the next line
-        # self.setup_background_effects()
 
     def setup_ultra_modern_ui(self):
-        """ตั้งค่า UI แบบ ultra modern"""
-        # Main scroll area สำหรับ responsive design
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        scroll.setStyleSheet(
-            f"""
-            QScrollArea {{
-            border: none;
-            background: transparent;
-            }}
-            QScrollBar:vertical {{
-            background: rgba(0, 0, 0, 0.3);
-            width: 12px;
-            border-radius: 6px;
-            margin: 2px;
-            }}
-            QScrollBar::handle:vertical {{
-            background: {UltraModernColors.NEON_BLUE};
-            border-radius: 6px;
-            min-height: 30px;
-
-            }}
-            QScrollBar::handle:vertical:hover {{
-            background: {UltraModernColors.NEON_PURPLE};
-
-            }}
-            """
-        )
-
-        # Scroll content
-        scroll_content = QWidget()
-        scroll.setWidget(scroll_content)
-
-        # Main layout
+        """
+        ตั้งค่า UI แบบ ultra modern สำหรับ Dashboard
+        ใช้ QGridLayout เพื่อการจัดเรียงที่ยืดหยุ่นและตอบสนอง
+        """
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.addWidget(scroll)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(20)
 
-        # Content layout พร้อม responsive margins
-        content_layout = QVBoxLayout(scroll_content)
-        content_layout.setContentsMargins(30, 30, 30, 30)
-        content_layout.setSpacing(30)
+        top_h_layout = QHBoxLayout()
+        top_h_layout.setSpacing(15)
 
-        # สร้างส่วนต่างๆ
-        self.create_holographic_header(content_layout)
-        self.create_neural_connection_section(content_layout)
-        self.create_quantum_progress_section(content_layout)
-        self.create_cyber_control_section(content_layout)
-        self.create_matrix_logs_section(content_layout)
-
-    def create_holographic_header(self, layout):
-        self.create_brand_header(layout)
-
-    def create_brand_header(self, layout):
-        """Enhanced brand header with modern typography"""
-        header = GradientHeaderFrame()
-        header.setMinimumHeight(100)
-        header.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-
-        header_layout = QVBoxLayout(header)
-        header_layout.setContentsMargins(40, 24, 40, 24)
-        header_layout.setSpacing(12)
-
-        # Main title with enhanced typography
-        title = QLabel("SharePoint to Microsoft SQL")
-        title.setFont(QFont("Segoe UI", 22, QFont.Weight.Bold))
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet(
-            """
-            color: #ffffff;
-
-            letter-spacing: 0.5px;
-            """
+        self.sharepoint_status_card = StatusCard(
+            "SharePoint Connection", "disconnected"
         )
+        self.database_status_card = StatusCard("Database Connection", "disconnected")
+        self.last_sync_status_card = StatusCard("Last Sync", "never")
 
-        # Enhanced subtitle
-        subtitle = QLabel("Thammaphon Chittasuwanna (SDM) | Innovation")
-        subtitle.setFont(QFont("Segoe UI", 12, QFont.Weight.Normal))
-        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        subtitle.setStyleSheet(
-            """
-            color: rgba(255,255,255,0.9);
+        top_h_layout.addWidget(self.sharepoint_status_card)
+        top_h_layout.addWidget(self.database_status_card)
+        top_h_layout.addWidget(self.last_sync_status_card)
+        top_h_layout.setStretchFactor(self.sharepoint_status_card, 1)
+        top_h_layout.setStretchFactor(self.database_status_card, 1)
+        top_h_layout.setStretchFactor(self.last_sync_status_card, 1)
 
-            font-weight: 500;
-            letter-spacing: 0.3px;
-            """
+        control_frame = HolographicFrame(variant="highlight")
+        control_layout = QHBoxLayout(control_frame)
+        control_layout.setContentsMargins(15, 15, 15, 15)
+        control_layout.setSpacing(10)
+
+        self.run_sync_button = QPushButton("Initiate Sync")
+        self.run_sync_button.setStyleSheet(get_gradient_button_style("primary"))
+        self.run_sync_button.clicked.connect(self.controller.run_full_sync)
+
+        self.clear_cache_button = QPushButton("Clear Cache")
+        self.clear_cache_button.setStyleSheet(get_gradient_button_style("secondary"))
+        self.clear_cache_button.clicked.connect(self.clear_cache)
+
+        self.auto_sync_check = QCheckBox("Auto Sync Enabled")
+        # Corrected: Use get_neon_checkbox_style()
+        self.auto_sync_check.setStyleSheet(get_neon_checkbox_style())
+        self.auto_sync_check.stateChanged.connect(self.controller.toggle_auto_sync)
+
+        control_layout.addWidget(self.run_sync_button)
+        control_layout.addWidget(self.clear_cache_button)
+        control_layout.addStretch(1)
+        control_layout.addWidget(self.auto_sync_check)
+
+        main_layout.addLayout(top_h_layout)
+        main_layout.addWidget(control_frame)
+
+        middle_grid_layout = QGridLayout()
+        middle_grid_layout.setSpacing(15)
+
+        progress_frame = HolographicFrame()
+        progress_layout = QVBoxLayout(progress_frame)
+        progress_layout.setContentsMargins(15, 15, 15, 15)
+        self.overall_progress_label = QLabel("Overall Sync Progress:")
+        self.overall_progress_label.setStyleSheet(
+            f"color: {UltraModernColors.TEXT_PRIMARY}; font-weight: bold;"
         )
+        self.overall_progress_bar = HolographicProgressBar()
+        self.overall_progress_bar.setTextVisible(True)
+        progress_layout.addWidget(self.overall_progress_label)
+        progress_layout.addWidget(self.overall_progress_bar)
 
-        header_layout.addWidget(title)
-        header_layout.addWidget(subtitle)
-        # If credit is not defined, comment or remove the next line
-        # header_layout.addWidget(credit)
+        middle_grid_layout.addWidget(progress_frame, 0, 0, 1, 2)
 
-    def create_neural_connection_section(self, layout):
-        """สร้าง connection status section แบบ neural network"""
-        conn_frame = HolographicFrame("elevated")
-
-        conn_layout = QVBoxLayout(conn_frame)
-        conn_layout.setContentsMargins(28, 28, 28, 28)
-        conn_layout.setSpacing(24)
-
-        # Section header แบบ neon
-        header = NeonSectionHeader("Neural Network Status", "⬢")
-        conn_layout.addWidget(header)
-
-        # Status cards layout
-        cards_container = QWidget()
-        cards_layout = QHBoxLayout(cards_container)
-        cards_layout.setSpacing(20)
-
-        # สร้าง ultra modern status cards
-        self.sp_status = UltraModernStatusCard("SharePoint Matrix", "disconnected")
-        self.db_status = UltraModernStatusCard("Database Node", "disconnected")
-        self.sync_status = UltraModernStatusCard("Sync Protocol", "never")
-
-        # Responsive sizing
-        for card in [self.sp_status, self.db_status, self.sync_status]:
-            card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-
-        cards_layout.addWidget(self.sp_status)
-        cards_layout.addWidget(self.db_status)
-        cards_layout.addWidget(self.sync_status)
-
-        conn_layout.addWidget(cards_container)
-        layout.addWidget(conn_frame)
-
-    def create_quantum_progress_section(self, layout):
-        """สร้าง progress section แบบ quantum"""
-        progress_frame = HolographicFrame("neon")
-
-        prog_layout = QVBoxLayout(progress_frame)
-        prog_layout.setContentsMargins(28, 28, 28, 28)
-        prog_layout.setSpacing(24)
-
-        # Section header
-        header = NeonSectionHeader("Quantum Data Transfer", "◈")
-        prog_layout.addWidget(header)
-
-        # Progress content
-        content_layout = QVBoxLayout()
-        content_layout.setSpacing(16)
-
-        # Holographic progress bar
-        self.progress_bar = HolographicProgressBar()
-        self.progress_bar.setVisible(False)
-
-        # Enhanced progress message
-        self.progress_message = QLabel("Ready to synchronize data")
-        self.progress_message.setFont(QFont("Segoe UI", 12, QFont.Weight.Medium))
-        self.progress_message.setStyleSheet(
-            f"""
-            color: {UltraModernColors.TEXT_GLOW};
-            background: transparent;
-            padding: 12px 0px;
-
-            """
+        task_frame = HolographicFrame()
+        task_layout = QVBoxLayout(task_frame)
+        task_layout.setContentsMargins(15, 15, 15, 15)
+        self.current_task_label = QLabel("Current Task: Idle")
+        self.current_task_label.setStyleSheet(
+            f"color: {UltraModernColors.TEXT_ACCENT}; font-size: 14px; font-weight: bold;"
         )
-        self.progress_message.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.detail_progress_bar = UltraModernProgressCard("Task Progress", 0)
 
-        content_layout.addWidget(self.progress_bar)
-        content_layout.addWidget(self.progress_message)
+        task_layout.addWidget(self.current_task_label)
+        task_layout.addWidget(self.detail_progress_bar)
 
-        prog_layout.addLayout(content_layout)
-        layout.addWidget(progress_frame)
+        middle_grid_layout.addWidget(task_frame, 1, 0, 1, 2)
 
-    def create_cyber_control_section(self, layout):
-        """สร้าง control panel แบบ cyberpunk"""
-        control_frame = HolographicFrame("elevated")
-
-        ctrl_layout = QVBoxLayout(control_frame)
-        ctrl_layout.setContentsMargins(28, 28, 28, 28)
-        ctrl_layout.setSpacing(24)
-
-        # Section header
-        header = NeonSectionHeader("Command Matrix", "⬡")
-        ctrl_layout.addWidget(header)
-
-        # Control content
-        content_layout = QVBoxLayout()
-        content_layout.setSpacing(20)
-
-        # Main action buttons - responsive
-        main_buttons_container = QWidget()
-        main_buttons = QHBoxLayout(main_buttons_container)
-        main_buttons.setSpacing(16)
-
-        self.test_btn = QPushButton("🔍 Test Connections")
-        self.test_btn.setStyleSheet(self.get_modern_primary_button_style())
-        self.test_btn.setMinimumHeight(48)
-        self.test_btn.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        log_frame = HolographicFrame()
+        log_layout = QVBoxLayout(log_frame)
+        log_layout.setContentsMargins(15, 15, 15, 15)
+        log_label = QLabel("System Log:")
+        log_label.setStyleSheet(
+            f"color: {UltraModernColors.TEXT_PRIMARY}; font-weight: bold;"
         )
-        self.test_btn.clicked.connect(self.test_connections_requested.emit)
-
-        self.sync_btn = QPushButton("🚀 Start Sync")
-        self.sync_btn.setStyleSheet(self.get_modern_success_button_style())
-        self.sync_btn.setMinimumHeight(48)
-        self.sync_btn.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
-        )
-        self.sync_btn.clicked.connect(self._toggle_sync)
-
-        main_buttons.addWidget(self.test_btn)
-        main_buttons.addWidget(self.sync_btn)
-
-        # Secondary controls - responsive
-        secondary_container = QWidget()
-        secondary_layout = QHBoxLayout(secondary_container)
-        secondary_layout.setSpacing(16)
-
-        self.clear_btn = QPushButton("🧹 Clear Logs")
-        self.clear_btn.setStyleSheet(self.get_modern_warning_button_style())
-        self.clear_btn.setMinimumHeight(40)
-        self.clear_btn.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
-        )
-        self.clear_btn.clicked.connect(self.clear_logs_requested.emit)
-
-        # Enhanced auto sync checkbox
-        self.auto_sync_check = QCheckBox("🔄 Auto Sync Every Hour")
-        self.auto_sync_check.setStyleSheet(self.get_modern_checkbox_style())
-        self.auto_sync_check.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
-        )
-        self.auto_sync_check.toggled.connect(self._toggle_auto_sync)
-
-        # เพิ่มปุ่มล้างแคช
-        self.clear_cache_btn = QPushButton("🗑️ Clear Cache")
-        self.clear_cache_btn.setStyleSheet(self.get_modern_warning_button_style())
-        self.clear_cache_btn.setMinimumHeight(40)
-        self.clear_cache_btn.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
-        )
-        self.clear_cache_btn.clicked.connect(self.clear_cache_requested.emit)
-
-        secondary_layout.addWidget(self.clear_btn)
-        secondary_layout.addWidget(self.auto_sync_check)
-        # เพิ่มปุ่มเข้าไปใน secondary layout
-        secondary_layout.addWidget(self.clear_cache_btn)
-
-        content_layout.addWidget(main_buttons_container)
-        content_layout.addWidget(secondary_container)
-
-        ctrl_layout.addLayout(content_layout)
-        layout.addWidget(control_frame)
-
-    def create_matrix_logs_section(self, layout):
-        """สร้าง logs section แบบ matrix terminal"""
-        logs_frame = HolographicFrame("neon")
-
-        logs_layout = QVBoxLayout(logs_frame)
-        logs_layout.setContentsMargins(28, 28, 28, 28)
-        logs_layout.setSpacing(24)
-
-        # Section header
-        header = NeonSectionHeader("Neural Activity Matrix", "◎")
-        logs_layout.addWidget(header)
-
-        # Cyber log console
         self.log_console = CyberLogConsole()
-        self.log_console.setMinimumHeight(160)
-        self.log_console.setMaximumHeight(220)
+        self.log_console.setMinimumHeight(150)
+        self.log_console.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
 
-        logs_layout.addWidget(self.log_console)
-        layout.addWidget(logs_frame)
+        log_layout.addWidget(log_label)
+        log_layout.addWidget(self.log_console)
 
-    def get_modern_primary_button_style(self):
-        return """
-            QPushButton {
-                background: #2196F3;
-                border: none;
-                border-radius: 8px;
-                color: white;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background: #1976D2;
-            }
-        """
+        middle_grid_layout.addWidget(log_frame, 2, 0, 1, 2)
 
-    def get_modern_success_button_style(self):
-        return """
-            QPushButton {
-                background: #4CAF50;
-                border: none;
-                border-radius: 8px;
-                color: white;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background: #388E3C;
-            }
-        """
+        middle_grid_layout.setColumnStretch(0, 1)
+        middle_grid_layout.setColumnStretch(1, 1)
 
-    def get_modern_warning_button_style(self):
-        return """
-            QPushButton {
-                background: #FF9800;
-                border: none;
-                border-radius: 8px;
-                color: white;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background: #F57C00;
-            }
-        """
+        main_layout.addLayout(middle_grid_layout)
+        main_layout.setStretchFactor(middle_grid_layout, 1)
 
-    def get_modern_checkbox_style(self):
-        return """
-            QCheckBox {
-                color: white;
-                spacing: 8px;
-            }
-            QCheckBox::indicator {
-                width: 18px;
-                height: 18px;
-                border-radius: 4px;
-                border: 2px solid #2196F3;
-            }
-            QCheckBox::indicator:unchecked {
-                background: transparent;
-            }
-            QCheckBox::indicator:checked {
-                background: #2196F3;
-            }
-        """
+        self.add_log_message(
+            "Neural Dashboard initialized. Awaiting commands...", "info"
+        )
 
-    # Event handlers
-    def _toggle_sync(self):
-        """Toggle sync operation"""
-        if self.controller.get_sync_status()["is_running"]:
-            self.stop_sync_requested.emit()
+    @pyqtSlot(int)
+    def update_overall_progress(self, value):
+        """อัปเดตความคืบหน้ารวม"""
+        self.overall_progress_bar.setValue(value)
+        self.overall_progress_bar.setFormat(f"Overall Progress: {value}%")
+
+    @pyqtSlot(int, int)
+    def update_detail_progress(self, current, total):
+        """อัปเดตความคืบหน้าของงานย่อย"""
+        if isinstance(self.detail_progress_bar, UltraModernProgressCard):
+            self.detail_progress_bar.set_progress(current, total)
         else:
-            self.start_sync_requested.emit()
+            logger.warning(
+                "detail_progress_bar is not an UltraModernProgressCard instance."
+            )
 
-    def _toggle_auto_sync(self, checked):
-        """Toggle auto sync"""
-        self.auto_sync_toggled.emit(checked, 3600)
-
-    def on_status_card_clicked(self, status):
-        """Handle status card clicks"""
-        logger.info(f"Status card clicked: {status}")
-
-    # Public update methods
     @pyqtSlot(str, str)
-    def update_connection_status(self, service, status):
-        """อัปเดตสถานะการเชื่อมต่อ"""
-        if service == "SharePoint":
-            self.sp_status.update_status(status)
-        elif service == "Database":
-            self.db_status.update_status(status)
-
-    @pyqtSlot(str, int, str)
-    def update_progress(self, message, progress, level):
-        """อัปเดต progress"""
-        cyber_message = f"◦ {message} ◦"
-        self.progress_message.setText(cyber_message)
-
-        if progress > 0:
-            self.progress_bar.setVisible(True)
-            self.progress_bar.setValue(progress)
-        else:
-            self.progress_bar.setVisible(False)
-
-    @pyqtSlot(bool, str, dict)
-    def on_sync_completed(self, success, message, stats):
-        """Handle sync completion"""
-        self.progress_bar.setVisible(False)
-
-        if success:
-            self.sync_btn.setText("◈ Initiate Sync")
-            self.sync_status.update_status("success", "Neural sync complete")
-            self.progress_message.setText("✓ Quantum data transfer successful")
-        else:
-            self.sync_btn.setText("◈ Initiate Sync")
-            self.sync_status.update_status("error", "Sync protocol failed")
-            self.progress_message.setText("✗ Neural network disruption detected")
-
-    def add_log_message(self, message, level):
-        """เพิ่มข้อความ log แบบ cyber"""
+    def add_log_message(self, message, level="info"):
+        """
+        เพิ่มข้อความ Log พร้อมเอฟเฟกต์การพิมพ์
+        Args:
+            message (str): ข้อความ Log
+            level (str): ระดับ Log ('info', 'warning', 'error')
+        """
         self.log_console.add_message_with_typing(message, level)
+
+    @pyqtSlot(str)
+    def update_current_task(self, task_description):
+        """อัปเดตงานปัจจุบันที่กำลังดำเนินการ"""
+        self.current_task_label.setText(f"Current Task: {task_description}")
+
+    @pyqtSlot(str)
+    def update_sharepoint_status(self, status):
+        """อัปเดตสถานะ SharePoint"""
+        self.sharepoint_status_card.set_status(status)
+
+    @pyqtSlot(str)
+    def update_database_status(self, status):
+        """อัปเดตสถานะ Database"""
+        self.database_status_card.set_status(status)
+
+    @pyqtSlot(str)
+    def update_last_sync_status(self, status):
+        """อัปเดตสถานะการซิงค์ครั้งล่าสุด"""
+        self.last_sync_status_card.set_status(status)
 
     def clear_logs(self):
         """ล้าง logs"""
@@ -544,7 +229,6 @@ class Dashboard(QWidget):
     def clear_cache(self):
         """ล้างแคชของระบบ"""
         self.add_log_message("Clearing system cache...", "info")
-        # ส่งคำขอไปยัง controller
         success = self.controller.clear_system_cache()
         if success:
             self.add_log_message("Cache cleared successfully", "info")
@@ -552,31 +236,5 @@ class Dashboard(QWidget):
             self.add_log_message("Failed to clear cache", "error")
 
     def resizeEvent(self, event):
-        """Handle responsive behavior"""
+        """Handle responsive behavior - only if manual adjustments are needed beyond layout stretch factors"""
         super().resizeEvent(event)
-
-        # ปรับ margins ตาม window size
-        width = self.width()
-        if width < 800:
-            margins = (15, 15, 15, 15)
-            spacing = 15
-        elif width < 1200:
-            margins = (25, 25, 25, 25)
-            spacing = 20
-        else:
-            margins = (30, 30, 30, 30)
-            spacing = 30
-
-        # อัปเดต layout margins
-        scroll_widget = self.findChild(QScrollArea).widget()
-        if scroll_widget and scroll_widget.layout():
-            scroll_widget.layout().setContentsMargins(*margins)
-            scroll_widget.layout().setSpacing(spacing)
-
-
-# Backward compatibility
-class UltraModernDashboard(Dashboard):
-    """Alias สำหรับ backward compatibility"""
-
-    pass
-    pass
