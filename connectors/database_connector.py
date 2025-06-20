@@ -1,12 +1,13 @@
-# connectors/database_connector.py - Enhanced with Robustness and Performance
+# connectors/database_connector.py - Fixed Database Connector
 import pandas as pd
 from sqlalchemy import create_engine, text, inspect, exc
-from typing import List, Dict, Optional  # Added Optional import
+from typing import List, Dict, Optional
 import logging
 from pathlib import Path
-from urllib.parse import quote_plus  # For SQL Server connection string
+from urllib.parse import quote_plus
+
 from utils.error_handling import handle_exceptions, ErrorCategory, ErrorSeverity
-from utils.config_manager import Config  # For type hinting
+from utils.config_manager import Config
 
 logger = logging.getLogger(__name__)
 
@@ -14,125 +15,151 @@ logger = logging.getLogger(__name__)
 class DatabaseConnector:
     """
     Manages connections and operations with SQL Server and SQLite databases.
-    Includes robust error handling and improved connection management.
+    Enhanced with robust error handling and improved connection management.
     """
 
     def __init__(self, config: Config):
         self.config = config
         self.engine = None
+        self.connection_string = ""
         self._create_engine()
-        logger.info(
-            f"DatabaseConnector initialized for {self.config.database_type or self.config.db_type}."
-        )
+        logger.info(f"DatabaseConnector initialized for {self.config.database_type}")
 
-    @handle_exceptions(
-        ErrorCategory.CONNECTION, ErrorSeverity.HIGH
-    )  # Removed user_message argument
+    @handle_exceptions(ErrorCategory.CONNECTION, ErrorSeverity.HIGH)
     def _create_engine(self):
-        """
-        Creates a SQLAlchemy engine based on the configuration.
-        Includes dynamic handling for connection string parameters.
-        """
-        connection_string = ""
-        db_type = (
-            self.config.database_type.lower()
-            if self.config.database_type
-            else self.config.db_type.lower()
-        )
+        """Create SQLAlchemy engine based on configuration"""
+        db_type = self.config.database_type.lower()
 
         try:
             if db_type == "sqlserver":
-                # Using trusted connection if no username/password provided, otherwise use credentials
-                if self.config.sql_username and self.config.sql_password:
-                    connection_string = (
-                        f"mssql+pyodbc://{quote_plus(self.config.sql_username)}:"
-                        f"{quote_plus(self.config.sql_password)}@"
-                        f"{self.config.sql_server}/{self.config.sql_database}?"
-                        "driver=ODBC+Driver+17+for+SQL+Server"
-                    )
-                else:
-                    # Windows Authentication (Trusted Connection)
-                    connection_string = (
-                        f"mssql+pyodbc://{self.config.sql_server}/"
-                        f"{self.config.sql_database}?"
-                        "driver=ODBC+Driver+17+for+SQL+Server;"
-                        "trusted_connection=yes"
-                    )
-                logger.debug(f"SQL Server connection string: {connection_string}")
+                self.connection_string = self._build_sqlserver_connection_string()
             elif db_type == "sqlite":
-                # Ensure the directory for the SQLite file exists
-                sqlite_path = Path(self.config.sqlite_file)
-                sqlite_path.parent.mkdir(parents=True, exist_ok=True)
-                connection_string = f"sqlite:///{sqlite_path.resolve()}"
-                logger.debug(f"SQLite connection string: {connection_string}")
+                self.connection_string = self._build_sqlite_connection_string()
             else:
                 raise ValueError(f"Unsupported database type: {db_type}")
 
-            self.engine = create_engine(
-                connection_string,
-                connect_args={"timeout": self.config.connection_timeout},
-                pool_pre_ping=True,  # Ensures connections are alive
-            )
-            # Test connection immediately
-            with self.engine.connect() as connection:
-                connection.execute(text("SELECT 1"))
-            logger.info(f"Successfully created and tested engine for {db_type}.")
+            # Create engine with appropriate settings
+            engine_kwargs = {
+                "pool_pre_ping": True,  # Verify connections before use
+                "pool_recycle": 3600,  # Recreate connections after 1 hour
+                "echo": False,  # Set to True for SQL debugging
+            }
+
+            # Add timeout for SQL Server
+            if db_type == "sqlserver":
+                engine_kwargs["connect_args"] = {
+                    "timeout": self.config.connection_timeout,
+                    "autocommit": True,
+                }
+
+            self.engine = create_engine(self.connection_string, **engine_kwargs)
+
+            # Test connection
+            with self.engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+
+            logger.info(f"Database engine created successfully for {db_type}")
+
         except exc.SQLAlchemyError as e:
-            logger.error(
-                f"SQLAlchemy engine creation or test failed: {e}", exc_info=True
-            )
-            raise  # Re-raise the exception to be caught by the decorator
+            logger.error(f"SQLAlchemy error during engine creation: {e}")
+            raise
         except Exception as e:
-            logger.critical(
-                f"An unexpected error occurred during engine creation: {e}",
-                exc_info=True,
-            )
+            logger.error(f"Unexpected error during engine creation: {e}")
             raise
 
-    @handle_exceptions(
-        ErrorCategory.CONNECTION, ErrorSeverity.HIGH
-    )  # Removed user_message argument
+    def _build_sqlserver_connection_string(self) -> str:
+        """Build SQL Server connection string"""
+        if not all([self.config.sql_server, self.config.sql_database]):
+            raise ValueError("SQL Server and database name are required")
+
+        # Check if using Windows Authentication
+        if self.config.sql_username and self.config.sql_password:
+            # SQL Server Authentication
+            connection_string = (
+                f"mssql+pyodbc://{quote_plus(self.config.sql_username)}:"
+                f"{quote_plus(self.config.sql_password)}@"
+                f"{self.config.sql_server}/{self.config.sql_database}?"
+                f"driver=ODBC+Driver+17+for+SQL+Server&"
+                f"timeout={self.config.connection_timeout}"
+            )
+        else:
+            # Windows Authentication
+            connection_string = (
+                f"mssql+pyodbc://{self.config.sql_server}/"
+                f"{self.config.sql_database}?"
+                f"driver=ODBC+Driver+17+for+SQL+Server&"
+                f"trusted_connection=yes&"
+                f"timeout={self.config.connection_timeout}"
+            )
+
+        logger.debug("SQL Server connection string built (credentials hidden)")
+        return connection_string
+
+    def _build_sqlite_connection_string(self) -> str:
+        """Build SQLite connection string"""
+        if not self.config.sqlite_file:
+            raise ValueError("SQLite file path is required")
+
+        # Ensure directory exists
+        sqlite_path = Path(self.config.sqlite_file)
+        sqlite_path.parent.mkdir(parents=True, exist_ok=True)
+
+        connection_string = f"sqlite:///{sqlite_path.resolve()}"
+        logger.debug(f"SQLite connection string: {connection_string}")
+        return connection_string
+
+    @handle_exceptions(ErrorCategory.CONNECTION, ErrorSeverity.HIGH)
     def test_connection(self) -> bool:
-        """Tests the database connection."""
+        """Test database connection"""
         if self.engine is None:
-            logger.error("Database engine is not initialized.")
+            logger.error("Database engine is not initialized")
             return False
+
         try:
-            with self.engine.connect() as connection:
-                connection.execute(text("SELECT 1"))
-            logger.info("Database connection test successful.")
+            with self.engine.connect() as conn:
+                result = conn.execute(text("SELECT 1"))
+                result.fetchone()
+            logger.info("Database connection test successful")
             return True
         except exc.SQLAlchemyError as e:
-            logger.error(f"Database connection test failed: {e}", exc_info=True)
+            logger.error(f"Database connection test failed: {e}")
             return False
         except Exception as e:
-            logger.critical(
-                f"An unexpected error occurred during database connection test: {e}",
-                exc_info=True,
-            )
+            logger.error(f"Unexpected error during connection test: {e}")
             return False
 
     @handle_exceptions(ErrorCategory.DATA, ErrorSeverity.MEDIUM)
     def read_table(self, table_name: str) -> Optional[List[Dict]]:
-        """Reads all data from a specified table."""
-        logger.info(f"Reading data from table: '{table_name}'")
-        if self.engine is None:
-            logger.error("Database engine is not initialized.")
+        """Read all data from specified table"""
+        if not table_name:
+            logger.error("Table name is required")
             return None
+
+        logger.info(f"Reading data from table: '{table_name}'")
+
+        if self.engine is None:
+            logger.error("Database engine is not initialized")
+            return None
+
         try:
-            with self.engine.connect() as connection:
-                query = text(f"SELECT * FROM {table_name}")
-                df = pd.read_sql(query, connection)
-            logger.info(f"Successfully read {len(df)} rows from table '{table_name}'.")
+            with self.engine.connect() as conn:
+                # Check if table exists
+                inspector = inspect(self.engine)
+                if not inspector.has_table(table_name):
+                    logger.warning(f"Table '{table_name}' does not exist")
+                    return []
+
+                query = text(f"SELECT * FROM [{table_name}]")
+                df = pd.read_sql(query, conn)
+
+            logger.info(f"Successfully read {len(df)} rows from table '{table_name}'")
             return df.to_dict(orient="records")
+
         except exc.SQLAlchemyError as e:
-            logger.error(f"Failed to read table '{table_name}': {e}", exc_info=True)
+            logger.error(f"Failed to read table '{table_name}': {e}")
             return None
         except Exception as e:
-            logger.critical(
-                f"An unexpected error occurred while reading table '{table_name}': {e}",
-                exc_info=True,
-            )
+            logger.error(f"Unexpected error reading table '{table_name}': {e}")
             return None
 
     @handle_exceptions(ErrorCategory.DATA, ErrorSeverity.MEDIUM)
@@ -142,63 +169,165 @@ class DatabaseConnector:
         table_name: str,
         if_exists: str = "append",
         index: bool = False,
-        create_table: bool = True,  # New parameter to control table creation
+        create_table: bool = True,
+        chunksize: int = None,
     ) -> int:
         """
-        Writes a pandas DataFrame to a specified database table.
-        if_exists: 'fail', 'replace', or 'append'.
-        index: Write DataFrame index as a column.
-        create_table: If True, ensures table is created or exists.
+        Write pandas DataFrame to database table
+
+        Args:
+            df: DataFrame to write
+            table_name: Target table name
+            if_exists: 'fail', 'replace', 'append'
+            index: Whether to write DataFrame index
+            create_table: Whether to create table if not exists
+            chunksize: Number of rows to write at once
+
+        Returns:
+            Number of rows written
         """
+        if df.empty:
+            logger.warning("DataFrame is empty, nothing to write")
+            return 0
+
+        if not table_name:
+            raise ValueError("Table name is required")
+
         logger.info(
-            f"Writing DataFrame to table '{table_name}' (if_exists='{if_exists}')."
+            f"Writing {len(df)} rows to table '{table_name}' (mode: {if_exists})"
         )
+
         if self.engine is None:
-            logger.error("Database engine is not initialized. Cannot write DataFrame.")
-            raise ConnectionError("Database engine not initialized.")
+            raise ConnectionError("Database engine not initialized")
 
         try:
-            # Check if table exists if create_table is False and if_exists is not 'replace'
+            # Check table existence if needed
             inspector = inspect(self.engine)
-            if (
-                not inspector.has_table(table_name)
-                and not create_table
-                and if_exists != "replace"
-            ):
-                logger.error(
-                    f"Table '{table_name}' does not exist and create_table is False. Aborting write."
-                )
-                raise ValueError(f"Table '{table_name}' does not exist.")
+            table_exists = inspector.has_table(table_name)
 
-            # Ensure the connection is disposed properly
-            with self.engine.begin() as connection:  # begin() for transactional integrity
-                # Use chunksize for large dataframes to prevent memory issues
+            if not table_exists and not create_table and if_exists != "replace":
+                raise ValueError(
+                    f"Table '{table_name}' does not exist and create_table=False"
+                )
+
+            # Use configured batch size if chunksize not specified
+            if chunksize is None:
+                chunksize = getattr(self.config, "batch_size", 1000)
+
+            # Write data using transaction
+            with self.engine.begin() as conn:
                 rows_written = df.to_sql(
                     table_name,
-                    con=connection,  # Pass connection object directly
+                    con=conn,
                     if_exists=if_exists,
                     index=index,
-                    chunksize=1000,  # Write in chunks of 1000 rows
+                    chunksize=chunksize,
+                    method="multi",  # Use multi-row INSERT for better performance
                 )
-            logger.info(
-                f"Successfully wrote {len(df)} rows to table '{table_name}'. (Action: '{if_exists}')"
-            )
-            return len(df)  # pandas.to_sql returns None, so return df length
+
+            logger.info(f"Successfully wrote {len(df)} rows to table '{table_name}'")
+            return len(df)
+
         except exc.SQLAlchemyError as e:
-            logger.error(
-                f"Failed to write DataFrame to table '{table_name}': {e}", exc_info=True
-            )
-            raise  # Re-raise for upstream error handling
+            logger.error(f"Failed to write DataFrame to table '{table_name}': {e}")
+            raise
         except Exception as e:
             logger.error(
-                f"An unexpected error occurred while writing DataFrame to table '{table_name}': {e}",
-                exc_info=True,
+                f"Unexpected error writing DataFrame to table '{table_name}': {e}"
             )
-            raise  # Re-raise for upstream error handling
+            raise
+
+    @handle_exceptions(ErrorCategory.DATA, ErrorSeverity.MEDIUM)
+    def execute_query(self, query: str, params: dict = None) -> Optional[List[Dict]]:
+        """Execute custom SQL query"""
+        if not query.strip():
+            raise ValueError("Query cannot be empty")
+
+        logger.info("Executing custom query")
+        logger.debug(f"Query: {query}")
+
+        if self.engine is None:
+            raise ConnectionError("Database engine not initialized")
+
+        try:
+            with self.engine.connect() as conn:
+                if params:
+                    result = conn.execute(text(query), params)
+                else:
+                    result = conn.execute(text(query))
+
+                # Handle SELECT queries
+                if result.returns_rows:
+                    rows = result.fetchall()
+                    columns = result.keys()
+                    data = [dict(zip(columns, row)) for row in rows]
+                    logger.info(f"Query returned {len(data)} rows")
+                    return data
+                else:
+                    # Handle INSERT/UPDATE/DELETE
+                    rowcount = result.rowcount
+                    logger.info(f"Query affected {rowcount} rows")
+                    return [{"affected_rows": rowcount}]
+
+        except exc.SQLAlchemyError as e:
+            logger.error(f"Failed to execute query: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error executing query: {e}")
+            raise
+
+    @handle_exceptions(ErrorCategory.DATA, ErrorSeverity.LOW)
+    def get_table_info(self, table_name: str) -> Optional[Dict]:
+        """Get table schema information"""
+        if not table_name:
+            return None
+
+        if self.engine is None:
+            return None
+
+        try:
+            inspector = inspect(self.engine)
+
+            if not inspector.has_table(table_name):
+                return None
+
+            columns = inspector.get_columns(table_name)
+            indexes = inspector.get_indexes(table_name)
+
+            return {
+                "table_name": table_name,
+                "columns": columns,
+                "indexes": indexes,
+                "column_count": len(columns),
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to get table info for '{table_name}': {e}")
+            return None
+
+    @handle_exceptions(ErrorCategory.DATA, ErrorSeverity.LOW)
+    def list_tables(self) -> List[str]:
+        """List all tables in database"""
+        if self.engine is None:
+            return []
+
+        try:
+            inspector = inspect(self.engine)
+            tables = inspector.get_table_names()
+            logger.debug(f"Found {len(tables)} tables in database")
+            return tables
+        except Exception as e:
+            logger.error(f"Failed to list tables: {e}")
+            return []
 
     def close(self):
-        """Disposes the SQLAlchemy engine, closing all connections in the pool."""
+        """Close database connection and dispose engine"""
         if self.engine:
-            self.engine.dispose()
-            logger.info("Database engine disposed, all connections closed.")
-            self.engine = None
+            try:
+                self.engine.dispose()
+                logger.info("Database engine disposed, connections closed")
+            except Exception as e:
+                logger.error(f"Error disposing database engine: {e}")
+            finally:
+                self.engine = None
+                self.connection_string = ""
