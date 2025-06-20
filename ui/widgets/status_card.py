@@ -6,246 +6,300 @@ from PyQt6.QtWidgets import (
     QFrame,
     QSizePolicy,
 )
-from PyQt6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, QPoint
+from PyQt6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, QRect
 from PyQt6.QtGui import QFont, QColor, QPainter
 
-from ..styles.theme import UltraModernColors, get_ultra_modern_card_style
+from ..styles.theme import UltraModernColors, get_modern_card_style
 
 
-class StatusIndicator(QWidget):
-    """ไฟแสดงสถานะวงกลมพร้อมสีและเอฟเฟกต์"""
+class ModernStatusIndicator(QWidget):
+    """Modern status indicator with soft glow effect"""
 
     def __init__(self, status="disconnected", parent=None):
         super().__init__(parent)
         self.status = status
         self.setFixedSize(16, 16)
-        self.pulse_strength = 0.0
-        self.pulse_direction = 1
+        self.glow_radius = 0
 
     def paintEvent(self, event):
-        """วาดวงกลมแสดงสถานะ"""
+        """วาดจุดสถานะแบบ modern พร้อม glow"""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
+        # สีตามสถานะ
         colors = {
-            "connected": "#7CFC00",  # SUCCESS_COLOR
-            "disconnected": "#FF6347",  # ERROR_COLOR
-            "error": "#FF6347",
-            "success": "#7CFC00",
-            "never": "#C0C0C0",  # TEXT_SECONDARY
-            "syncing": "#87CEEB",  # NEON_BLUE
-            "warning": "#FFFF99",  # NEON_YELLOW
-            "in_progress": "#8A2BE2",  # NEON_PURPLE
+            "connected": UltraModernColors.SUCCESS_COLOR,
+            "disconnected": UltraModernColors.ERROR_COLOR,
+            "error": UltraModernColors.ERROR_COLOR,
+            "success": UltraModernColors.SUCCESS_COLOR,
+            "never": "#666666",
+            "syncing": UltraModernColors.NEON_BLUE,
+            "warning": UltraModernColors.WARNING_COLOR,
+            "in_progress": UltraModernColors.NEON_PURPLE,
+            "connecting": UltraModernColors.NEON_YELLOW,
         }
 
-        color_str = colors.get(self.status, colors["disconnected"])
-        # แก้: แปลง string เป็น QColor
-        color = QColor(color_str)
+        color = QColor(colors.get(self.status, colors["disconnected"]))
+
+        # วาดวงกลมหลัก
         painter.setBrush(color)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawEllipse(self.rect())
+
+        # เพิ่ม highlight
+        highlight_color = QColor(255, 255, 255, 60)
+        painter.setBrush(highlight_color)
+        highlight_rect = QRect(2, 2, 6, 6)
+        painter.drawEllipse(highlight_rect)
 
     def set_status(self, new_status):
         """ตั้งค่าสถานะใหม่"""
         if self.status != new_status:
             self.status = new_status
             self.update()
-        else:
-            self.update()
 
 
-class StatusCard(QWidget):
-    """การ์ดแสดงสถานะแบบ Ultra Modern"""
+class ModernStatusCard(QWidget):
+    """Modern status card with enhanced design"""
 
     def __init__(self, title, status="disconnected", parent=None):
         super().__init__(parent)
         self.title = title
         self.status = status
-        self.description = ""
 
         self.pulse_timer = QTimer(self)
         self.pulse_timer.timeout.connect(self._animate_pulse)
-        self.pulse_strength = 0.0
-        self.pulse_direction = 1
+        self.pulse_opacity = 1.0
+        self.pulse_direction = -1
 
         self.hover_animation = QPropertyAnimation(self, b"pos")
-        self.hover_animation.setDuration(200)
-        self.hover_animation.setEasingCurve(QEasingCurve.Type.OutQuad)
+        self.hover_animation.setDuration(300)
+        self.hover_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
 
         self.setup_ui()
         self.update_status_display()
 
     def setup_ui(self):
-        """ตั้งค่า UI ของการ์ดสถานะ"""
+        """Setup modern UI"""
         self.outer_frame = QFrame(self)
-        self.outer_frame.setStyleSheet(get_ultra_modern_card_style("default"))
+        self.outer_frame.setStyleSheet(get_modern_card_style("default"))
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.addWidget(self.outer_frame)
 
-        card_layout = QHBoxLayout(self.outer_frame)
-        card_layout.setContentsMargins(15, 15, 15, 15)
-        card_layout.setSpacing(10)
+        card_layout = QVBoxLayout(self.outer_frame)
+        card_layout.setContentsMargins(20, 20, 20, 20)
+        card_layout.setSpacing(12)
 
-        self.indicator = StatusIndicator(self.status, self)
-        card_layout.addWidget(self.indicator)
+        # Header with icon and title
+        header_layout = QHBoxLayout()
+        header_layout.setSpacing(12)
 
-        text_layout = QVBoxLayout()
-        text_layout.setSpacing(2)
+        self.status_indicator = ModernStatusIndicator(self.status)
+        header_layout.addWidget(self.status_indicator)
 
         self.title_label = QLabel(self.title)
-        self.title_label.setFont(QFont("Inter", 12, QFont.Weight.Bold))
+        self.title_label.setFont(QFont("Segoe UI", 13, QFont.Weight.Medium))
         self.title_label.setStyleSheet(f"color: {UltraModernColors.TEXT_PRIMARY};")
-        text_layout.addWidget(self.title_label)
+        header_layout.addWidget(self.title_label)
 
-        self.description_label = QLabel(
-            self.description or "Status details will appear here."
-        )
-        self.description_label.setFont(QFont("Inter", 10))
+        header_layout.addStretch(1)
+
+        # Status icon - larger and more prominent
+        self.status_icon = QLabel("")
+        self.status_icon.setFont(QFont("Segoe UI Emoji", 24))
+        self.status_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.status_icon.setFixedSize(40, 40)
+        header_layout.addWidget(self.status_icon)
+
+        card_layout.addLayout(header_layout)
+
+        # Description with better typography
+        self.description_label = QLabel("")
+        self.description_label.setFont(QFont("Segoe UI", 11))
         self.description_label.setStyleSheet(
-            f"color: {UltraModernColors.TEXT_SECONDARY};"
+            f"""
+            color: {UltraModernColors.TEXT_SECONDARY};
+            line-height: 1.4;
+            """
         )
-        text_layout.addWidget(self.description_label)
+        self.description_label.setWordWrap(True)
+        card_layout.addWidget(self.description_label)
 
-        card_layout.addLayout(text_layout)
-        card_layout.addStretch(1)
-
-        self.indicator_symbol = QLabel("")
-        self.indicator_symbol.setFont(QFont("Segoe UI", 24))
-        self.indicator_symbol.setAlignment(
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-        )
-        self.indicator_symbol.setStyleSheet(f"color: {UltraModernColors.NEON_PURPLE};")
-        card_layout.addWidget(self.indicator_symbol)
-
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setFixedHeight(120)  # Fixed height for consistency
 
     def update_status_display(self):
-        """อัปเดตการแสดงผลสถานะของการ์ด"""
-        config = {
+        """Update status display with modern design"""
+        status_config = {
             "connected": {
-                "symbol": "✔",
+                "icon": "✨",
                 "color": UltraModernColors.SUCCESS_COLOR,
+                "description": "Connected and operational",
+                "card_style": "default",
             },
             "disconnected": {
-                "symbol": "✖",
+                "icon": "⚫",
                 "color": UltraModernColors.ERROR_COLOR,
+                "description": "Not connected",
+                "card_style": "default",
             },
             "error": {
-                "symbol": "❗",
+                "icon": "⚠️",
                 "color": UltraModernColors.ERROR_COLOR,
+                "description": "Connection error",
+                "card_style": "error",
             },
             "success": {
-                "symbol": "✔",
+                "icon": "✅",
                 "color": UltraModernColors.SUCCESS_COLOR,
+                "description": "Operation completed successfully",
+                "card_style": "success",
             },
             "never": {
-                "symbol": "…",
-                "color": UltraModernColors.TEXT_SECONDARY,
+                "icon": "⭕",
+                "color": "#666666",
+                "description": "No operations yet",
+                "card_style": "default",
             },
             "syncing": {
-                "symbol": "⟳",
+                "icon": "🔄",
                 "color": UltraModernColors.NEON_BLUE,
+                "description": "Synchronizing data...",
+                "card_style": "default",
             },
             "warning": {
-                "symbol": "⚠",
-                "color": UltraModernColors.NEON_YELLOW,
+                "icon": "⚠️",
+                "color": UltraModernColors.WARNING_COLOR,
+                "description": "Warning detected",
+                "card_style": "default",
             },
             "in_progress": {
-                "symbol": "⟳",
+                "icon": "⏳",
                 "color": UltraModernColors.NEON_PURPLE,
+                "description": "Operation in progress...",
+                "card_style": "default",
+            },
+            "connecting": {
+                "icon": "🔗",
+                "color": UltraModernColors.NEON_YELLOW,
+                "description": "Connecting...",
+                "card_style": "default",
             },
         }
 
-        current_config = config.get(self.status, config["disconnected"])
-        self.indicator.set_status(self.status)
-        self.indicator_symbol.setText(current_config["symbol"])
-        self.indicator_symbol.setStyleSheet(f"color: {current_config['color']};")
+        config = status_config.get(self.status, status_config["disconnected"])
 
-        # Handle description based on status
-        status_descriptions = {
-            "connected": "Online and operational.",
-            "disconnected": "Offline or connection lost.",
-            "error": "An error occurred during operation.",
-            "success": "Operation completed successfully.",
-            "never": "No previous operations recorded.",
-            "syncing": "Synchronization in progress...",
-            "warning": "Operation completed with warnings.",
-            "in_progress": "Operation ongoing...",
-        }
+        # Update indicator
+        self.status_indicator.set_status(self.status)
 
-        self.description_label.setText(
-            status_descriptions.get(self.status, "Status unknown.")
+        # Update icon with modern styling
+        self.status_icon.setText(config["icon"])
+        self.status_icon.setStyleSheet(
+            f"""
+            QLabel {{
+                color: {config['color']};
+                background: rgba(255, 255, 255, 0.05);
+                border-radius: 20px;
+                padding: 8px;
+            }}
+            """
         )
 
-        # Start/Stop pulse animation
-        if self.status == "in_progress" or self.status == "syncing":
+        # Update description
+        self.description_label.setText(config["description"])
+
+        # Update card style if needed
+        if config["card_style"] != "default":
+            self.outer_frame.setStyleSheet(get_modern_card_style(config["card_style"]))
+        else:
+            self.outer_frame.setStyleSheet(get_modern_card_style("default"))
+
+        # Start/stop animations for active states
+        if self.status in ["in_progress", "syncing", "connecting"]:
             if not self.pulse_timer.isActive():
-                self.pulse_strength = 0.0
-                self.pulse_direction = 1
+                self.pulse_opacity = 1.0
+                self.pulse_direction = -1
                 self.pulse_timer.start(50)
         else:
-            if self.pulse_timer and self.pulse_timer.isActive():
+            if self.pulse_timer.isActive():
                 self.pulse_timer.stop()
-                self.indicator_symbol.setStyleSheet(
-                    f"color: {current_config['color']};"
+                self.status_icon.setStyleSheet(
+                    f"""
+                    QLabel {{
+                        color: {config['color']};
+                        background: rgba(255, 255, 255, 0.05);
+                        border-radius: 20px;
+                        padding: 8px;
+                    }}
+                    """
                 )
-        self.outer_frame.update()
 
     def set_status(self, status):
-        """ตั้งค่าสถานะของการ์ดและอัปเดตการแสดงผล"""
+        """Set new status"""
         if self.status != status:
             self.status = status
             self.update_status_display()
 
     def _animate_pulse(self):
-        """Animate the glow effect for 'in_progress' or 'syncing' status."""
-        self.pulse_strength += self.pulse_direction * 0.05
-        if self.pulse_strength > 1.0:
-            self.pulse_strength = 1.0
-            self.pulse_direction = -1
-        elif self.pulse_strength < 0.0:
-            self.pulse_strength = 0.0
-            self.pulse_direction = 1
+        """Animate pulsing effect for active states"""
+        self.pulse_opacity += self.pulse_direction * 0.03
 
-        symbol_config = {
+        if self.pulse_opacity <= 0.4:
+            self.pulse_opacity = 0.4
+            self.pulse_direction = 1
+        elif self.pulse_opacity >= 1.0:
+            self.pulse_opacity = 1.0
+            self.pulse_direction = -1
+
+        # Apply pulsing effect
+        config = {
             "syncing": UltraModernColors.NEON_BLUE,
             "in_progress": UltraModernColors.NEON_PURPLE,
+            "connecting": UltraModernColors.NEON_YELLOW,
         }
-        color = symbol_config.get(self.status, UltraModernColors.NEON_PURPLE)
 
-        self.indicator_symbol.setStyleSheet(f"color: {color};")
-        self.outer_frame.update()
+        color = config.get(self.status, UltraModernColors.NEON_PURPLE)
+        opacity = int(self.pulse_opacity * 255)
+
+        self.status_icon.setStyleSheet(
+            f"""
+            QLabel {{
+                color: {color};
+                background: rgba(255, 255, 255, {self.pulse_opacity * 0.1});
+                border-radius: 20px;
+                padding: 8px;
+                border: 2px solid rgba(157, 78, 221, {self.pulse_opacity * 0.5});
+            }}
+            """
+        )
 
     def enterEvent(self, event):
-        """Handle mouse hover enter event."""
+        """Modern hover effect"""
         super().enterEvent(event)
-        current_pos = self.pos()
-        target_pos = current_pos + QPoint(0, -5)
-        self.hover_animation.setStartValue(current_pos)
-        self.hover_animation.setEndValue(target_pos)
-        self.hover_animation.start()
+        self.outer_frame.setStyleSheet(
+            self.outer_frame.styleSheet().replace(
+                UltraModernColors.GLASS_BG, UltraModernColors.GLASS_BG_LIGHT
+            )
+        )
 
     def leaveEvent(self, event):
-        """Handle mouse hover leave event."""
+        """Reset hover effect"""
         super().leaveEvent(event)
-        current_pos = self.pos()
-        target_pos = current_pos - QPoint(0, -5)
-        self.hover_animation.setStartValue(current_pos)
-        self.hover_animation.setEndValue(target_pos)
-        self.hover_animation.start()
+        # Reset to original style based on current status
+        status_config = {"error": "error", "success": "success"}
+        style_variant = status_config.get(self.status, "default")
+        self.outer_frame.setStyleSheet(get_modern_card_style(style_variant))
 
     def cleanup_animations(self):
-        """ทำความสะอาด animations"""
+        """Cleanup animations"""
         if hasattr(self, "pulse_timer"):
             self.pulse_timer.stop()
         if hasattr(self, "hover_animation"):
             self.hover_animation.stop()
 
 
-# Backward compatibility
-class UltraModernStatusCard(StatusCard):
-    """Alias for backward compatibility"""
-
-    pass
+# Compatibility aliases
+StatusCard = ModernStatusCard
+UltraModernStatusCard = ModernStatusCard

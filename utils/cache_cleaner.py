@@ -130,7 +130,6 @@ class AutoCacheManager(QThread):
     """แก้แล้ว: เปลี่ยน signal signature ให้ตรงกัน"""
 
     cleanup_completed = pyqtSignal(object)  # CacheCleanupResult
-    # แก้: เปลี่ยนจาก status_update(str) เป็น log_message(str, str)
     log_message = pyqtSignal(str, str)  # message, level
 
     def __init__(self, project_root: str = None):
@@ -152,7 +151,6 @@ class AutoCacheManager(QThread):
         interval_ms = self.cleanup_interval_hours * 60 * 60 * 1000
         self.timer.start(interval_ms)
 
-        # แก้: ใช้ log_message แทน status_update
         self.log_message.emit("🤖 Auto cache cleanup enabled", "info")
         logger.info(
             f"Auto cache cleanup started (interval: {self.cleanup_interval_hours}h)"
@@ -217,33 +215,6 @@ class AutoCacheManager(QThread):
             "last_cleanup": getattr(self, "last_cleanup_time", None),
             "project_root": str(self.cleaner.project_root),
         }
-
-
-class CacheMonitorWidget:
-    def __init__(self, auto_manager: AutoCacheManager):
-        self.auto_manager = auto_manager
-        self.setup_connections()
-
-    def setup_connections(self):
-        self.auto_manager.cleanup_completed.connect(self._on_cleanup_completed)
-        self.auto_manager.log_message.connect(self._on_log_message)
-
-    def _on_cleanup_completed(self, result: CacheCleanupResult):
-        message = (
-            f"Cache cleanup completed:\n"
-            f"• Files removed: {result.files_removed}\n"
-            f"• Directories removed: {result.dirs_removed}\n"
-            f"• Space freed: {result.space_freed_mb:.2f}MB\n"
-            f"• Duration: {result.duration:.2f}s"
-        )
-
-        if result.errors:
-            message += f"\n• Errors: {len(result.errors)}"
-
-        logger.info(message)
-
-    def _on_log_message(self, message: str, level: str):
-        logger.info(f"[{level.upper()}] {message}")
 
 
 # Quick access functions

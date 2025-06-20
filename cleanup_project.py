@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """
-Project Cleanup Script - สคริปต์ทำความสะอาดโปรเจค
-รันสคริปต์นี้เพื่อทำความสะอาดโปรเจคก่อนใช้งาน
+Project Cleanup Script - แก้แล้ว
 """
 
 import os
 import shutil
 import glob
-from utils.cache_cleaner import cleanup_all_cache, get_cache_info
-from utils.error_handling import init_error_handling
+from pathlib import Path
 
 
 def cleanup_pycache():
@@ -42,13 +40,17 @@ def cleanup_logs():
     """ล้างไฟล์ log เก่า"""
     print("🧹 Cleaning old log files...")
 
-    log_patterns = ["logs/**/*.log", "*.log", "logs/neural/*.log", "logs/quantum/*.log"]
+    log_patterns = ["logs/**/*.log", "*.log"]
 
     for pattern in log_patterns:
         for log_file in glob.glob(pattern, recursive=True):
             try:
-                os.remove(log_file)
-                print(f"   ✅ Removed log: {log_file}")
+                # แก้: ไม่ลบ log ที่กำลังใช้งาน
+                if not _is_file_in_use(log_file):
+                    os.remove(log_file)
+                    print(f"   ✅ Removed log: {log_file}")
+                else:
+                    print(f"   ⏭️ Skipped (in use): {log_file}")
             except Exception as e:
                 print(f"   ❌ Failed to remove {log_file}: {e}")
 
@@ -57,7 +59,7 @@ def cleanup_temp_files():
     """ล้างไฟล์ temporary"""
     print("🧹 Cleaning temporary files...")
 
-    temp_patterns = ["**/*.tmp", "**/*.temp", "**/temp/**/*", "**/*~", "**/*.bak"]
+    temp_patterns = ["**/*.tmp", "**/*.temp", "**/*~", "**/*.bak"]
 
     for pattern in temp_patterns:
         for temp_file in glob.glob(pattern, recursive=True):
@@ -67,6 +69,16 @@ def cleanup_temp_files():
                     print(f"   ✅ Removed temp: {temp_file}")
             except Exception as e:
                 print(f"   ❌ Failed to remove {temp_file}: {e}")
+
+
+def _is_file_in_use(file_path):
+    """ตรวจสอบว่าไฟล์กำลังถูกใช้งานหรือไม่"""
+    try:
+        # พยายามเปิดไฟล์ในโหมด exclusive
+        with open(file_path, "r+b"):
+            return False
+    except (OSError, IOError):
+        return True
 
 
 def check_config_files():
@@ -86,11 +98,19 @@ def create_missing_directories():
     """สร้างโฟลเดอร์ที่ขาดหายไป"""
     print("📁 Creating missing directories...")
 
-    required_dirs = ["logs", "logs/neural", "logs/quantum", "data", "assets"]
+    required_dirs = [
+        "logs",
+        "logs/neural",
+        "logs/quantum",
+        "data",
+        "assets",
+        "ui/widgets",
+        "utils",
+    ]
 
     for dir_path in required_dirs:
         try:
-            os.makedirs(dir_path, exist_ok=True)
+            Path(dir_path).mkdir(parents=True, exist_ok=True)
             print(f"   ✅ Directory ready: {dir_path}")
         except Exception as e:
             print(f"   ❌ Failed to create {dir_path}: {e}")
@@ -101,40 +121,94 @@ def check_dependencies():
     print("📦 Checking dependencies...")
 
     try:
-        import pkg_resources
+        # ใช้ importlib.metadata แทน pkg_resources (Python 3.8+)
+        try:
+            from importlib.metadata import distributions
 
-        with open("requirements.txt", "r") as f:
-            requirements = f.read().splitlines()
+            installed_packages = {
+                dist.metadata["name"].lower().replace("-", "_")
+                for dist in distributions()
+            }
+        except ImportError:
+            # Fallback สำหรับ Python เก่า
+            try:
+                import pkg_resources
 
-        installed = [pkg.key for pkg in pkg_resources.working_set]
+                installed_packages = {
+                    pkg.key.replace("-", "_") for pkg in pkg_resources.working_set
+                }
+            except ImportError:
+                print(
+                    "   ⚠️ Cannot check dependencies - missing importlib.metadata and pkg_resources"
+                )
+                return
 
-        for req in requirements:
-            if req and not req.startswith("#"):
-                pkg_name = req.split(">=")[0].split("==")[0].lower()
-                if pkg_name in installed:
-                    print(f"   ✅ {pkg_name}")
-                else:
-                    print(f"   ❌ Missing: {pkg_name}")
+        if os.path.exists("requirements.txt"):
+            with open("requirements.txt", "r") as f:
+                requirements = f.read().splitlines()
+
+            missing_packages = []
+            found_packages = []
+
+            for req in requirements:
+                if req and not req.startswith("#"):
+                    # แยกชื่อ package จาก version specifier
+                    pkg_name = (
+                        req.split(">=")[0]
+                        .split("==")[0]
+                        .split("<")[0]
+                        .split(">")[0]
+                        .strip()
+                        .lower()
+                        .replace("-", "_")
+                    )
+
+                    if pkg_name in installed_packages:
+                        found_packages.append(pkg_name)
+                        print(f"   ✅ {pkg_name}")
+                    else:
+                        missing_packages.append(pkg_name)
+                        print(f"   ❌ Missing: {pkg_name}")
+
+            print(
+                f"\n   📊 Summary: {len(found_packages)} found, {len(missing_packages)} missing"
+            )
+
+            if missing_packages:
+                print(
+                    f"   💡 To install missing packages: pip install {' '.join(missing_packages)}"
+                )
+        else:
+            print("   ⚠️ requirements.txt not found")
 
     except Exception as e:
         print(f"   ⚠️ Could not check dependencies: {e}")
 
 
-def show_cache_stats():
-    """แสดงสถิติแคช"""
-    print("📊 Cache Statistics...")
+def create_init_files():
+    """สร้างไฟล์ __init__.py ที่ขาดหายไป"""
+    print("📄 Creating missing __init__.py files...")
 
-    try:
-        cache_info = get_cache_info()
-        print(f"   Total cache size: {cache_info['total_size_mb']:.2f} MB")
-        print(f"   Project root: {cache_info['project_root']}")
+    directories = [
+        "ui",
+        "ui/components",
+        "ui/widgets",
+        "ui/styles",
+        "controller",
+        "connectors",
+        "utils",
+    ]
 
-        for cache_type, size in cache_info["breakdown"].items():
-            if size > 0:
-                print(f"   - {cache_type}: {size:.2f} MB")
-
-    except Exception as e:
-        print(f"   ⚠️ Could not get cache stats: {e}")
+    for directory in directories:
+        if os.path.exists(directory):
+            init_file = os.path.join(directory, "__init__.py")
+            if not os.path.exists(init_file):
+                try:
+                    with open(init_file, "w") as f:
+                        f.write(f"# {directory}/__init__.py\n")
+                    print(f"   ✅ Created: {init_file}")
+                except Exception as e:
+                    print(f"   ❌ Failed to create {init_file}: {e}")
 
 
 def main():
@@ -142,14 +216,7 @@ def main():
     print("🚀 Starting project cleanup...")
     print("=" * 50)
 
-    # Initialize error handling
-    init_error_handling()
-
-    # Show current cache stats
-    show_cache_stats()
-    print()
-
-    # Cleanup operations
+    # Basic cleanup
     cleanup_pycache()
     print()
 
@@ -162,22 +229,14 @@ def main():
     cleanup_temp_files()
     print()
 
-    # Use the new cache cleaner
-    print("🧹 Running advanced cache cleanup...")
-    try:
-        result = cleanup_all_cache()
-        print(f"   ✅ Advanced cleanup: {result.space_freed_mb:.2f}MB freed")
-        if result.errors:
-            print(f"   ⚠️ {len(result.errors)} errors occurred")
-    except Exception as e:
-        print(f"   ❌ Advanced cleanup failed: {e}")
-    print()
-
     # Check and create required files/directories
     check_config_files()
     print()
 
     create_missing_directories()
+    print()
+
+    create_init_files()
     print()
 
     check_dependencies()

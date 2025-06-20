@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 class SyncWorker(QThread):
-    """แก้แล้ว: แยก worker logic ออกมา, ลด complexity"""
+    """Sync Worker - แก้ field mapping"""
 
     progress_updated = pyqtSignal(str, int, str)
     sync_completed = pyqtSignal(bool, str, dict)
@@ -33,7 +33,7 @@ class SyncWorker(QThread):
         }
 
     def run(self):
-        """แก้แล้ว: แยกเป็น phases ชัดเจน"""
+        """แก้: แยกเป็น phases ชัดเจน"""
         start_time = time.time()
 
         try:
@@ -72,7 +72,8 @@ class SyncWorker(QThread):
         if self.should_stop:
             return False
 
-        self.data = sp_connector.fetch_data()
+        batch_size = getattr(self.config, "batch_size", 1000)
+        self.data = sp_connector.fetch_data(batch_size)
 
         if self.data is None or self.data.empty:
             self.progress_updated.emit("⚠️ No data found", 50, "warning")
@@ -154,20 +155,24 @@ class SyncWorker(QThread):
         logger.exception("Sync operation failed")
 
     def _get_table_name(self):
-        """ดึงชื่อ table ตาม config"""
-        return (
-            self.config.sql_table_name
-            if self.config.database_type == "sqlserver"
-            else self.config.sqlite_table_name
-        )
+        """ดึงชื่อ table ตาม config - แก้ field mapping"""
+        db_type = self.config.database_type or self.config.db_type
+
+        if db_type and db_type.lower() == "sqlite":
+            return self.config.sqlite_table_name or "sharepoint_data"
+        else:
+            return (
+                self.config.sql_table_name or self.config.db_table or "sharepoint_data"
+            )
 
     def _should_create_table(self):
         """ตรวจสอบว่าควรสร้าง table หรือไม่"""
-        return (
-            self.config.sql_create_table
-            if self.config.database_type == "sqlserver"
-            else self.config.sqlite_create_table
-        )
+        db_type = self.config.database_type or self.config.db_type
+
+        if db_type and db_type.lower() == "sqlite":
+            return getattr(self.config, "sqlite_create_table", True)
+        else:
+            return getattr(self.config, "sql_create_table", True)
 
     def stop(self):
         """หยุดการซิงค์"""
@@ -176,7 +181,7 @@ class SyncWorker(QThread):
 
 
 class SyncEngine(QObject):
-    """แก้แล้ว: ลด complexity, เน้น coordination อย่างเดียว"""
+    """Sync Engine - แก้ field mapping"""
 
     progress_updated = pyqtSignal(str, int, str)
     sync_completed = pyqtSignal(bool, str, dict)
@@ -236,28 +241,36 @@ class SyncEngine(QObject):
         return self.last_sync_stats
 
     def _validate_config(self, config):
-        """ตรวจสอบ config อย่างง่าย"""
+        """ตรวจสอบ config - แก้ field mapping"""
         errors = []
 
         # SharePoint validation
-        if not all(
-            [
-                config.tenant_id,
-                config.client_id,
-                config.client_secret,
-                config.site_url,
-                config.list_name,
-            ]
-        ):
+        required_sp_fields = [
+            config.tenant_id,
+            config.sharepoint_client_id or getattr(config, "client_id", None),
+            config.sharepoint_client_secret or getattr(config, "client_secret", None),
+            config.sharepoint_url
+            or config.sharepoint_site
+            or getattr(config, "site_url", None),
+            config.sharepoint_list or getattr(config, "list_name", None),
+        ]
+
+        if not all(required_sp_fields):
             errors.append("SharePoint config incomplete")
 
         # Database validation
-        if config.database_type == "sqlserver":
-            if not all([config.sql_server, config.sql_database, config.sql_table_name]):
+        db_type = config.database_type or config.db_type
+        if db_type and db_type.lower() == "sqlite":
+            if not config.sqlite_file:
+                errors.append("SQLite file path required")
+        else:  # SQL Server
+            required_sql_fields = [
+                config.sql_server or config.db_host,
+                config.sql_database or config.db_name,
+                config.sql_table_name or config.db_table,
+            ]
+            if not all(required_sql_fields):
                 errors.append("SQL Server config incomplete")
-        else:  # SQLite
-            if not all([config.sqlite_file, config.sqlite_table_name]):
-                errors.append("SQLite config incomplete")
 
         if errors:
             error_message = "Config validation failed: " + ", ".join(errors)

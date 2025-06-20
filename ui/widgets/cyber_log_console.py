@@ -1,13 +1,11 @@
 from PyQt6.QtWidgets import QTextEdit
 from PyQt6.QtGui import QFont, QTextCursor, QColor
-from PyQt6.QtCore import QTimer  # Import QTimer for typing effect
+from PyQt6.QtCore import QTimer
+from ..styles.theme import UltraModernColors
 
 
 class CyberLogConsole(QTextEdit):
-    """
-    คอนโซล Log สไตล์ Cyber พร้อมเอฟเฟกต์การพิมพ์ตัวอักษรทีละตัว
-    และรองรับสีตามระดับของ Log
-    """
+    """คอนโซล Log สไตล์ Cyber พร้อมเอฟเฟกต์การพิมพ์"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -22,82 +20,127 @@ class CyberLogConsole(QTextEdit):
         """ตั้งค่า UI สำหรับคอนโซล"""
         self.setReadOnly(True)
         self.setFont(QFont("Consolas", 10))
-        # Stylesheet is now loaded from theme.py, ensuring consistency
-        # สไตล์ชีทจะถูกโหลดจาก theme.py เพื่อให้สอดคล้องกัน
-        # self.setStyleSheet(...) will be set by apply_ultra_modern_theme or get_cyber_log_style
+
+        # แก้: ใช้ theme colors
+        self.setStyleSheet(
+            f"""
+            QTextEdit {{
+                background-color: {UltraModernColors.GLASS_BG_DARK};
+                border: 1px solid {UltraModernColors.NEON_PURPLE};
+                border-radius: 8px;
+                color: {UltraModernColors.TEXT_PRIMARY};
+                padding: 8px;
+                font-family: 'Consolas', 'Monaco', monospace;
+                font-size: 10px;
+                line-height: 1.4;
+            }}
+            QScrollBar:vertical {{
+                border: none;
+                background: rgba(0, 0, 0, 0.2);
+                width: 8px;
+                border-radius: 4px;
+            }}
+            QScrollBar::handle:vertical {{
+                background: {UltraModernColors.NEON_PURPLE};
+                border-radius: 4px;
+                min-height: 20px;
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background: {UltraModernColors.NEON_PINK};
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                background: none;
+                border: none;
+            }}
+        """
+        )
 
     def add_message_with_typing(self, message, level="info"):
-        """
-        เพิ่มข้อความ Log พร้อมเอฟเฟกต์การพิมพ์
-        Args:
-            message (str): ข้อความที่จะแสดง
-            level (str): ระดับ Log ('info', 'warning', 'error')
-        """
-        self.full_message = message + "\n"  # Add newline at the end
+        """เพิ่มข้อความ Log พร้อมเอฟเฟกต์การพิมพ์"""
+        # แก้: เพิ่ม emoji และ timestamp
+        from datetime import datetime
+
+        timestamp = datetime.now().strftime("%H:%M:%S")
+
+        # เพิ่ม emoji ตาม level
+        level_icons = {
+            "info": "ℹ️",
+            "success": "✅",
+            "warning": "⚠️",
+            "error": "❌",
+            "debug": "🔍",
+        }
+
+        icon = level_icons.get(level, "ℹ️")
+        self.full_message = f"[{timestamp}] {icon} {message}\n"
         self.current_index = 0
         self.message_level = level
 
-        # Clear current line if not empty before starting new message for typing effect
-        # if not self.toPlainText().endswith('\n') and self.toPlainText():
-        #     self.append("") # Ensure a fresh line
-
         # Start typing effect
-        self.typing_timer.start(25)  # Typing speed (milliseconds per character)
+        self.typing_timer.start(15)  # ความเร็วการพิมพ์
 
     def _add_next_char(self):
         """Add the next character of the message with color."""
         if self.current_index < len(self.full_message):
             char_to_add = self.full_message[self.current_index]
 
-            # Get color based on level (same logic as before)
-            colors = {"info": "#00ff9d", "warning": "#ffff00", "error": "#ff0055"}
+            # แก้: ใช้ colors จาก theme
+            colors = {
+                "info": UltraModernColors.NEON_BLUE,
+                "success": UltraModernColors.SUCCESS_COLOR,
+                "warning": UltraModernColors.NEON_YELLOW,
+                "error": UltraModernColors.ERROR_COLOR,
+                "debug": UltraModernColors.TEXT_SECONDARY,
+            }
             color_code = colors.get(self.message_level, colors["info"])
 
             # Use QTextCursor to insert styled text
             cursor = self.textCursor()
-            cursor.movePosition(
-                QTextCursor.MoveOperation.End
-            )  # Move to end of document
+            cursor.movePosition(QTextCursor.MoveOperation.End)
 
             # Create a character format for the color
             char_format = cursor.charFormat()
             text_color = QColor(color_code)
             char_format.setForeground(text_color)
-            cursor.setCharFormat(char_format)  # Apply format
+            cursor.setCharFormat(char_format)
 
-            cursor.insertText(char_to_add)  # Insert character
+            cursor.insertText(char_to_add)
 
-            # Move cursor to the end again and apply default format for next text
+            # Move cursor to the end and apply default format
             cursor.movePosition(QTextCursor.MoveOperation.End)
             default_format = cursor.charFormat()
-            default_format.setForeground(
-                QColor("#00ff9d")
-            )  # Reset to default info color
+            default_format.setForeground(QColor(UltraModernColors.TEXT_PRIMARY))
             cursor.setCharFormat(default_format)
 
-            self.setTextCursor(cursor)  # Update cursor position
-
+            self.setTextCursor(cursor)
             self.current_index += 1
         else:
             self.typing_timer.stop()
-            # Ensure the last line is properly terminated if it's not already
-            if not self.toPlainText().endswith("\n"):
-                self.append("")
-            # After typing is complete, reset to default font/color for subsequent messages
-            cursor = self.textCursor()
-            cursor.movePosition(QTextCursor.MoveOperation.End)
-            default_format = cursor.charFormat()
-            default_format.setForeground(
-                QColor("#00ff9d")
-            )  # Reset to default info color
-            cursor.setCharFormat(default_format)
-            self.setTextCursor(cursor)
+            # Scroll to bottom
+            self.ensureCursorVisible()
 
     def clear(self):
-        """Clear the text console and stop typing animation if active."""
+        """Clear the text console and stop typing animation."""
         super().clear()
         if self.typing_timer.isActive():
             self.typing_timer.stop()
         self.full_message = ""
         self.current_index = 0
         self.message_level = "info"
+
+    def add_system_message(self, message):
+        """เพิ่มข้อความระบบโดยตรงไม่มี typing effect"""
+        cursor = self.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+
+        char_format = cursor.charFormat()
+        char_format.setForeground(QColor(UltraModernColors.NEON_GREEN))
+        cursor.setCharFormat(char_format)
+
+        from datetime import datetime
+
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        cursor.insertText(f"[{timestamp}] 🖥️ {message}\n")
+
+        self.setTextCursor(cursor)
+        self.ensureCursorVisible()

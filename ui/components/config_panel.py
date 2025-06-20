@@ -3,25 +3,22 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QTabWidget,
-    QFormLayout,
-    QLineEdit,
-    QCheckBox,
-    QSpinBox,
-    QPushButton,
-    QLabel,
     QSizePolicy,
 )
-from PyQt6.QtCore import pyqtSignal, Qt, pyqtSlot
+from PyQt6.QtCore import pyqtSignal, pyqtSlot
 from ..styles.theme import (
-    get_holographic_tab_style,
-    get_ultra_modern_input_style,
-    get_neon_checkbox_style,
-    get_ultra_modern_button_style,
-    UltraModernColors,
+    get_modern_tab_style,
 )
 from utils.config_validation import quick_validate_sharepoint, quick_validate_database
 from utils.error_handling import handle_exceptions, ErrorCategory, ErrorSeverity
 
+from ..widgets.modern_button import ActionButton
+from ..widgets.modern_input import (
+    ModernLineEdit,
+    ModernSpinBox,
+    FormField,
+    PasswordField,
+)
 from ..widgets.holographic_combobox import HolographicComboBox
 from ..widgets.neon_groupbox import NeonGroupBox
 import logging
@@ -39,8 +36,8 @@ class ConfigValidator:
         return quick_validate_sharepoint(
             config.sharepoint_url,
             config.tenant_id,
-            config.client_id,
-            config.client_secret,
+            config.sharepoint_client_id,
+            config.sharepoint_client_secret,
         )
 
     @staticmethod
@@ -80,6 +77,13 @@ class ConfigDataManager:
         self.config.sharepoint_url = ui_data.get("sharepoint_url", "")
         self.config.sharepoint_site = ui_data.get("sharepoint_site", "")
         self.config.sharepoint_list = ui_data.get("sharepoint_list", "")
+        self.config.sharepoint_client_id = ui_data.get("sharepoint_client_id", "")
+        self.config.sharepoint_client_secret = ui_data.get(
+            "sharepoint_client_secret", ""
+        )
+        self.config.tenant_id = ui_data.get("tenant_id", "")
+        self.config.use_graph_api = ui_data.get("use_graph_api", False)
+
         self.config.db_type = ui_data.get("db_type", "SQL Server")
         self.config.db_host = ui_data.get("db_host", "")
         self.config.db_port = ui_data.get("db_port", 1433)
@@ -87,6 +91,14 @@ class ConfigDataManager:
         self.config.db_table = ui_data.get("db_table", "")
         self.config.db_username = ui_data.get("db_username", "")
         self.config.db_password = ui_data.get("db_password", "")
+
+        # SQLite settings
+        self.config.sqlite_file = ui_data.get("sqlite_file", "data.db")
+        self.config.sqlite_table_name = ui_data.get(
+            "sqlite_table_name", "sharepoint_data"
+        )
+        self.config.sqlite_create_table = ui_data.get("sqlite_create_table", True)
+
         self.config.sync_interval = ui_data.get("sync_interval", 60)
         self.config.batch_size = ui_data.get("batch_size", 1000)
         self.config.log_level = ui_data.get("log_level", "INFO")
@@ -101,13 +113,12 @@ class ConfigDataManager:
         )
         self.config.auto_sync_enabled = ui_data.get("auto_sync_enabled", False)
 
-        # แก้: ใช้ config_manager แทน config.save_config()
         self.config_manager.save_config(self.config)
         return True
 
 
-class UltraModernConfigPanel(QWidget):
-    """แก้แล้ว: แยก business logic ออกไป, เหลือแค่ UI"""
+class ModernConfigPanel(QWidget):
+    """Modern Configuration Panel with enhanced UI"""
 
     # Signals
     config_changed = pyqtSignal(object)
@@ -118,278 +129,320 @@ class UltraModernConfigPanel(QWidget):
     refresh_databases_requested = pyqtSignal()
     refresh_tables_requested = pyqtSignal()
     auto_sync_toggled = pyqtSignal(bool)
-    run_sync_requested = pyqtSignal()
 
     def __init__(self, controller):
-        super().__init__()
+        super().__init__(parent=None)
         self.controller = controller
-
-        # แก้: แยก data management ออกมา
         self.data_manager = ConfigDataManager()
         self.validator = ConfigValidator()
+        self.form_fields = {}
 
-        # UI components cache
-        self.inputs = {}
-
-        self.setup_ultra_modern_ui()
+        self.setup_modern_ui()
         self._load_config_to_ui()
 
-    def setup_ultra_modern_ui(self):
-        """แก้แล้ว: เน้น UI structure อย่างเดียว"""
+    def setup_modern_ui(self):
+        """Setup modern UI with enhanced styling"""
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(15)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(20)
 
+        # Modern tab widget
         self.tab_widget = QTabWidget()
-        self.tab_widget.setStyleSheet(get_holographic_tab_style())
+        self.tab_widget.setStyleSheet(get_modern_tab_style())
         self.tab_widget.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
 
-        # สร้าง tabs
+        # Create tabs with modern design
         self._create_sharepoint_tab()
         self._create_database_tab()
-        self._create_general_tab()
+        self._create_settings_tab()
 
         layout.addWidget(self.tab_widget)
-        layout.addStretch(1)
-
         self._connect_signals()
 
     def _create_sharepoint_tab(self):
-        """สร้าง SharePoint tab"""
+        """สร้าง SharePoint tab แบบ modern"""
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        layout.setContentsMargins(15, 15, 15, 15)
-        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(24)
 
-        group = NeonGroupBox("☁️ SharePoint Connection")
-        form_layout = QFormLayout(group)
-        form_layout.setSpacing(16)
+        # Connection Settings Group
+        conn_group = NeonGroupBox("🔗 Connection Settings")
+        conn_layout = QVBoxLayout(conn_group)
+        conn_layout.setSpacing(16)
 
         # SharePoint URL
-        self.inputs["sharepoint_url"] = QLineEdit()
-        self.inputs["sharepoint_url"].setPlaceholderText(
-            "https://company.sharepoint.com"
+        url_field = FormField(
+            "SharePoint URL",
+            ModernLineEdit("https://company.sharepoint.com/sites/sitename"),
+            required=True,
+            help_text="Full URL to your SharePoint site",
         )
-        self.inputs["sharepoint_url"].setStyleSheet(get_ultra_modern_input_style())
-        form_layout.addRow(
-            self._create_label("SharePoint URL:"), self.inputs["sharepoint_url"]
-        )
+        self.form_fields["sharepoint_url"] = url_field
+        conn_layout.addWidget(url_field)
 
-        # Site selection
-        self.inputs["sharepoint_site"] = HolographicComboBox()
-        self.refresh_sites_button = QPushButton("Refresh Sites")
-        self.refresh_sites_button.setStyleSheet(get_ultra_modern_button_style("ghost"))
+        # Tenant ID
+        tenant_field = FormField(
+            "Tenant ID",
+            ModernLineEdit("12345678-1234-1234-1234-123456789012"),
+            required=True,
+            help_text="Azure AD Tenant identifier",
+        )
+        self.form_fields["tenant_id"] = tenant_field
+        conn_layout.addWidget(tenant_field)
+
+        layout.addWidget(conn_group)
+
+        # Authentication Group
+        auth_group = NeonGroupBox("🔐 Authentication")
+        auth_layout = QVBoxLayout(auth_group)
+        auth_layout.setSpacing(16)
+
+        # Client ID
+        client_id_field = FormField(
+            "Client ID",
+            ModernLineEdit("87654321-4321-4321-4321-210987654321"),
+            required=True,
+            help_text="Application (client) ID from Azure AD",
+        )
+        self.form_fields["sharepoint_client_id"] = client_id_field
+        auth_layout.addWidget(client_id_field)
+
+        # Client Secret
+        client_secret_field = FormField(
+            "Client Secret",
+            PasswordField("Your-Client-Secret-Here"),
+            required=True,
+            help_text="Client secret from Azure AD app registration",
+        )
+        self.form_fields["sharepoint_client_secret"] = client_secret_field
+        auth_layout.addWidget(client_secret_field)
+
+        layout.addWidget(auth_group)
+
+        # Site & List Selection Group
+        selection_group = NeonGroupBox("📋 Site & List Selection")
+        selection_layout = QVBoxLayout(selection_group)
+        selection_layout.setSpacing(16)
+
+        # Site selection with refresh
         site_layout = QHBoxLayout()
-        site_layout.addWidget(self.inputs["sharepoint_site"])
-        site_layout.addWidget(self.refresh_sites_button)
-        form_layout.addRow(self._create_label("Site Name:"), site_layout)
+        site_combo = HolographicComboBox()
+        self.form_fields["sharepoint_site"] = FormField("Site Name", site_combo)
+        self.refresh_sites_btn = ActionButton.ghost("🔄 Refresh", size="sm")
+        self.refresh_sites_btn.clicked.connect(self.refresh_sites_requested)
 
-        # List selection
-        self.inputs["sharepoint_list"] = HolographicComboBox()
-        self.refresh_lists_button = QPushButton("Refresh Lists")
-        self.refresh_lists_button.setStyleSheet(get_ultra_modern_button_style("ghost"))
+        site_layout.addWidget(self.form_fields["sharepoint_site"], 3)
+        site_layout.addWidget(self.refresh_sites_btn, 1)
+        selection_layout.addLayout(site_layout)
+
+        # List selection with refresh
         list_layout = QHBoxLayout()
-        list_layout.addWidget(self.inputs["sharepoint_list"])
-        list_layout.addWidget(self.refresh_lists_button)
-        form_layout.addRow(self._create_label("List Name:"), list_layout)
+        list_combo = HolographicComboBox()
+        self.form_fields["sharepoint_list"] = FormField("List Name", list_combo)
+        self.refresh_lists_btn = ActionButton.ghost("🔄 Refresh", size="sm")
+        self.refresh_lists_btn.clicked.connect(self.refresh_lists_requested)
 
-        layout.addWidget(group)
+        list_layout.addWidget(self.form_fields["sharepoint_list"], 3)
+        list_layout.addWidget(self.refresh_lists_btn, 1)
+        selection_layout.addLayout(list_layout)
+
+        layout.addWidget(selection_group)
 
         # Test button
-        test_button = QPushButton("Test SharePoint Connection")
-        test_button.setStyleSheet(get_ultra_modern_button_style("primary"))
-        test_button.clicked.connect(self.test_sharepoint_requested)
-        layout.addWidget(test_button)
-        layout.addStretch(1)
+        test_btn = ActionButton.primary("🧪 Test SharePoint Connection", size="md")
+        test_btn.clicked.connect(self.test_sharepoint_requested)
+        layout.addWidget(test_btn)
 
+        layout.addStretch()
         self.tab_widget.addTab(tab, "SharePoint")
 
     def _create_database_tab(self):
-        """สร้าง Database tab"""
+        """สร้าง Database tab แบบ modern"""
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        layout.setContentsMargins(15, 15, 15, 15)
-        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(24)
 
-        group = NeonGroupBox("💾 Database Connection")
-        form_layout = QFormLayout(group)
-        form_layout.setSpacing(16)
+        # Database Type Selection
+        type_group = NeonGroupBox("🗄️ Database Type")
+        type_layout = QVBoxLayout(type_group)
 
-        # Database type
-        self.inputs["db_type"] = HolographicComboBox()
-        self.inputs["db_type"].addItems(["SQL Server", "PostgreSQL", "MySQL"])
-        form_layout.addRow(self._create_label("DB Type:"), self.inputs["db_type"])
-
-        # Host & Port
-        self.inputs["db_host"] = QLineEdit()
-        self.inputs["db_host"].setPlaceholderText("localhost")
-        self.inputs["db_host"].setStyleSheet(get_ultra_modern_input_style())
-        form_layout.addRow(self._create_label("DB Host:"), self.inputs["db_host"])
-
-        self.inputs["db_port"] = QSpinBox()
-        self.inputs["db_port"].setRange(1, 65535)
-        self.inputs["db_port"].setValue(1433)
-        self.inputs["db_port"].setStyleSheet(get_ultra_modern_input_style())
-        form_layout.addRow(self._create_label("DB Port:"), self.inputs["db_port"])
-
-        # Database & Table
-        self.inputs["db_name"] = HolographicComboBox()
-        self.refresh_databases_button = QPushButton("Refresh DBs")
-        self.refresh_databases_button.setStyleSheet(
-            get_ultra_modern_button_style("ghost")
+        db_type_field = FormField(
+            "Database Type",
+            HolographicComboBox(),
+            help_text="Choose your database platform",
         )
+        db_type_field.input_widget.addItems(["SQL Server", "SQLite"])
+        self.form_fields["db_type"] = db_type_field
+        db_type_field.input_widget.currentTextChanged.connect(self._on_db_type_changed)
+        type_layout.addWidget(db_type_field)
+
+        layout.addWidget(type_group)
+
+        # SQL Server Configuration
+        self.sql_group = NeonGroupBox("💾 SQL Server Configuration")
+        sql_layout = QVBoxLayout(self.sql_group)
+        sql_layout.setSpacing(16)
+
+        # Server and credentials
+        server_field = FormField(
+            "Server",
+            ModernLineEdit("localhost\\SQLEXPRESS"),
+            required=True,
+            help_text="SQL Server instance name",
+        )
+        self.form_fields["db_host"] = server_field
+        sql_layout.addWidget(server_field)
+
+        username_field = FormField(
+            "Username", ModernLineEdit("username"), required=True
+        )
+        self.form_fields["db_username"] = username_field
+        sql_layout.addWidget(username_field)
+
+        password_field = FormField("Password", PasswordField("password"), required=True)
+        self.form_fields["db_password"] = password_field
+        sql_layout.addWidget(password_field)
+
+        # Database and table selection
         db_layout = QHBoxLayout()
-        db_layout.addWidget(self.inputs["db_name"])
-        db_layout.addWidget(self.refresh_databases_button)
-        form_layout.addRow(self._create_label("DB Name:"), db_layout)
+        db_combo = HolographicComboBox()
+        db_combo.setEditable(True)
+        self.form_fields["db_name"] = FormField("Database", db_combo)
+        self.refresh_dbs_btn = ActionButton.ghost("🔄 Refresh", size="sm")
+        self.refresh_dbs_btn.clicked.connect(self.refresh_databases_requested)
 
-        self.inputs["db_table"] = HolographicComboBox()
-        self.refresh_tables_button = QPushButton("Refresh Tables")
-        self.refresh_tables_button.setStyleSheet(get_ultra_modern_button_style("ghost"))
+        db_layout.addWidget(self.form_fields["db_name"], 3)
+        db_layout.addWidget(self.refresh_dbs_btn, 1)
+        sql_layout.addLayout(db_layout)
+
         table_layout = QHBoxLayout()
-        table_layout.addWidget(self.inputs["db_table"])
-        table_layout.addWidget(self.refresh_tables_button)
-        form_layout.addRow(self._create_label("Table Name:"), table_layout)
+        table_combo = HolographicComboBox()
+        table_combo.setEditable(True)
+        self.form_fields["db_table"] = FormField("Table", table_combo)
+        self.refresh_tables_btn = ActionButton.ghost("🔄 Refresh", size="sm")
+        self.refresh_tables_btn.clicked.connect(self.refresh_tables_requested)
 
-        # Credentials
-        self.inputs["db_username"] = QLineEdit()
-        self.inputs["db_username"].setPlaceholderText("username")
-        self.inputs["db_username"].setStyleSheet(get_ultra_modern_input_style())
-        form_layout.addRow(self._create_label("DB User:"), self.inputs["db_username"])
+        table_layout.addWidget(self.form_fields["db_table"], 3)
+        table_layout.addWidget(self.refresh_tables_btn, 1)
+        sql_layout.addLayout(table_layout)
 
-        self.inputs["db_password"] = QLineEdit()
-        self.inputs["db_password"].setEchoMode(QLineEdit.EchoMode.Password)
-        self.inputs["db_password"].setPlaceholderText("password")
-        self.inputs["db_password"].setStyleSheet(get_ultra_modern_input_style())
-        form_layout.addRow(self._create_label("DB Pass:"), self.inputs["db_password"])
+        layout.addWidget(self.sql_group)
 
-        layout.addWidget(group)
+        # SQLite Configuration
+        self.sqlite_group = NeonGroupBox("📄 SQLite Configuration")
+        sqlite_layout = QVBoxLayout(self.sqlite_group)
+        sqlite_layout.setSpacing(16)
+
+        sqlite_file_field = FormField(
+            "Database File",
+            ModernLineEdit("data/database.db"),
+            help_text="Path to SQLite database file",
+        )
+        self.form_fields["sqlite_file"] = sqlite_file_field
+        sqlite_layout.addWidget(sqlite_file_field)
+
+        sqlite_table_field = FormField(
+            "Table Name",
+            ModernLineEdit("sharepoint_data"),
+            help_text="Name of the table to store data",
+        )
+        self.form_fields["sqlite_table_name"] = sqlite_table_field
+        sqlite_layout.addWidget(sqlite_table_field)
+
+        layout.addWidget(self.sqlite_group)
 
         # Test button
-        test_button = QPushButton("Test Database Connection")
-        test_button.setStyleSheet(get_ultra_modern_button_style("primary"))
-        test_button.clicked.connect(self.test_database_requested)
-        layout.addWidget(test_button)
-        layout.addStretch(1)
+        test_btn = ActionButton.primary("🧪 Test Database Connection", size="md")
+        test_btn.clicked.connect(self.test_database_requested)
+        layout.addWidget(test_btn)
 
+        layout.addStretch()
         self.tab_widget.addTab(tab, "Database")
 
-    def _create_general_tab(self):
-        """สร้าง General tab"""
+        # Initially show SQL Server
+        self._on_db_type_changed("SQL Server")
+
+    def _create_settings_tab(self):
+        """สร้าง Settings tab แบบ modern"""
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        layout.setContentsMargins(15, 15, 15, 15)
-        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(24)
 
-        # Sync settings
-        sync_group = NeonGroupBox("⏱️ Synchronization Protocol")
-        sync_layout = QFormLayout(sync_group)
+        # Sync Settings
+        sync_group = NeonGroupBox("⏱️ Synchronization Settings")
+        sync_layout = QVBoxLayout(sync_group)
         sync_layout.setSpacing(16)
 
-        self.inputs["sync_interval"] = QSpinBox()
-        self.inputs["sync_interval"].setRange(1, 1440)
-        self.inputs["sync_interval"].setValue(60)
-        self.inputs["sync_interval"].setSuffix(" minutes")
-        self.inputs["sync_interval"].setStyleSheet(get_ultra_modern_input_style())
-        sync_layout.addRow(
-            self._create_label("Sync Interval:"), self.inputs["sync_interval"]
+        interval_field = FormField(
+            "Sync Interval",
+            ModernSpinBox(1, 1440, 60, "minutes"),
+            help_text="How often to automatically sync data",
         )
-
-        self.inputs["auto_sync_enabled"] = QCheckBox("◦ Enable Automatic Sync")
-        self.inputs["auto_sync_enabled"].setStyleSheet(get_neon_checkbox_style())
-        sync_layout.addRow("", self.inputs["auto_sync_enabled"])
+        self.form_fields["sync_interval"] = interval_field
+        sync_layout.addWidget(interval_field)
 
         layout.addWidget(sync_group)
 
-        # Performance settings
-        perf_group = NeonGroupBox("⚡ Performance Tuning")
-        perf_layout = QFormLayout(perf_group)
+        # Performance Settings
+        perf_group = NeonGroupBox("⚡ Performance Settings")
+        perf_layout = QVBoxLayout(perf_group)
         perf_layout.setSpacing(16)
 
-        self.inputs["batch_size"] = QSpinBox()
-        self.inputs["batch_size"].setRange(100, 10000)
-        self.inputs["batch_size"].setSingleStep(100)
-        self.inputs["batch_size"].setValue(1000)
-        self.inputs["batch_size"].setStyleSheet(get_ultra_modern_input_style())
-        perf_layout.addRow(self._create_label("Batch Size:"), self.inputs["batch_size"])
+        batch_field = FormField(
+            "Batch Size",
+            ModernSpinBox(100, 10000, 1000, "records"),
+            help_text="Number of records to process at once",
+        )
+        self.form_fields["batch_size"] = batch_field
+        perf_layout.addWidget(batch_field)
 
-        self.inputs["parallel_processing"] = QCheckBox("◦ Enable parallel processing")
-        self.inputs["parallel_processing"].setStyleSheet(get_neon_checkbox_style())
-        perf_layout.addRow("", self.inputs["parallel_processing"])
+        log_level_field = FormField(
+            "Log Level", HolographicComboBox(), help_text="Level of logging detail"
+        )
+        log_level_field.input_widget.addItems(["DEBUG", "INFO", "WARNING", "ERROR"])
+        self.form_fields["log_level"] = log_level_field
+        perf_layout.addWidget(log_level_field)
 
         layout.addWidget(perf_group)
 
-        # Notification settings
-        notif_group = NeonGroupBox("◈ Notifications")
-        notif_layout = QFormLayout(notif_group)
-        notif_layout.setSpacing(16)
+        layout.addStretch()
+        self.tab_widget.addTab(tab, "Settings")
 
-        self.inputs["success_notifications"] = QCheckBox("◦ Success notifications")
-        self.inputs["success_notifications"].setStyleSheet(get_neon_checkbox_style())
-        self.inputs["success_notifications"].setChecked(True)
-        notif_layout.addRow("", self.inputs["success_notifications"])
-
-        self.inputs["error_notifications"] = QCheckBox("◦ Error notifications")
-        self.inputs["error_notifications"].setStyleSheet(get_neon_checkbox_style())
-        self.inputs["error_notifications"].setChecked(True)
-        notif_layout.addRow("", self.inputs["error_notifications"])
-
-        layout.addWidget(notif_group)
-        layout.addStretch(1)
-
-        self.tab_widget.addTab(tab, "General")
-
-    def _create_label(self, text):
-        """สร้าง label พร้อม styling"""
-        label = QLabel(text)
-        label.setStyleSheet(
-            f"color: {UltraModernColors.TEXT_ACCENT}; font-weight: bold; padding-right: 5px;"
-        )
-        label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        return label
+    def _on_db_type_changed(self, db_type):
+        """เปลี่ยน UI ตามประเภทฐานข้อมูล"""
+        if db_type == "SQL Server":
+            self.sql_group.setVisible(True)
+            self.sqlite_group.setVisible(False)
+        else:  # SQLite
+            self.sql_group.setVisible(False)
+            self.sqlite_group.setVisible(True)
 
     def _connect_signals(self):
         """เชื่อมต่อ signals"""
-        # Input changes → save config (แก้: ใช้ lambda เพื่อไม่ส่ง arguments)
-        for key, widget in self.inputs.items():
-            if isinstance(widget, (QLineEdit, QSpinBox)):
-                if hasattr(widget, "textChanged"):
-                    widget.textChanged.connect(lambda: self._save_config_from_ui())
-                else:
-                    widget.valueChanged.connect(lambda: self._save_config_from_ui())
-            elif isinstance(widget, QCheckBox):
-                widget.stateChanged.connect(lambda: self._save_config_from_ui())
-            elif isinstance(widget, HolographicComboBox):
-                widget.currentTextChanged.connect(lambda: self._save_config_from_ui())
-
-        # Auto sync toggle
-        self.inputs["auto_sync_enabled"].stateChanged.connect(
-            lambda: self.auto_sync_toggled.emit(
-                self.inputs["auto_sync_enabled"].isChecked()
-            )
-        )
-
-        # Refresh buttons
-        self.refresh_sites_button.clicked.connect(self.refresh_sites_requested)
-        self.refresh_lists_button.clicked.connect(self.refresh_lists_requested)
-        self.refresh_databases_button.clicked.connect(self.refresh_databases_requested)
-        self.refresh_tables_button.clicked.connect(self.refresh_tables_requested)
+        # Connect form field changes to save config
+        for field_name, field_widget in self.form_fields.items():
+            if hasattr(field_widget.input_widget, "textChanged"):
+                field_widget.input_widget.textChanged.connect(self._save_config_from_ui)
+            elif hasattr(field_widget.input_widget, "valueChanged"):
+                field_widget.input_widget.valueChanged.connect(
+                    self._save_config_from_ui
+                )
+            elif hasattr(field_widget.input_widget, "currentTextChanged"):
+                field_widget.input_widget.currentTextChanged.connect(
+                    self._save_config_from_ui
+                )
 
     @handle_exceptions(ErrorCategory.CONFIG, ErrorSeverity.LOW)
     def _save_config_from_ui(self):
         """บันทึก config จาก UI"""
         ui_data = {}
-        for key, widget in self.inputs.items():
-            if isinstance(widget, QLineEdit):
-                ui_data[key] = widget.text()
-            elif isinstance(widget, QSpinBox):
-                ui_data[key] = widget.value()
-            elif isinstance(widget, QCheckBox):
-                ui_data[key] = widget.isChecked()
-            elif isinstance(widget, HolographicComboBox):
-                ui_data[key] = widget.currentText()
+        for field_name, field_widget in self.form_fields.items():
+            ui_data[field_name] = field_widget.get_value()
 
         success = self.data_manager.save_config(ui_data)
         if success:
@@ -401,20 +454,30 @@ class UltraModernConfigPanel(QWidget):
         """โหลด config มาแสดงใน UI"""
         config = self.data_manager.load_config()
 
-        # Map config to UI
-        if "sharepoint_url" in self.inputs:
-            self.inputs["sharepoint_url"].setText(config.sharepoint_url)
-        if "db_host" in self.inputs:
-            self.inputs["db_host"].setText(config.db_host)
-        if "db_port" in self.inputs:
-            self.inputs["db_port"].setValue(config.db_port)
-        if "sync_interval" in self.inputs:
-            self.inputs["sync_interval"].setValue(config.sync_interval)
-        if "batch_size" in self.inputs:
-            self.inputs["batch_size"].setValue(config.batch_size)
-        if "auto_sync_enabled" in self.inputs:
-            self.inputs["auto_sync_enabled"].setChecked(config.auto_sync_enabled)
+        field_mapping = {
+            "sharepoint_url": config.sharepoint_url or "",
+            "tenant_id": config.tenant_id or "",
+            "sharepoint_client_id": config.sharepoint_client_id or "",
+            "sharepoint_client_secret": config.sharepoint_client_secret or "",
+            "db_type": config.db_type or "SQL Server",
+            "db_host": config.db_host or "",
+            "db_username": config.db_username or "",
+            "db_password": config.db_password or "",
+            "db_name": config.db_name or "",
+            "db_table": config.db_table or "",
+            "sqlite_file": config.sqlite_file or "data.db",
+            "sqlite_table_name": config.sqlite_table_name or "sharepoint_data",
+            "sync_interval": config.sync_interval,
+            "batch_size": config.batch_size,
+            "log_level": config.log_level,
+        }
 
+        for field_name, value in field_mapping.items():
+            if field_name in self.form_fields:
+                self.form_fields[field_name].set_value(value)
+
+        # Update UI based on database type
+        self._on_db_type_changed(config.db_type or "SQL Server")
         logger.info("Configuration loaded to UI")
 
     # UI state management
@@ -422,32 +485,50 @@ class UltraModernConfigPanel(QWidget):
     def set_ui_enabled(self, enable: bool):
         """เปิด/ปิด UI elements"""
         self.tab_widget.setEnabled(enable)
-        self.refresh_sites_button.setEnabled(enable)
-        self.refresh_lists_button.setEnabled(enable)
-        self.refresh_databases_button.setEnabled(enable)
-        self.refresh_tables_button.setEnabled(enable)
+        self.refresh_sites_btn.setEnabled(enable)
+        self.refresh_lists_btn.setEnabled(enable)
+        self.refresh_dbs_btn.setEnabled(enable)
+        self.refresh_tables_btn.setEnabled(enable)
 
     # Data population slots
     @pyqtSlot(list)
     def populate_sharepoint_sites(self, sites):
-        if "sharepoint_site" in self.inputs:
-            self.inputs["sharepoint_site"].clear()
-            self.inputs["sharepoint_site"].addItems(sites)
+        if "sharepoint_site" in self.form_fields:
+            combo = self.form_fields["sharepoint_site"].input_widget
+            combo.clear()
+            site_names = [
+                site.get("Title", site.get("name", str(site))) for site in sites
+            ]
+            combo.addItems(site_names)
 
     @pyqtSlot(list)
     def populate_sharepoint_lists(self, lists):
-        if "sharepoint_list" in self.inputs:
-            self.inputs["sharepoint_list"].clear()
-            self.inputs["sharepoint_list"].addItems(lists)
+        if "sharepoint_list" in self.form_fields:
+            combo = self.form_fields["sharepoint_list"].input_widget
+            combo.clear()
+            list_names = [lst.get("Title", lst.get("name", str(lst))) for lst in lists]
+            combo.addItems(list_names)
 
     @pyqtSlot(list)
     def populate_database_names(self, db_names):
-        if "db_name" in self.inputs:
-            self.inputs["db_name"].clear()
-            self.inputs["db_name"].addItems(db_names)
+        if "db_name" in self.form_fields:
+            combo = self.form_fields["db_name"].input_widget
+            current_text = combo.currentText()
+            combo.clear()
+            combo.addItems(db_names)
+            if current_text:
+                combo.setCurrentText(current_text)
 
     @pyqtSlot(list)
     def populate_database_tables(self, tables):
-        if "db_table" in self.inputs:
-            self.inputs["db_table"].clear()
-            self.inputs["db_table"].addItems(tables)
+        if "db_table" in self.form_fields:
+            combo = self.form_fields["db_table"].input_widget
+            current_text = combo.currentText()
+            combo.clear()
+            combo.addItems(tables)
+            if current_text:
+                combo.setCurrentText(current_text)
+
+
+# Compatibility alias
+UltraModernConfigPanel = ModernConfigPanel

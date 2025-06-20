@@ -4,236 +4,282 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QFrame,
-    QPushButton,
-    QCheckBox,
     QSizePolicy,
     QGridLayout,
+    QCheckBox,
 )
 from PyQt6.QtCore import pyqtSignal, pyqtSlot
+from PyQt6.QtGui import QFont
 
-from ..widgets.status_card import StatusCard
+from ..widgets.status_card import ModernStatusCard
 from ..widgets.cyber_log_console import CyberLogConsole
 from ..widgets.holographic_progress_bar import HolographicProgressBar
-from ..widgets.progress_card import UltraModernProgressCard
+from ..widgets.modern_button import ActionButton
 from ..styles.theme import (
     UltraModernColors,
-    get_ultra_modern_card_style,
-    get_gradient_button_style,
-    get_neon_checkbox_style,
+    get_modern_card_style,
+    get_modern_checkbox_style,
 )
 import logging
 
 logger = logging.getLogger(__name__)
 
 
-class HolographicFrame(QFrame):
-    """แก้แล้ว: ลบ shadow effects ที่ทำให้ error"""
+class ModernFrame(QFrame):
+    """Modern frame with glassmorphism effect"""
 
     def __init__(self, variant="default", parent=None):
         super().__init__(parent)
         self.variant = variant
-        self.setup_holographic_style()
+        self.setup_modern_style()
 
-    def setup_holographic_style(self):
-        """ใช้ theme system อย่างเดียว"""
-        style = get_ultra_modern_card_style(self.variant)
-        self.setStyleSheet(style)
+    def setup_modern_style(self):
+        """Apply modern styling"""
+        self.setStyleSheet(get_modern_card_style(self.variant))
 
 
-class UltraModernDashboard(QWidget):
-    """แก้แล้ว: ลด complexity + แยก method ย่อย"""
+class ModernDashboard(QWidget):
+    """Modern Dashboard with enhanced UI"""
 
     clear_cache_requested = pyqtSignal()
 
     def __init__(self, controller):
-        super().__init__()
+        super().__init__(parent=None)
         self.controller = controller
 
-        # แก้: เก็บ references สำคัญ
+        # Store references
         self.status_cards = {}
         self.progress_widgets = {}
 
-        self.setup_ultra_modern_ui()
+        self.setup_modern_ui()
 
-    def setup_ultra_modern_ui(self):
-        """แก้แล้ว: แยกเป็น methods ย่อย"""
+    def setup_modern_ui(self):
+        """Setup modern dashboard UI"""
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(20, 20, 20, 20)
-        main_layout.setSpacing(20)
+        main_layout.setSpacing(24)
 
-        # สร้าง components แยกกัน
-        main_layout.addLayout(self._create_status_cards())
-        main_layout.addWidget(self._create_control_panel())
+        # Create sections
+        main_layout.addLayout(self._create_status_section())
+        main_layout.addWidget(self._create_control_section())
         main_layout.addLayout(self._create_progress_section())
         main_layout.addWidget(self._create_log_section())
 
-        self.add_log_message("🚀 Neural Dashboard online", "info")
+        self.add_log_message("🚀 Modern Dashboard initialized", "info")
 
-    def _create_status_cards(self) -> QHBoxLayout:
-        """แก้แล้ว: แยก status cards creation"""
+    def _create_status_section(self) -> QHBoxLayout:
+        """Create status cards section"""
         layout = QHBoxLayout()
-        layout.setSpacing(15)
+        layout.setSpacing(16)
 
-        # สร้าง status cards
-        self.status_cards["sharepoint"] = StatusCard(
-            "SharePoint Connection", "disconnected"
-        )
-        self.status_cards["database"] = StatusCard(
-            "Database Connection", "disconnected"
-        )
-        self.status_cards["last_sync"] = StatusCard("Last Sync", "never")
+        # Create modern status cards
+        self.status_cards["sharepoint"] = ModernStatusCard("SharePoint", "disconnected")
+        self.status_cards["database"] = ModernStatusCard("Database", "disconnected")
+        self.status_cards["last_sync"] = ModernStatusCard("Last Sync", "never")
 
         for card in self.status_cards.values():
             layout.addWidget(card)
-            layout.setStretchFactor(card, 1)
 
         return layout
 
-    def _create_control_panel(self) -> QFrame:
-        """แก้แล้ว: แยก control panel creation"""
-        control_frame = HolographicFrame(variant="highlight")
+    def _create_control_section(self) -> QFrame:
+        """Create control panel section"""
+        control_frame = ModernFrame(variant="highlight")
         control_layout = QHBoxLayout(control_frame)
-        control_layout.setContentsMargins(15, 15, 15, 15)
-        control_layout.setSpacing(10)
+        control_layout.setContentsMargins(24, 20, 24, 20)
+        control_layout.setSpacing(16)
 
-        # ปุ่มควบคุม
-        self.run_sync_button = QPushButton("Initiate Sync")
-        self.run_sync_button.setStyleSheet(get_gradient_button_style("primary"))
-        self.run_sync_button.clicked.connect(self.controller.run_full_sync)
+        # Action buttons with modern styling
+        self.run_sync_btn = ActionButton.primary("🚀 Start Sync", size="md")
+        self.run_sync_btn.clicked.connect(self.controller.run_full_sync)
 
-        self.clear_cache_button = QPushButton("Clear Cache")
-        self.clear_cache_button.setStyleSheet(get_gradient_button_style("secondary"))
-        self.clear_cache_button.clicked.connect(self.clear_cache)
+        self.clear_cache_btn = ActionButton.secondary("🧹 Clear Cache", size="md")
+        self.clear_cache_btn.clicked.connect(self.clear_cache)
 
-        self.auto_sync_check = QCheckBox("Auto Sync Enabled")
-        self.auto_sync_check.setStyleSheet(get_neon_checkbox_style())
-        self.auto_sync_check.stateChanged.connect(self.controller.toggle_auto_sync)
+        self.test_connections_btn = ActionButton.ghost("🔧 Test All", size="md")
+        self.test_connections_btn.clicked.connect(self.controller.test_all_connections)
 
-        control_layout.addWidget(self.run_sync_button)
-        control_layout.addWidget(self.clear_cache_button)
+        control_layout.addWidget(self.run_sync_btn)
+        control_layout.addWidget(self.clear_cache_btn)
+        control_layout.addWidget(self.test_connections_btn)
         control_layout.addStretch(1)
+
+        # Auto sync toggle with modern styling
+        self.auto_sync_check = QCheckBox("⚡ Auto Sync")
+        self.auto_sync_check.setFont(QFont("Segoe UI", 12, QFont.Weight.Medium))
+        self.auto_sync_check.setStyleSheet(get_modern_checkbox_style())
+        self.auto_sync_check.stateChanged.connect(self.controller.toggle_auto_sync)
         control_layout.addWidget(self.auto_sync_check)
 
         return control_frame
 
     def _create_progress_section(self) -> QGridLayout:
-        """แก้แล้ว: แยก progress section creation"""
+        """Create progress monitoring section"""
         grid_layout = QGridLayout()
-        grid_layout.setSpacing(15)
+        grid_layout.setSpacing(16)
 
-        # Overall progress
-        progress_frame = HolographicFrame()
+        # Overall progress card
+        progress_frame = ModernFrame()
         progress_layout = QVBoxLayout(progress_frame)
-        progress_layout.setContentsMargins(15, 15, 15, 15)
+        progress_layout.setContentsMargins(24, 20, 24, 20)
+        progress_layout.setSpacing(12)
 
-        self.overall_progress_label = QLabel("Overall Sync Progress:")
-        self.overall_progress_label.setStyleSheet(
-            f"color: {UltraModernColors.TEXT_PRIMARY}; font-weight: bold;"
-        )
+        # Progress header
+        progress_header = QLabel("📊 Sync Progress")
+        progress_header.setFont(QFont("Segoe UI", 14, QFont.Weight.DemiBold))
+        progress_header.setStyleSheet(f"color: {UltraModernColors.TEXT_PRIMARY};")
+        progress_layout.addWidget(progress_header)
+
+        # Progress bar
         self.overall_progress_bar = HolographicProgressBar()
         self.overall_progress_bar.setTextVisible(True)
-
-        progress_layout.addWidget(self.overall_progress_label)
+        self.overall_progress_bar.setFixedHeight(32)
         progress_layout.addWidget(self.overall_progress_bar)
+
+        # Current task label
+        self.current_task_label = QLabel("💤 System idle")
+        self.current_task_label.setFont(QFont("Segoe UI", 11))
+        self.current_task_label.setStyleSheet(
+            f"color: {UltraModernColors.TEXT_SECONDARY}; margin-top: 8px;"
+        )
+        progress_layout.addWidget(self.current_task_label)
+
         grid_layout.addWidget(progress_frame, 0, 0, 1, 2)
 
-        # Task progress
-        task_frame = HolographicFrame()
-        task_layout = QVBoxLayout(task_frame)
-        task_layout.setContentsMargins(15, 15, 15, 15)
+        # Statistics card
+        stats_frame = ModernFrame()
+        stats_layout = QVBoxLayout(stats_frame)
+        stats_layout.setContentsMargins(24, 20, 24, 20)
+        stats_layout.setSpacing(12)
 
-        self.current_task_label = QLabel("Current Task: Idle")
-        self.current_task_label.setStyleSheet(
-            f"color: {UltraModernColors.TEXT_ACCENT}; font-size: 14px; font-weight: bold;"
-        )
-        self.detail_progress_bar = UltraModernProgressCard("Task Progress", 0)
+        stats_header = QLabel("📈 Statistics")
+        stats_header.setFont(QFont("Segoe UI", 14, QFont.Weight.DemiBold))
+        stats_header.setStyleSheet(f"color: {UltraModernColors.TEXT_PRIMARY};")
+        stats_layout.addWidget(stats_header)
 
-        task_layout.addWidget(self.current_task_label)
-        task_layout.addWidget(self.detail_progress_bar)
-        grid_layout.addWidget(task_frame, 1, 0, 1, 2)
+        self.stats_label = QLabel("Ready to sync")
+        self.stats_label.setFont(QFont("Segoe UI", 11))
+        self.stats_label.setStyleSheet(f"color: {UltraModernColors.TEXT_SECONDARY};")
+        self.stats_label.setWordWrap(True)
+        stats_layout.addWidget(self.stats_label)
+
+        grid_layout.addWidget(stats_frame, 1, 0, 1, 2)
 
         return grid_layout
 
     def _create_log_section(self) -> QFrame:
-        """แก้แล้ว: แยก log section creation"""
-        log_frame = HolographicFrame()
+        """Create log console section"""
+        log_frame = ModernFrame()
         log_layout = QVBoxLayout(log_frame)
-        log_layout.setContentsMargins(15, 15, 15, 15)
+        log_layout.setContentsMargins(24, 20, 24, 20)
+        log_layout.setSpacing(12)
 
-        log_label = QLabel("System Log:")
-        log_label.setStyleSheet(
-            f"color: {UltraModernColors.TEXT_PRIMARY}; font-weight: bold;"
-        )
+        # Log header with controls
+        header_layout = QHBoxLayout()
 
+        log_header = QLabel("📋 System Log")
+        log_header.setFont(QFont("Segoe UI", 14, QFont.Weight.DemiBold))
+        log_header.setStyleSheet(f"color: {UltraModernColors.TEXT_PRIMARY};")
+        header_layout.addWidget(log_header)
+
+        header_layout.addStretch()
+
+        # Clear log button
+        clear_log_btn = ActionButton.ghost("🗑️ Clear", size="sm")
+        clear_log_btn.clicked.connect(self.clear_logs)
+        header_layout.addWidget(clear_log_btn)
+
+        log_layout.addLayout(header_layout)
+
+        # Log console
         self.log_console = CyberLogConsole()
-        self.log_console.setMinimumHeight(150)
+        self.log_console.setMinimumHeight(180)
         self.log_console.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
-
-        log_layout.addWidget(log_label)
         log_layout.addWidget(self.log_console)
 
         return log_frame
 
-    # แก้แล้ว: ปรับปรุง slot methods
+    # Slot methods
     @pyqtSlot(int)
     def update_overall_progress(self, value):
-        """อัปเดตความคืบหน้ารวม"""
+        """Update overall progress"""
         self.overall_progress_bar.setValue(value)
-        self.overall_progress_bar.setFormat(f"Overall Progress: {value}%")
-
-    @pyqtSlot(int, int)
-    def update_detail_progress(self, current, total):
-        """อัปเดตความคืบหน้าของงานย่อย"""
-        if hasattr(self.detail_progress_bar, "set_progress"):
-            self.detail_progress_bar.set_progress(current, total)
+        self.overall_progress_bar.setFormat(f"Progress: {value}%")
 
     @pyqtSlot(str, str)
     def add_log_message(self, message, level="info"):
-        """เพิ่มข้อความ Log พร้อมเอฟเฟกต์การพิมพ์"""
+        """Add log message with typing effect"""
         self.log_console.add_message_with_typing(message, level)
 
     @pyqtSlot(str)
     def update_current_task(self, task_description):
-        """อัปเดตงานปัจจุบัน"""
-        self.current_task_label.setText(f"Current Task: {task_description}")
+        """Update current task display"""
+        icon_map = {
+            "Idle": "💤",
+            "Connecting": "🔗",
+            "Downloading": "⬇️",
+            "Processing": "⚙️",
+            "Saving": "💾",
+            "Completed": "✅",
+        }
 
-    # แก้แล้ว: ใช้ status_cards dict
+        # Extract task type for icon
+        task_type = task_description.split()[0] if task_description else "Idle"
+        icon = icon_map.get(task_type, "⚙️")
+
+        self.current_task_label.setText(f"{icon} {task_description}")
+
+    # Status update methods
     @pyqtSlot(str)
     def update_sharepoint_status(self, status):
-        """อัปเดตสถานะ SharePoint"""
+        """Update SharePoint status"""
         if "sharepoint" in self.status_cards:
             self.status_cards["sharepoint"].set_status(status)
 
     @pyqtSlot(str)
     def update_database_status(self, status):
-        """อัปเดตสถานะ Database"""
+        """Update database status"""
         if "database" in self.status_cards:
             self.status_cards["database"].set_status(status)
 
     @pyqtSlot(str)
     def update_last_sync_status(self, status):
-        """อัปเดตสถานะการซิงค์ครั้งล่าสุด"""
+        """Update last sync status"""
         if "last_sync" in self.status_cards:
             self.status_cards["last_sync"].set_status(status)
 
-    def clear_logs(self):
-        """ล้าง logs"""
-        self.log_console.clear()
-        self.add_log_message("🧹 DENSO Neural matrix purged - system ready", "info")
-
+    @pyqtSlot(bool)
     def set_auto_sync_enabled(self, enabled):
-        """ตั้งค่า auto sync"""
+        """Set auto sync checkbox state"""
         self.auto_sync_check.setChecked(enabled)
 
+    def update_statistics(self, stats):
+        """Update statistics display"""
+        if stats:
+            records = stats.get("records_inserted", 0)
+            duration = stats.get("duration", 0)
+            errors = stats.get("errors", 0)
+
+            stats_text = f"Records: {records} • Duration: {duration:.1f}s"
+            if errors > 0:
+                stats_text += f" • Errors: {errors}"
+
+            self.stats_label.setText(stats_text)
+
+    def clear_logs(self):
+        """Clear log console"""
+        self.log_console.clear()
+        self.add_log_message("🧹 Log console cleared", "info")
+
     def clear_cache(self):
-        """ล้างแคชของระบบ"""
+        """Clear system cache"""
         self.add_log_message("🧹 Clearing system cache...", "info")
         try:
             success = self.controller.clear_system_cache()
             if success:
-                self.add_log_message("✅ Cache cleared successfully", "info")
+                self.add_log_message("✅ Cache cleared successfully", "success")
             else:
                 self.add_log_message("❌ Failed to clear cache", "error")
         except Exception as e:
@@ -241,17 +287,21 @@ class UltraModernDashboard(QWidget):
             logger.error(f"Cache clear error: {e}")
 
     def cleanup(self):
-        """แก้แล้ว: cleanup resources"""
+        """Cleanup resources"""
         try:
-            # หยุด animations ใน status cards
+            # Stop animations in status cards
             for card in self.status_cards.values():
                 if hasattr(card, "cleanup_animations"):
                     card.cleanup_animations()
 
-            # หยุด timer ใน log console
+            # Stop typing timer in log console
             if hasattr(self.log_console, "typing_timer"):
                 self.log_console.typing_timer.stop()
 
-            logger.info("🧹 Dashboard cleanup completed")
+            logger.info("🧹 Modern Dashboard cleanup completed")
         except Exception as e:
             logger.error(f"Dashboard cleanup error: {e}")
+
+
+# Compatibility alias
+UltraModernDashboard = ModernDashboard

@@ -1,6 +1,5 @@
 from PyQt6.QtWidgets import QGroupBox
 from PyQt6.QtCore import Qt
-
 from ..styles.theme import get_holographic_groupbox_style
 
 
@@ -11,5 +10,3 @@ class NeonGroupBox(QGroupBox):
         super().__init__(title, parent)
         self.setStyleSheet(get_holographic_groupbox_style())
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        # แก้: ลบ main_layout เพื่อป้องกัน layout conflict

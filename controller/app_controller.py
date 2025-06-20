@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 class AppController(QObject):
-    """แก้แล้ว: แยก business logic ออกไป, เหลือแค่ coordination"""
+    """App Controller - แก้ field mapping และบัค"""
 
     # Core signals
     status_changed = pyqtSignal(str, str)
@@ -35,7 +35,7 @@ class AppController(QObject):
     def __init__(self):
         super().__init__()
 
-        # แก้: แยก services ออกมา
+        # Services
         self.config_manager = ConfigManager()
         self.connection_manager = ConnectionManager()
         self.sync_engine = SyncEngine()
@@ -51,7 +51,7 @@ class AppController(QObject):
         logger.info("🎉 AppController initialized")
 
     def _setup_connections(self):
-        """แก้แล้ว: ลด connections, เฉพาะที่จำเป็น"""
+        """Setup signal connections"""
         self.sync_engine.progress_updated.connect(self.progress_updated)
         self.sync_engine.sync_completed.connect(self._handle_sync_completion)
         self.sync_engine.log_message.connect(self.log_message)
@@ -79,7 +79,7 @@ class AppController(QObject):
         self.config_manager.save_config(config_object)
         self.log_message.emit("💾 Configuration updated", "success")
 
-    # Connection Testing - แก้แล้ว: ลด duplicate code
+    # Connection Testing
     def test_sharepoint_connection(self):
         return self._test_connection("sharepoint")
 
@@ -87,7 +87,7 @@ class AppController(QObject):
         return self._test_connection("database")
 
     def _test_connection(self, conn_type):
-        """แก้แล้ว: generic connection test method"""
+        """Generic connection test method"""
         self.ui_enable_request.emit(False)
 
         try:
@@ -125,12 +125,12 @@ class AppController(QObject):
             self.ui_enable_request.emit(True)
 
     def _validate_sharepoint_config(self, config):
-        """แก้แล้ว: แยก validation logic"""
+        """แก้: SharePoint validation"""
         required_fields = [
             config.sharepoint_client_id,
             config.sharepoint_client_secret,
             config.tenant_id,
-            config.sharepoint_site,
+            config.sharepoint_url or config.sharepoint_site,
         ]
         if not all(required_fields):
             self.log_message.emit("⚠️ SharePoint config incomplete", "warning")
@@ -139,20 +139,23 @@ class AppController(QObject):
         return True
 
     def _validate_database_config(self, config):
-        """แก้แล้ว: แยก validation logic"""
-        if config.database_type == "sqlserver":
-            required_fields = [
-                config.sql_server,
-                config.sql_database,
-                config.sql_username,
-            ]
-        else:  # SQLite
-            required_fields = [config.sqlite_file]
+        """แก้: Database validation"""
+        db_type = config.database_type or config.db_type
 
-        if not all(required_fields):
-            self.log_message.emit("⚠️ Database config incomplete", "warning")
-            self.database_status_update.emit("warning")
-            return False
+        if db_type and db_type.lower() == "sqlite":
+            if not config.sqlite_file:
+                self.log_message.emit("⚠️ SQLite file path required", "warning")
+                self.database_status_update.emit("warning")
+                return False
+        else:  # SQL Server
+            required_fields = [
+                config.sql_server or config.db_host,
+                config.sql_database or config.db_name,
+            ]
+            if not all(required_fields):
+                self.log_message.emit("⚠️ Database config incomplete", "warning")
+                self.database_status_update.emit("warning")
+                return False
         return True
 
     def test_all_connections(self):
@@ -169,7 +172,7 @@ class AppController(QObject):
 
         return sp_result and db_result
 
-    # Data refresh methods - แก้แล้ว: ลด boilerplate
+    # Data refresh methods
     def refresh_sharepoint_sites(self):
         self._refresh_data(
             "sites",
@@ -197,7 +200,7 @@ class AppController(QObject):
         )
 
     def _refresh_data(self, data_type, fetch_method, signal):
-        """แก้แล้ว: generic data refresh method"""
+        """Generic data refresh method"""
         self.ui_enable_request.emit(False)
         try:
             config = self.get_config()
@@ -209,7 +212,7 @@ class AppController(QObject):
         finally:
             self.ui_enable_request.emit(True)
 
-    # Synchronization - แก้แล้ว: ลด complexity
+    # Synchronization
     def run_full_sync(self):
         """เริ่มการซิงค์"""
         self.ui_enable_request.emit(False)
@@ -239,7 +242,7 @@ class AppController(QObject):
             return False
 
     def _sync_failed(self):
-        """แก้แล้ว: centralize sync failure handling"""
+        """Centralize sync failure handling"""
         self.ui_enable_request.emit(True)
         self.last_sync_status_update.emit("error")
 
@@ -303,28 +306,34 @@ class AppController(QObject):
             return False
 
     def _validate_sync_config(self, config):
-        """ตรวจสอบการตั้งค่าสำหรับซิงค์"""
+        """แก้: ตรวจสอบการตั้งค่าสำหรับซิงค์"""
         # SharePoint validation
-        if not all(
-            [
-                config.sharepoint_client_id,
-                config.sharepoint_client_secret,
-                config.tenant_id,
-                config.sharepoint_site,
-            ]
-        ):
+        sp_fields = [
+            config.sharepoint_client_id,
+            config.sharepoint_client_secret,
+            config.tenant_id,
+            config.sharepoint_url or config.sharepoint_site,
+        ]
+        if not all(sp_fields):
             return {"valid": False, "message": "SharePoint config incomplete"}
 
         if not config.sharepoint_list:
             return {"valid": False, "message": "No SharePoint list selected"}
 
         # Database validation
-        if config.database_type == "sqlserver":
-            if not all([config.sql_server, config.sql_database, config.sql_table_name]):
-                return {"valid": False, "message": "SQL Server config incomplete"}
-        else:  # SQLite
+        db_type = config.database_type or config.db_type
+        if db_type and db_type.lower() == "sqlite":
             if not all([config.sqlite_file, config.sqlite_table_name]):
                 return {"valid": False, "message": "SQLite config incomplete"}
+        else:  # SQL Server
+            if not all(
+                [
+                    config.sql_server or config.db_host,
+                    config.sql_database or config.db_name,
+                    config.sql_table_name or config.db_table,
+                ]
+            ):
+                return {"valid": False, "message": "SQL Server config incomplete"}
 
         return {"valid": True, "message": "Configuration valid"}
 
@@ -371,13 +380,16 @@ class AppController(QObject):
         }
 
     def cleanup(self):
-        """ทำความสะอาดก่อนปิดโปรแกรม"""
+        """แก้บัค: ทำความสะอาดก่อนปิดโปรแกรม"""
         try:
             if self.sync_engine.is_sync_running():
                 self.sync_engine.stop_sync()
 
             self.auto_sync_timer.stop()
-            self.cache_manager.stop_auto_cleanup()
+
+            # แก้: ตรวจสอบว่า cache_manager มี method นี้หรือไม่
+            if hasattr(self.cache_manager, "stop_auto_cleanup"):
+                self.cache_manager.stop_auto_cleanup()
 
             self.log_message.emit("🧹 Resources cleaned", "info")
 

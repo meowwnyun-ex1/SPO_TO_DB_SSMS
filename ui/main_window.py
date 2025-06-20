@@ -10,8 +10,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, pyqtSlot, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QCloseEvent
-from .components.dashboard import UltraModernDashboard
-from .components.config_panel import UltraModernConfigPanel
+from .components.dashboard import ModernDashboard
+from .components.config_panel import ModernConfigPanel
 from .styles.theme import UltraModernColors
 from utils.logger import NeuraUILogHandler
 from utils.error_handling import (
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 class UltraModernStatusBar(QStatusBar):
-    """Status bar แบบ Ultra Modern ลบ shadow effects"""
+    """Status bar แบบ Ultra Modern"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -49,7 +49,6 @@ class UltraModernStatusBar(QStatusBar):
         )
         self.addPermanentWidget(self.status_label)
 
-        # Progress indicator
         self.progress_label = QLabel("◦◦◦")
         self.progress_label.setStyleSheet(
             f"""
@@ -63,7 +62,6 @@ class UltraModernStatusBar(QStatusBar):
         )
         self.addWidget(self.progress_label)
 
-        # Animation for progress
         self.progress_animation = QPropertyAnimation(self.progress_label, b"pos")
         self.progress_animation.setDuration(1000)
         self.progress_animation.setEasingCurve(QEasingCurve.Type.InOutSine)
@@ -110,7 +108,6 @@ class UltraModernStatusBar(QStatusBar):
             """
         )
 
-        # Animate progress for syncing
         if status_type == "syncing":
             self.start_progress_animation()
         else:
@@ -118,8 +115,8 @@ class UltraModernStatusBar(QStatusBar):
 
     def start_progress_animation(self):
         """เริ่ม animation สำหรับ syncing"""
-        if not self.progress_animation.state() == QPropertyAnimation.State.Running:
-            self.progress_animation.setLoopCount(-1)  # Infinite loop
+        if self.progress_animation.state() != QPropertyAnimation.State.Running:
+            self.progress_animation.setLoopCount(-1)
             self.progress_animation.start()
 
     def stop_progress_animation(self):
@@ -127,9 +124,13 @@ class UltraModernStatusBar(QStatusBar):
         if self.progress_animation.state() == QPropertyAnimation.State.Running:
             self.progress_animation.stop()
 
+    def cleanup(self):
+        """ทำความสะอาด animations"""
+        self.stop_progress_animation()
+
 
 class MainWindow(QMainWindow):
-    """Main Window แก้ไข import errors และ cleanup issues"""
+    """Main Window - แก้บัค cleanup และรองรับรูปพื้นหลัง"""
 
     def __init__(self, controller):
         super().__init__(parent=None)
@@ -148,37 +149,46 @@ class MainWindow(QMainWindow):
         self._connect_signals()
         self._setup_logging()
 
-        # Set initial status
         if hasattr(self, "status_bar"):
             self.status_bar.set_status(
                 "Thammaphon Chittasuwanna (SDM) | Innovation", "ready"
             )
 
     def setup_modern_ui(self):
-        """Setup UI โดยไม่ใช้ shadow effects"""
+        """Setup UI โดยปรับขนาดให้เหมาะสมกับรูปพื้นหลัง"""
         self.setWindowTitle("DENSO Neural matrix online by เฮียตอม😎")
-        self.setMinimumSize(1200, 800)
 
-        # Central widget
+        # แก้: ปรับขนาดให้เหมาะกับหน้าจอ 1920x1080 และรูปพื้นหลัง
+        self.setMinimumSize(1100, 750)
+
+        # ปรับขนาดตามขนาดหน้าจอ
+        screen = QApplication.primaryScreen()
+        if screen:
+            screen_size = screen.availableGeometry()
+            # ใช้ 80% ของหน้าจอ
+            width = min(1400, int(screen_size.width() * 0.8))
+            height = min(900, int(screen_size.height() * 0.8))
+            self.resize(width, height)
+        else:
+            self.resize(1300, 850)
+
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
 
-        # Main layout
+        # แก้: ลด margin เพื่อให้เห็นรูปพื้นหลังมากขึ้น
         main_layout = QHBoxLayout(central_widget)
         main_layout.setContentsMargins(15, 15, 15, 15)
         main_layout.setSpacing(20)
 
-        # Create components with error handling
         try:
-            self.dashboard = UltraModernDashboard(self.controller)
-            self.config_panel = UltraModernConfigPanel(self.controller)
+            self.dashboard = ModernDashboard(self.controller)
+            self.config_panel = ModernConfigPanel(self.controller)
         except Exception as e:
             logger.error(f"Failed to create UI components: {e}")
             self.dashboard = None
             self.config_panel = None
             return
 
-        # Splitter for responsive layout
         self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.main_splitter.setChildrenCollapsible(False)
 
@@ -187,31 +197,20 @@ class MainWindow(QMainWindow):
         if self.config_panel:
             self.main_splitter.addWidget(self.config_panel)
 
-        # Set proportional sizes: 70% dashboard, 30% config
-        self.main_splitter.setSizes([840, 360])  # Based on 1200px width
-        self.main_splitter.setStretchFactor(0, 2)  # Dashboard more flexible
-        self.main_splitter.setStretchFactor(1, 1)  # Config panel fixed-ish
+        # แก้: ปรับสัดส่วน 70% : 30%
+        total_width = self.width() - 50  # หัก margin
+        self.main_splitter.setSizes([int(total_width * 0.7), int(total_width * 0.3)])
+        self.main_splitter.setStretchFactor(0, 7)
+        self.main_splitter.setStretchFactor(1, 3)
 
         main_layout.addWidget(self.main_splitter)
 
-        # Status bar
         self.status_bar = UltraModernStatusBar(self)
         self.setStatusBar(self.status_bar)
 
-        # Window styling
+        # Window styling - เตรียมไว้สำหรับรูปพื้นหลัง
         self.setStyleSheet(
             f"""
-            QMainWindow {{
-                background: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #0a0a0a,
-                    stop:0.3 #1a0a1a,
-                    stop:0.7 #0a1a1a,
-                    stop:1 #0a0a0a
-                );
-                border: 2px solid {UltraModernColors.NEON_PURPLE};
-                border-radius: 15px;
-            }}
             QSplitter::handle {{
                 background: {UltraModernColors.NEON_PURPLE};
                 width: 3px;
@@ -223,15 +222,51 @@ class MainWindow(QMainWindow):
             """
         )
 
+        # จัดหน้าต่างให้อยู่กลางจอ
+        self._center_window()
+
+    def _center_window(self):
+        """จัดหน้าต่างให้อยู่กลางจอ"""
+        screen = QApplication.primaryScreen()
+        if screen:
+            screen_geometry = screen.availableGeometry()
+            window_geometry = self.frameGeometry()
+            center_point = screen_geometry.center()
+            window_geometry.moveCenter(center_point)
+            self.move(window_geometry.topLeft())
+
+    def apply_background_with_transparency(self):
+        """ปรับ transparency ของ components เพื่อให้เห็นรูปพื้นหลัง"""
+        # ทำให้ dashboard และ config panel มี transparency
+        if self.dashboard:
+            self.dashboard.setStyleSheet(
+                self.dashboard.styleSheet()
+                + """
+                QWidget {
+                    background: rgba(0, 0, 0, 0.7);
+                }
+                """
+            )
+
+        if self.config_panel:
+            self.config_panel.setStyleSheet(
+                self.config_panel.styleSheet()
+                + """
+                QWidget {
+                    background: rgba(0, 0, 0, 0.7);
+                }
+                """
+            )
+
     @handle_exceptions(ErrorCategory.UI, ErrorSeverity.MEDIUM)
     def _connect_signals(self):
-        """เชื่อมต่อ signals โดยตรวจสอบ component ก่อน"""
+        """เชื่อมต่อ signals"""
         if not self.config_panel or not self.controller:
             logger.error("Cannot connect signals - missing components")
             return
 
-        # Config panel signals
         try:
+            # Config panel signals
             self.config_panel.config_changed.connect(self.controller.update_config)
             self.config_panel.test_sharepoint_requested.connect(
                 self.controller.test_sharepoint_connection
@@ -254,7 +289,6 @@ class MainWindow(QMainWindow):
                 self.controller.refresh_database_tables
             )
 
-            # Auto sync
             self.config_panel.auto_sync_toggled.connect(
                 self.controller.toggle_auto_sync
             )
@@ -264,8 +298,8 @@ class MainWindow(QMainWindow):
         if not self.dashboard:
             return
 
-        # Controller to dashboard signals
         try:
+            # Controller to dashboard signals
             self.controller.log_message.connect(self.dashboard.add_log_message)
             self.controller.log_message.connect(self.status_bar.set_status)
             self.controller.progress_update.connect(
@@ -311,7 +345,7 @@ class MainWindow(QMainWindow):
             logger.error(f"Dashboard signals failed: {e}")
 
     def _setup_logging(self):
-        """Setup logging handler with error protection"""
+        """Setup logging handler"""
         if self.dashboard and hasattr(self.dashboard, "add_log_message"):
             try:
                 self.ui_log_handler = NeuraUILogHandler(self.dashboard.add_log_message)
@@ -324,15 +358,13 @@ class MainWindow(QMainWindow):
     def _handle_application_error(self, error_info):
         """จัดการ application errors"""
         error_msg = f"Application Error: {error_info.message}"
-
         if hasattr(self, "status_bar"):
             self.status_bar.set_status(error_msg, "error")
-
         logger.error(error_msg)
 
     def closeEvent(self, event: QCloseEvent):
-        """ปรับปรุง close event เพื่อป้องกัน cleanup errors"""
-        if self.is_closing or self.cleanup_done:
+        """แก้บัค cleanup - ป้องกัน double cleanup"""
+        if self.is_closing:
             event.accept()
             return
 
@@ -352,7 +384,11 @@ class MainWindow(QMainWindow):
                     self.status_bar.set_status("System shutting down...", "warning")
 
                 QApplication.processEvents()
-                self._safe_cleanup()
+
+                # แก้: ทำ cleanup ครั้งเดียว
+                if not self.cleanup_done:
+                    self._safe_cleanup()
+
                 event.accept()
                 QApplication.quit()
             else:
@@ -361,38 +397,39 @@ class MainWindow(QMainWindow):
 
         except Exception as e:
             logger.error(f"Close event error: {e}")
+            if not self.cleanup_done:
+                self._safe_cleanup()
             event.accept()
             QApplication.quit()
 
     @handle_exceptions(ErrorCategory.SYSTEM, ErrorSeverity.LOW)
     def _safe_cleanup(self):
-        """ทำความสะอาดอย่างปลอดภัย"""
+        """แก้บัค: ทำความสะอาดอย่างปลอดภัย"""
         if self.cleanup_done:
             return
 
         try:
-            # Stop controller first
-            if self.controller:
+            # 1. Stop controller first
+            if self.controller and hasattr(self.controller, "cleanup"):
                 self.controller.cleanup()
 
-            # Remove log handler safely
+            # 2. Remove log handler safely
             if self.ui_log_handler:
                 try:
                     logging.getLogger().removeHandler(self.ui_log_handler)
-                    self.ui_log_handler = None
                 except:
                     pass
+                self.ui_log_handler = None
 
-            # Stop animations
-            if hasattr(self, "status_bar") and hasattr(
-                self.status_bar, "progress_animation"
-            ):
-                self.status_bar.stop_progress_animation()
+            # 3. Stop status bar animations
+            if hasattr(self, "status_bar"):
+                self.status_bar.cleanup()
 
-            # Cleanup components
+            # 4. Cleanup dashboard
             if self.dashboard and hasattr(self.dashboard, "cleanup"):
                 self.dashboard.cleanup()
 
+            # 5. Mark cleanup as done
             self.cleanup_done = True
             logger.info("Safe cleanup completed")
 
@@ -401,7 +438,7 @@ class MainWindow(QMainWindow):
             self.cleanup_done = True
 
     def keyPressEvent(self, event):
-        """Key shortcuts with error handling"""
+        """Key shortcuts"""
         try:
             if event.key() == Qt.Key.Key_Escape:
                 self.close()

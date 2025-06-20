@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 
 class SharePointAuth:
-    """SharePoint authentication helper"""
+    """SharePoint authentication helper - แก้ field mapping"""
 
     def __init__(self, config):
         self.config = config
@@ -23,20 +23,35 @@ class SharePointAuth:
     def _request_new_token(self) -> Optional[str]:
         """Request new access token from Azure AD"""
         try:
-            domain = self.config.site_url.split("/")[2]
-            url = f"https://accounts.accesscontrol.windows.net/{self.config.tenant_id}/tokens/OAuth/2"
+            # แก้: ใช้ field ที่ถูกต้อง
+            site_url = self.config.sharepoint_url or self.config.sharepoint_site
+            tenant_id = self.config.tenant_id
+            client_id = self.config.sharepoint_client_id
+            client_secret = self.config.sharepoint_client_secret
+
+            if not all([site_url, tenant_id, client_id, client_secret]):
+                logger.error("Missing SharePoint configuration")
+                return None
+
+            domain = site_url.split("/")[2]
+            url = (
+                f"https://accounts.accesscontrol.windows.net/{tenant_id}/tokens/OAuth/2"
+            )
 
             payload = {
                 "grant_type": "client_credentials",
-                "client_id": f"{self.config.client_id}@{self.config.tenant_id}",
-                "client_secret": self.config.client_secret,
-                "resource": f"00000003-0000-0ff1-ce00-000000000000/{domain}@{self.config.tenant_id}",
+                "client_id": f"{client_id}@{tenant_id}",
+                "client_secret": client_secret,
+                "resource": f"00000003-0000-0ff1-ce00-000000000000/{domain}@{tenant_id}",
             }
 
-            for attempt in range(self.config.max_retries):
+            max_retries = getattr(self.config, "max_retries", 3)
+            connection_timeout = getattr(self.config, "connection_timeout", 30)
+
+            for attempt in range(max_retries):
                 try:
                     response = requests.post(
-                        url, data=payload, timeout=self.config.connection_timeout
+                        url, data=payload, timeout=connection_timeout
                     )
                     response.raise_for_status()
 
@@ -50,7 +65,7 @@ class SharePointAuth:
 
                 except requests.exceptions.RequestException as e:
                     logger.warning(f"Token attempt {attempt + 1} failed: {str(e)}")
-                    if attempt < self.config.max_retries - 1:
+                    if attempt < max_retries - 1:
                         time.sleep(2**attempt)
                     else:
                         raise

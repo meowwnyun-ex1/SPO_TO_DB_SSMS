@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import List
 import logging
 import os
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +26,14 @@ class DatabaseConnector:
 
     def _create_engine(self):
         try:
-            if self.config.database_type == "sqlserver":
+            if (
+                self.config.database_type == "sqlserver"
+                or self.config.db_type == "SQL Server"
+            ):
                 connection_string = self._build_sqlserver_connection_string()
-            elif self.config.database_type == "sqlite":
+            elif (
+                self.config.database_type == "sqlite" or self.config.db_type == "SQLite"
+            ):
                 connection_string = self._build_sqlite_connection_string()
             else:
                 raise ValueError(
@@ -37,24 +43,39 @@ class DatabaseConnector:
             self.engine = create_engine(
                 connection_string, pool_pre_ping=True, pool_recycle=3600, echo=False
             )
-            logger.info(f"Database engine created for {self.config.database_type}")
+            logger.info(
+                f"Database engine created for {self.config.database_type or self.config.db_type}"
+            )
 
         except Exception as e:
             logger.error(f"Failed to create database engine: {str(e)}")
             raise
 
     def _build_sqlserver_connection_string(self) -> str:
+        """สร้าง connection string สำหรับ SQL Server"""
+        server = self.config.sql_server or self.config.db_host
+        database = self.config.sql_database or self.config.db_name
+        username = self.config.sql_username or self.config.db_username
+        password = self.config.sql_password or self.config.db_password
+        timeout = getattr(self.config, "connection_timeout", 30)
+
         return (
-            f"mssql+pyodbc://{self.config.sql_username}:"
-            f"{self.config.sql_password}@{self.config.sql_server}/"
-            f"{self.config.sql_database}?"
-            f"driver=ODBC+Driver+17+for+SQL+Server&"
-            f"timeout={self.config.connection_timeout}"
+            f"mssql+pyodbc://{username}:{password}@{server}/"
+            f"{database}?driver=ODBC+Driver+17+for+SQL+Server&"
+            f"timeout={timeout}"
         )
 
     def _build_sqlite_connection_string(self) -> str:
-        db_path = os.path.abspath(self.config.sqlite_file)
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        """สร้าง connection string สำหรับ SQLite"""
+        sqlite_file = self.config.sqlite_file or "data.db"
+
+        # แก้: สร้าง absolute path และสร้าง directory
+        if not os.path.isabs(sqlite_file):
+            sqlite_file = os.path.join(os.getcwd(), sqlite_file)
+
+        db_path = Path(sqlite_file)
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+
         return f"sqlite:///{db_path}"
 
     def test_connection(self) -> bool:
@@ -71,22 +92,21 @@ class DatabaseConnector:
             return False
 
     def get_databases(self) -> List[str]:
+        """ดึงรายการ databases - SQL Server เท่านั้น"""
         try:
-            if self.config.database_type == "sqlite":
+            db_type = self.config.database_type or self.config.db_type
+
+            if db_type.lower() in ["sqlite"]:
                 return []
 
             with self.engine.connect() as conn:
-                if self.config.database_type == "sqlserver":
-                    result = conn.execute(
-                        text(
-                            "SELECT name FROM sys.databases "
-                            "WHERE name NOT IN ('master', 'tempdb', 'model', 'msdb') "
-                            "ORDER BY name"
-                        )
+                result = conn.execute(
+                    text(
+                        "SELECT name FROM sys.databases "
+                        "WHERE name NOT IN ('master', 'tempdb', 'model', 'msdb') "
+                        "ORDER BY name"
                     )
-                else:
-                    return []
-
+                )
                 databases = [row[0] for row in result]
                 logger.info(f"Found {len(databases)} databases")
                 return databases
@@ -96,17 +116,21 @@ class DatabaseConnector:
             return []
 
     def get_tables(self) -> List[str]:
+        """ดึงรายการ tables"""
         try:
+            db_type = self.config.database_type or self.config.db_type
+
             with self.engine.connect() as conn:
-                if self.config.database_type == "sqlserver":
+                if db_type.lower() in ["sqlserver", "sql server"]:
+                    database_name = self.config.sql_database or self.config.db_name
                     result = conn.execute(
                         text(
-                            f"SELECT TABLE_NAME FROM {self.config.sql_database}.INFORMATION_SCHEMA.TABLES "
+                            f"SELECT TABLE_NAME FROM {database_name}.INFORMATION_SCHEMA.TABLES "
                             "WHERE TABLE_TYPE = 'BASE TABLE' "
                             "ORDER BY TABLE_NAME"
                         )
                     )
-                elif self.config.database_type == "sqlite":
+                elif db_type.lower() == "sqlite":
                     result = conn.execute(
                         text(
                             "SELECT name FROM sqlite_master "
@@ -126,6 +150,7 @@ class DatabaseConnector:
             return []
 
     def table_exists(self, table_name: str) -> bool:
+        """ตรวจสอบว่า table มีอยู่หรือไม่"""
         try:
             tables = self.get_tables()
             return table_name in tables
@@ -134,6 +159,7 @@ class DatabaseConnector:
             return False
 
     def create_table_if_not_exists(self, df: pd.DataFrame, table_name: str) -> bool:
+        """สร้าง table ถ้ายังไม่มี"""
         try:
             if self.table_exists(table_name):
                 logger.info(f"Table '{table_name}' already exists")
@@ -146,6 +172,7 @@ class DatabaseConnector:
                 Column("sync_id", String(50)),
             ]
 
+            # สร้าง columns จาก DataFrame
             for col_name in df.columns:
                 clean_name = self._clean_column_name(col_name)
                 if df[col_name].dtype == "object":
@@ -168,6 +195,7 @@ class DatabaseConnector:
             raise
 
     def _clean_column_name(self, name: str) -> str:
+        """ทำความสะอาดชื่อ column"""
         cleaned = name.replace(".", "_").replace(" ", "_").replace("-", "_")
         cleaned = "".join(c for c in cleaned if c.isalnum() or c == "_")
         if cleaned and cleaned[0].isdigit():
@@ -177,17 +205,18 @@ class DatabaseConnector:
         return cleaned.lower()
 
     def insert_data(self, df: pd.DataFrame, table_name: str) -> int:
+        """บันทึกข้อมูลลงฐานข้อมูล"""
         try:
             df_copy = df.copy()
             df_copy["sync_timestamp"] = datetime.now()
             df_copy["sync_id"] = f"sync_{int(datetime.now().timestamp())}"
             df_copy.columns = [self._clean_column_name(col) for col in df_copy.columns]
 
-            if (
-                hasattr(self.config, "sql_truncate_before")
-                and self.config.sql_truncate_before
-            ):
+            # ตรวจสอบการ truncate
+            if getattr(self.config, "sql_truncate_before", False):
                 self.truncate_table(table_name)
+
+            batch_size = getattr(self.config, "batch_size", 1000)
 
             rows_inserted = df_copy.to_sql(
                 table_name,
@@ -195,7 +224,7 @@ class DatabaseConnector:
                 if_exists="append",
                 index=False,
                 method="multi",
-                chunksize=self.config.batch_size,
+                chunksize=batch_size,
             )
 
             logger.info(
@@ -208,11 +237,14 @@ class DatabaseConnector:
             raise
 
     def truncate_table(self, table_name: str) -> bool:
+        """ล้างข้อมูลใน table"""
         try:
+            db_type = self.config.database_type or self.config.db_type
+
             with self.engine.connect() as conn:
-                if self.config.database_type == "sqlserver":
+                if db_type.lower() in ["sqlserver", "sql server"]:
                     conn.execute(text(f"TRUNCATE TABLE [{table_name}]"))
-                elif self.config.database_type == "sqlite":
+                elif db_type.lower() == "sqlite":
                     conn.execute(text(f"DELETE FROM {table_name}"))
                 conn.commit()
 
@@ -223,7 +255,59 @@ class DatabaseConnector:
             logger.error(f"Failed to truncate table '{table_name}': {str(e)}")
             return False
 
+    def get_table_info(self, table_name: str) -> dict:
+        """ดึงข้อมูลเกี่ยวกับ table"""
+        try:
+            db_type = self.config.database_type or self.config.db_type
+
+            with self.engine.connect() as conn:
+                if db_type.lower() in ["sqlserver", "sql server"]:
+                    # ดึงจำนวน rows
+                    count_result = conn.execute(
+                        text(f"SELECT COUNT(*) FROM [{table_name}]")
+                    )
+                    row_count = count_result.fetchone()[0]
+
+                    # ดึงข้อมูล columns
+                    columns_result = conn.execute(
+                        text(
+                            f"SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '{table_name}'"
+                        )
+                    )
+                    columns = [
+                        {"name": row[0], "type": row[1]} for row in columns_result
+                    ]
+
+                elif db_type.lower() == "sqlite":
+                    # ดึงจำนวน rows
+                    count_result = conn.execute(
+                        text(f"SELECT COUNT(*) FROM {table_name}")
+                    )
+                    row_count = count_result.fetchone()[0]
+
+                    # ดึงข้อมูล columns
+                    columns_result = conn.execute(
+                        text(f"PRAGMA table_info({table_name})")
+                    )
+                    columns = [
+                        {"name": row[1], "type": row[2]} for row in columns_result
+                    ]
+                else:
+                    return {}
+
+                return {
+                    "table_name": table_name,
+                    "row_count": row_count,
+                    "columns": columns,
+                    "database_type": db_type,
+                }
+
+        except Exception as e:
+            logger.error(f"Failed to get table info for '{table_name}': {str(e)}")
+            return {}
+
     def close(self):
+        """ปิดการเชื่อมต่อฐานข้อมูล"""
         if self.engine:
             self.engine.dispose()
             logger.info("Database connection closed")

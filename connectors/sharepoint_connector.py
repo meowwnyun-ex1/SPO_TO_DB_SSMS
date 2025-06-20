@@ -10,13 +10,13 @@ logger = logging.getLogger(__name__)
 
 
 class SharePointConnector:
-    """แก้แล้ว: ลบ duplicate auth code, ใช้ auth_helper อย่างเดียว"""
+    """SharePoint Connector แก้ field mapping"""
 
     def __init__(self, config):
         self.config = config
         self.auth = SharePointAuth(config)
         self.session = requests.Session()
-        self.session.timeout = config.connection_timeout
+        self.session.timeout = getattr(config, "connection_timeout", 30)
 
     @handle_exceptions(ErrorCategory.CONNECTION, ErrorSeverity.HIGH)
     def test_connection(self) -> bool:
@@ -30,7 +30,13 @@ class SharePointConnector:
             "Accept": "application/json;odata=verbose",
         }
 
-        url = f"{self.config.site_url}/_api/web"
+        # แก้: ใช้ field ที่ถูกต้อง
+        site_url = self.config.sharepoint_url or self.config.sharepoint_site
+        if not site_url:
+            logger.error("SharePoint URL not configured")
+            return False
+
+        url = f"{site_url}/_api/web"
         response = self.session.get(url, headers=headers)
         return response.status_code == 200
 
@@ -43,7 +49,11 @@ class SharePointConnector:
             "Accept": "application/json;odata=verbose",
         }
 
-        base_url = "/".join(self.config.site_url.split("/")[:3])
+        site_url = self.config.sharepoint_url or self.config.sharepoint_site
+        if not site_url:
+            return []
+
+        base_url = "/".join(site_url.split("/")[:3])
         url = f"{base_url}/_api/web/webs"
 
         response = self.session.get(url, headers=headers)
@@ -63,7 +73,12 @@ class SharePointConnector:
             "Accept": "application/json;odata=verbose",
         }
 
-        target_url = site_url or self.config.site_url
+        target_url = (
+            site_url or self.config.sharepoint_url or self.config.sharepoint_site
+        )
+        if not target_url:
+            return []
+
         url = f"{target_url}/_api/web/lists"
 
         response = self.session.get(url, headers=headers)
@@ -91,7 +106,8 @@ class SharePointConnector:
             "Accept": "application/json;odata=verbose",
         }
 
-        url = f"{self.config.site_url}/_api/web/lists/GetByTitle('{list_name}')/fields"
+        site_url = self.config.sharepoint_url or self.config.sharepoint_site
+        url = f"{site_url}/_api/web/lists/GetByTitle('{list_name}')/fields"
         response = self.session.get(url, headers=headers)
         response.raise_for_status()
 
@@ -112,14 +128,21 @@ class SharePointConnector:
 
     @handle_exceptions(ErrorCategory.DATA, ErrorSeverity.HIGH)
     def fetch_data(self, batch_size: Optional[int] = None) -> Optional[pd.DataFrame]:
-        """ดึงข้อมูลจาก SharePoint list พร้อม pagination"""
+        """ดึงข้อมูลจาก SharePoint list"""
         token = self.auth.get_access_token()
         headers = {
             "Authorization": f"Bearer {token}",
             "Accept": "application/json;odata=verbose",
         }
 
-        base_url = f"{self.config.site_url}/_api/web/lists/GetByTitle('{self.config.list_name}')/items"
+        site_url = self.config.sharepoint_url or self.config.sharepoint_site
+        list_name = self.config.sharepoint_list
+
+        if not site_url or not list_name:
+            logger.error("SharePoint URL or List name not configured")
+            return None
+
+        base_url = f"{site_url}/_api/web/lists/GetByTitle('{list_name}')/items"
 
         # Add query parameters
         query_params = []
@@ -133,7 +156,7 @@ class SharePointConnector:
         url = base_url
         page_count = 0
 
-        logger.info(f"Starting data fetch from list '{self.config.list_name}'")
+        logger.info(f"Starting data fetch from list '{list_name}'")
 
         while url:
             page_count += 1
@@ -186,8 +209,10 @@ class SharePointConnector:
             "Accept": "application/json;odata=verbose",
         }
 
-        target_list = list_name or self.config.list_name
-        url = f"{self.config.site_url}/_api/web/lists/GetByTitle('{target_list}')/ItemCount"
+        target_list = list_name or self.config.sharepoint_list
+        site_url = self.config.sharepoint_url or self.config.sharepoint_site
+
+        url = f"{site_url}/_api/web/lists/GetByTitle('{target_list}')/ItemCount"
 
         response = self.session.get(url, headers=headers)
         response.raise_for_status()
@@ -207,8 +232,10 @@ class SharePointConnector:
             "Accept": "application/json;odata=verbose",
         }
 
-        target_list = list_name or self.config.list_name
-        url = f"{self.config.site_url}/_api/web/lists/GetByTitle('{target_list}')"
+        target_list = list_name or self.config.sharepoint_list
+        site_url = self.config.sharepoint_url or self.config.sharepoint_site
+
+        url = f"{site_url}/_api/web/lists/GetByTitle('{target_list}')"
 
         response = self.session.get(url, headers=headers)
         return response.status_code == 200
@@ -222,8 +249,10 @@ class SharePointConnector:
             "Accept": "application/json;odata=verbose",
         }
 
-        target_list = list_name or self.config.list_name
-        url = f"{self.config.site_url}/_api/web/lists/GetByTitle('{target_list}')"
+        target_list = list_name or self.config.sharepoint_list
+        site_url = self.config.sharepoint_url or self.config.sharepoint_site
+
+        url = f"{site_url}/_api/web/lists/GetByTitle('{target_list}')"
 
         response = self.session.get(url, headers=headers)
         response.raise_for_status()

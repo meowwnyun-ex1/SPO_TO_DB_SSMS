@@ -95,7 +95,8 @@ class ConnectionManager(QObject):
     def get_databases(self, config):
         """Get available databases (SQL Server only)"""
         try:
-            if config.database_type != "sqlserver":
+            db_type = config.database_type or config.db_type
+            if db_type and db_type.lower() == "sqlite":
                 return []
 
             connector = DatabaseConnector(config)

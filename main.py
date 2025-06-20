@@ -27,15 +27,25 @@ logger = logging.getLogger(__name__)
 app_instance = None
 main_window_instance = None
 controller_instance = None
+cleanup_in_progress = False
 
 
 def cleanup_resources():
-    """ทำความสะอาดทรัพยากรก่อนปิดโปรแกรม"""
+    """แก้บัค: ทำความสะอาดทรัพยากรโดยป้องกัน double cleanup"""
+    global cleanup_in_progress
+
+    if cleanup_in_progress:
+        return
+
+    cleanup_in_progress = True
+
     try:
-        if controller_instance:
+        if controller_instance and hasattr(controller_instance, "cleanup"):
             controller_instance.cleanup()
-        if main_window_instance:
-            main_window_instance.close()
+
+        if main_window_instance and not main_window_instance.cleanup_done:
+            main_window_instance._safe_cleanup()
+
         logger.info("🧹 Resources cleaned up successfully")
     except Exception as e:
         logger.error(f"Error during cleanup: {e}")
@@ -51,7 +61,7 @@ def signal_handler(signum, frame):
 
 
 def setup_app_theme(app):
-    """Setup modern dark theme with the new color palette"""
+    """Setup modern dark theme"""
     app.setStyle("Fusion")
 
     dark_palette = QPalette()
@@ -85,8 +95,69 @@ def setup_app_theme(app):
     apply_ultra_modern_theme(app)
 
 
+def setup_background_image(main_window):
+    """ตั้งค่ารูปพื้นหลัง"""
+    # ลองหาไฟล์รูพื้นหลังในหลายรูปแบบ
+    background_files = [
+        "assets/background.jpg",
+        "assets/background.png",
+        "assets/bg.jpg",
+        "assets/bg.png",
+        "background.jpg",
+        "background.png",
+    ]
+
+    background_path = None
+    project_root = os.path.dirname(os.path.abspath(__file__))
+
+    for bg_file in background_files:
+        full_path = os.path.join(project_root, bg_file)
+        if os.path.exists(full_path):
+            background_path = full_path
+            logger.info(f"Found background image: {bg_file}")
+            break
+
+    if background_path:
+        # แปลง path เป็น format ที่ Qt รองรับ
+        bg_path_qt = background_path.replace(os.sep, "/")
+
+        main_window.setStyleSheet(
+            f"""
+            QMainWindow {{
+                background-image: url('{bg_path_qt}');
+                background-repeat: no-repeat;
+                background-position: center;
+                border: 2px solid {UltraModernColors.NEON_PURPLE};
+                border-radius: 15px;
+            }}
+            {main_window.styleSheet()}
+            """
+        )
+        main_window.setAutoFillBackground(True)
+        logger.info(f"Background image set: {background_path}")
+    else:
+        # ถ้าไม่มีรูป ใช้ gradient
+        logger.warning("Background image not found, using gradient")
+        main_window.setStyleSheet(
+            f"""
+            QMainWindow {{
+                background: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #0a0a0a,
+                    stop:0.3 #1a0a1a,
+                    stop:0.7 #0a1a1a,
+                    stop:1 #0a0a0a
+                );
+                border: 2px solid {UltraModernColors.NEON_PURPLE};
+                border-radius: 15px;
+            }}
+            {main_window.styleSheet()}
+            """
+        )
+
+
 def main():
-    """Application entry point with proper cleanup"""
+    """Application entry point แก้บัค cleanup"""
     global app_instance, main_window_instance, controller_instance
 
     # Setup signal handlers
@@ -101,59 +172,20 @@ def main():
         setup_neural_logging()
 
         app_instance = QApplication(sys.argv)
-        app_instance.setQuitOnLastWindowClosed(True)  # ให้แอปปิดเมื่อหน้าต่างสุดท้ายปิด
+        app_instance.setQuitOnLastWindowClosed(True)
 
         setup_app_theme(app_instance)
 
-        # Set initial window size
-        initial_width = 1280
-        initial_height = 720
-        screen_rect = app_instance.primaryScreen().availableGeometry()
-        x = (screen_rect.width() - initial_width) // 2
-        y = (screen_rect.height() - initial_height) // 2
-
         # Initialize controller before main window
         controller_instance = AppController()
-
         main_window_instance = MainWindow(controller_instance)
-        main_window_instance.setGeometry(x, y, initial_width, initial_height)
 
-        # Set background image
-        background_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "assets", "background.jpg"
-        )
-        if os.path.exists(background_path):
-            main_window_instance.setStyleSheet(
-                f"""
-                QMainWindow {{
-                    background-image: url('{background_path.replace(os.sep, "/")}');
-                    background-repeat: no-repeat;
-                    background-position: center;
-                    background-attachment: fixed;
-                    background-size: cover;
-                    border: 1px solid {UltraModernColors.NEON_PURPLE};
-                    border-radius: 15px;
-                }}
-                {main_window_instance.styleSheet()}
-            """
-            )
-            main_window_instance.setAutoFillBackground(True)
-        else:
-            logger.warning(f"Background image not found at: {background_path}")
-            main_window_instance.setStyleSheet(
-                f"""
-                QMainWindow {{
-                    background-color: #1a1a1a;
-                    border: 1px solid {UltraModernColors.NEON_PURPLE};
-                    border-radius: 15px;
-                }}
-                {main_window_instance.styleSheet()}
-            """
-            )
+        # ตั้งค่ารูปพื้นหลัง
+        setup_background_image(main_window_instance)
 
         main_window_instance.show()
 
-        # เพิ่ม timer เพื่อให้แอปตอบสนอง signal ได้ดีขึ้น
+        # Timer เพื่อให้แอปตอบสนอง signal ได้ดี
         timer = QTimer()
         timer.timeout.connect(lambda: None)
         timer.start(100)
@@ -164,7 +196,8 @@ def main():
         logger.error(f"Critical error in main: {e}")
         exit_code = 1
     finally:
-        cleanup_resources()
+        if not cleanup_in_progress:
+            cleanup_resources()
 
     sys.exit(exit_code)
 

@@ -9,28 +9,30 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class AppConfig:
-    """แก้แล้ว: field mapping ให้ตรงกับ UI + validation"""
+    """แก้แล้ว: field mapping ครบถ้วน รองรับทั้ง SharePoint และ SQLite"""
 
-    # SharePoint Configuration - แก้: field names ให้ตรงกับ UI
-    sharepoint_url: str = ""  # เปลี่ยนจาก site_url
-    sharepoint_site: str = ""  # เพิ่มสำหรับ site selection
-    sharepoint_list: str = ""  # เปลี่ยนจาก list_name
-    sharepoint_client_id: str = ""  # เปลี่ยนจาก client_id
-    sharepoint_client_secret: str = ""  # เปลี่ยนจาก client_secret
+    # SharePoint Configuration
+    sharepoint_url: str = ""
+    sharepoint_site: str = ""
+    sharepoint_list: str = ""
+    sharepoint_client_id: str = ""
+    sharepoint_client_secret: str = ""
     tenant_id: str = ""
     use_graph_api: bool = False
 
-    # Database Configuration - แก้: field names ให้ตรงกับ UI
+    # Database Configuration
     database_type: str = "sqlserver"
-    db_type: str = "SQL Server"  # เพิ่มสำหรับ UI combobox
-    db_host: str = ""  # เปลี่ยนจาก sql_server
-    db_port: int = 1433
-    db_name: str = ""  # เปลี่ยนจาก sql_database
-    db_table: str = ""  # เปลี่ยนจาก sql_table_name
-    db_username: str = ""  # เปลี่ยนจาก sql_username
-    db_password: str = ""  # เปลี่ยนจาก sql_password
+    db_type: str = "SQL Server"
 
-    # Legacy SQL Server fields - เก็บไว้เพื่อ backward compatibility
+    # SQL Server Configuration
+    db_host: str = ""
+    db_port: int = 1433
+    db_name: str = ""
+    db_table: str = ""
+    db_username: str = ""
+    db_password: str = ""
+
+    # Legacy SQL Server fields (backward compatibility)
     sql_server: str = ""
     sql_database: str = ""
     sql_username: str = ""
@@ -45,7 +47,7 @@ class AppConfig:
     sqlite_create_table: bool = True
 
     # Sync Configuration
-    sync_interval: int = 60  # เปลี่ยนเป็น minutes
+    sync_interval: int = 60
     sync_mode: str = "full"
     auto_sync_enabled: bool = False
     batch_size: int = 1000
@@ -54,13 +56,19 @@ class AppConfig:
     connection_timeout: int = 30
     max_retries: int = 3
     log_level: str = "INFO"
-    enable_parallel_processing: bool = False  # เปลี่ยนชื่อให้ชัดเจน
-    enable_success_notifications: bool = True  # เปลี่ยนชื่อให้ชัดเจน
-    enable_error_notifications: bool = True  # เปลี่ยนชื่อให้ชัดเจน
+    enable_parallel_processing: bool = False
+    enable_success_notifications: bool = True
+    enable_error_notifications: bool = True
 
     def __post_init__(self):
         """แก้แล้ว: sync field mappings หลัง initialization"""
-        # Sync new fields กับ legacy fields
+        # Sync SharePoint fields
+        if not self.sharepoint_url and self.sharepoint_site:
+            self.sharepoint_url = self.sharepoint_site
+        elif not self.sharepoint_site and self.sharepoint_url:
+            self.sharepoint_site = self.sharepoint_url
+
+        # Sync SQL Server fields (new <-> legacy)
         if self.db_host and not self.sql_server:
             self.sql_server = self.db_host
         elif self.sql_server and not self.db_host:
@@ -86,6 +94,12 @@ class AppConfig:
         elif self.sql_table_name and not self.db_table:
             self.db_table = self.sql_table_name
 
+        # Sync database type fields
+        if self.db_type == "SQLite":
+            self.database_type = "sqlite"
+        elif self.db_type == "SQL Server":
+            self.database_type = "sqlserver"
+
     def to_dict(self):
         """Convert to dictionary for JSON serialization"""
         return asdict(self)
@@ -98,7 +112,7 @@ class AppConfig:
         return cls(**filtered_data)
 
     def validate(self):
-        """แก้แล้ว: validate configuration"""
+        """Validate configuration"""
         errors = []
 
         # SharePoint validation
@@ -106,12 +120,12 @@ class AppConfig:
             errors.append("SharePoint URL must start with https://")
 
         # Database validation
-        if self.database_type == "sqlserver":
-            if not self.db_host:
+        if self.database_type == "sqlserver" or self.db_type == "SQL Server":
+            if not (self.db_host or self.sql_server):
                 errors.append("Database host is required")
-            if not self.db_name:
+            if not (self.db_name or self.sql_database):
                 errors.append("Database name is required")
-        elif self.database_type == "sqlite":
+        elif self.database_type == "sqlite" or self.db_type == "SQLite":
             if not self.sqlite_file:
                 errors.append("SQLite file path is required")
 
@@ -125,7 +139,7 @@ class AppConfig:
 
 
 class ConfigManager:
-    """แก้แล้ว: error handling + field mapping"""
+    """แก้แล้ว: field mapping และ error handling"""
 
     def __init__(self, config_file="config.json"):
         self.config_file = Path(config_file)
@@ -197,23 +211,28 @@ class ConfigManager:
             return False
 
     def get_connection_string(self):
-        """แก้แล้ว: generate connection string สำหรับ database"""
-        if self.config.database_type == "sqlserver":
+        """Generate connection string สำหรับ database"""
+        db_type = self.config.database_type or self.config.db_type
+
+        if db_type and db_type.lower() == "sqlite":
+            return f"sqlite:///{Path(self.config.sqlite_file).absolute()}"
+        else:  # SQL Server
+            server = self.config.db_host or self.config.sql_server
+            database = self.config.db_name or self.config.sql_database
+            username = self.config.db_username or self.config.sql_username
+            password = self.config.db_password or self.config.sql_password
+
             return (
-                f"mssql+pyodbc://{self.config.db_username}:"
-                f"{self.config.db_password}@{self.config.db_host}/"
-                f"{self.config.db_name}?"
-                f"driver=ODBC+Driver+17+for+SQL+Server&"
+                f"mssql+pyodbc://{username}:{password}@{server}/"
+                f"{database}?driver=ODBC+Driver+17+for+SQL+Server&"
                 f"timeout={self.config.connection_timeout}"
             )
-        else:  # SQLite
-            return f"sqlite:///{Path(self.config.sqlite_file).absolute()}"
 
     def is_sharepoint_configured(self):
         """ตรวจสอบว่า SharePoint ถูก config แล้วหรือไม่"""
         return all(
             [
-                self.config.sharepoint_url,
+                self.config.sharepoint_url or self.config.sharepoint_site,
                 self.config.sharepoint_client_id,
                 self.config.sharepoint_client_secret,
                 self.config.tenant_id,
@@ -222,9 +241,31 @@ class ConfigManager:
 
     def is_database_configured(self):
         """ตรวจสอบว่า Database ถูก config แล้วหรือไม่"""
-        if self.config.database_type == "sqlserver":
-            return all(
-                [self.config.db_host, self.config.db_name, self.config.db_username]
-            )
-        else:  # SQLite
+        db_type = self.config.database_type or self.config.db_type
+
+        if db_type and db_type.lower() == "sqlite":
             return bool(self.config.sqlite_file)
+        else:  # SQL Server
+            return all(
+                [
+                    self.config.db_host or self.config.sql_server,
+                    self.config.db_name or self.config.sql_database,
+                    self.config.db_username or self.config.sql_username,
+                ]
+            )
+
+    def get_database_type(self):
+        """ดึงประเภทฐานข้อมูลที่ใช้"""
+        db_type = self.config.database_type or self.config.db_type
+        if db_type and db_type.lower() in ["sqlite"]:
+            return "sqlite"
+        else:
+            return "sqlserver"
+
+    def update_field(self, field_name: str, value):
+        """อัปเดตฟิลด์เดียว"""
+        if hasattr(self.config, field_name):
+            setattr(self.config, field_name, value)
+            self.save_config(self.config)
+            return True
+        return False
