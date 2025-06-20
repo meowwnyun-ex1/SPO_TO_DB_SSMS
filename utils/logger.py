@@ -5,6 +5,29 @@ from datetime import datetime
 from PyQt6.QtCore import QObject, pyqtSignal
 
 
+# This QObject class can be used to emit log messages to the UI thread
+class NeuraUILogHandler(QObject, logging.Handler):
+    """
+    A custom logging handler that emits log records as signals,
+    allowing PyQt UI elements to display them in real-time.
+    """
+
+    log_record_emitted = pyqtSignal(str, str)  # message, level
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        logging.Handler.__init__(self)
+        self.setFormatter(NeuralLogFormatter())
+
+    def emit(self, record):
+        """Emits the formatted log record as a signal."""
+        try:
+            message = self.format(record)
+            self.log_record_emitted.emit(message, record.levelname.lower())
+        except Exception:
+            self.handleError(record)
+
+
 class NeuralLogFormatter(logging.Formatter):
     """Custom formatter สำหรับ neural logging system"""
 
@@ -17,15 +40,28 @@ class NeuralLogFormatter(logging.Formatter):
             "ERROR": "◆",
             "CRITICAL": "⬢",
         }
+        self.colors = {
+            "DEBUG": "\033[90m",  # Gray
+            "INFO": "\033[96m",  # Cyan
+            "WARNING": "\033[93m",  # Yellow
+            "ERROR": "\033[91m",  # Red
+            "CRITICAL": "\033[95m",  # Magenta
+            "RESET": "\033[0m",  # Reset color
+        }
 
     def format(self, record):
         """Format log record with neural styling"""
         symbol = self.neural_symbols.get(record.levelname, "◯")
         timestamp = datetime.fromtimestamp(record.created).strftime("%H:%M:%S.%f")[:-3]
 
+        # Get color for console output
+        color_start = self.colors.get(record.levelname, self.colors["RESET"])
+        color_end = self.colors["RESET"]
+
         # Neural log format
         neural_format = (
-            f"[{timestamp}] {symbol} {record.name} " f"→ {record.getMessage()}"
+            f"{color_start}[{timestamp}] {symbol} {record.name} "
+            f"→ {record.getMessage()}{color_end}"
         )
 
         # Add exception info if present
@@ -39,246 +75,70 @@ class QuantumFileHandler(logging.handlers.RotatingFileHandler):
     """Enhanced file handler with quantum data organization"""
 
     def __init__(self, filename, **kwargs):
+        # Ensure log directory exists
+        log_dir = Path(filename).parent
+        log_dir.mkdir(parents=True, exist_ok=True)
         super().__init__(filename, **kwargs)
-        self.setFormatter(NeuralLogFormatter())
-
-    def emit(self, record):
-        """Emit log record with quantum timestamp"""
-        # Add quantum metadata
-        if not hasattr(record, "quantum_id"):
-            record.quantum_id = f"Q{int(datetime.now().timestamp() * 1000)}"
-
-        super().emit(record)
+        self.setFormatter(NeuralLogFormatter())  # Use custom formatter
 
 
-class HolographicConsoleHandler(logging.StreamHandler):
-    """Console handler with holographic output styling"""
+def setup_neural_logging(
+    log_file: str = "logs/app.log",
+    log_level: str = "INFO",
+    max_bytes: int = 10 * 1024 * 1024,
+    backup_count: int = 5,
+):
+    """
+    Sets up the global neural logging configuration.
+    Configures file logging with rotation and console logging.
+    Returns the UI log handler for connecting to a QTextEdit.
+    """
+    # Remove all existing handlers to prevent duplicate logs
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+        handler.close()
 
-    def __init__(self):
-        super().__init__()
-        self.setFormatter(NeuralLogFormatter())
+    logging.root.setLevel(logging.DEBUG)  # Set root to DEBUG to capture all messages
 
-    def emit(self, record):
-        """Emit with color coding for different levels"""
-        # Color codes for terminal output
-        colors = {
-            "DEBUG": "\033[96m",  # Cyan
-            "INFO": "\033[92m",  # Green
-            "WARNING": "\033[93m",  # Yellow
-            "ERROR": "\033[91m",  # Red
-            "CRITICAL": "\033[95m",  # Magenta
-            "RESET": "\033[0m",  # Reset
-        }
+    # File handler with rotation
+    file_handler = QuantumFileHandler(
+        log_file, maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8"
+    )
+    file_handler.setLevel(logging.getLevelName(log_level))
+    file_handler.setFormatter(NeuralLogFormatter())
+    logging.root.addHandler(file_handler)
 
-        if record.levelname in colors:
-            # Apply color to the formatted message
-            formatted = self.format(record)
-            colored_msg = f"{colors[record.levelname]}{formatted}{colors['RESET']}"
+    # Console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.getLevelName(log_level))
+    console_handler.setFormatter(NeuralLogFormatter())
+    logging.root.addHandler(console_handler)
 
-            # Temporarily replace the formatted message
-            original_format = self.format
-            self.format = lambda r: colored_msg
-            super().emit(record)
-            self.format = original_format
-        else:
-            super().emit(record)
+    # UI Log Handler
+    ui_log_handler = NeuraUILogHandler()
+    ui_log_handler.setLevel(logging.INFO)  # UI might show less verbose logs
+    logging.root.addHandler(ui_log_handler)
 
-
-class NeuraUILogHandler(QObject, logging.Handler):
-    """Enhanced UI log handler with neural network styling"""
-
-    log_signal = pyqtSignal(str, str, dict)  # message, level, metadata
-
-    def __init__(self, callback=None):
-        QObject.__init__(self)
-        logging.Handler.__init__(self)
-
-        self.callback = callback
-        self.setFormatter(NeuralLogFormatter())
-
-        # Connect signal if callback provided
-        if callback:
-            self.log_signal.connect(lambda msg, level, meta: callback(msg, level))
-
-    def emit(self, record):
-        """Emit log with neural metadata"""
-        if self.callback:
-            try:
-                msg = self.format(record)
-                level = record.levelname.lower()
-
-                # Neural metadata
-                metadata = {
-                    "timestamp": record.created,
-                    "module": record.name,
-                    "function": record.funcName,
-                    "line": record.lineno,
-                    "neural_id": f"N{int(record.created * 1000)}",
-                }
-
-                # Enhanced level mapping
-                neural_levels = {
-                    "debug": "debug",
-                    "info": "info",
-                    "warning": "warning",
-                    "error": "error",
-                    "critical": "error",
-                }
-
-                ui_level = neural_levels.get(level, "info")
-
-                # Emit neural signal
-                self.log_signal.emit(msg, ui_level, metadata)
-
-            except Exception as e:
-                # Fallback logging to prevent infinite loops
-                print(f"Neural log handler error: {e}")
+    logging.info(f"Neural logging system initialized. Log level: {log_level}")
+    return ui_log_handler
 
 
-class QuantumLogManager:
-    """Advanced log management with quantum organization"""
-
-    def __init__(self, log_dir="logs", app_name="neural_matrix"):
-        self.log_dir = Path(log_dir)
-        self.app_name = app_name
-        self.handlers = {}
-        self.setup_quantum_structure()
-
-    def setup_quantum_structure(self):
-        """Setup quantum log directory structure"""
-        # Create quantum log directories
-        directories = [
-            self.log_dir,
-            self.log_dir / "neural",
-            self.log_dir / "quantum",
-            self.log_dir / "archive",
-        ]
-
-        for directory in directories:
-            directory.mkdir(parents=True, exist_ok=True)
-
-    def create_neural_handler(self, name, level=logging.INFO):
-        """Create specialized neural log handler"""
-        log_file = self.log_dir / "neural" / f"{name}.log"
-
-        handler = QuantumFileHandler(
-            log_file, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"  # 10MB
-        )
-        handler.setLevel(level)
-
-        self.handlers[name] = handler
-        return handler
-
-    def create_quantum_handler(self, name, level=logging.DEBUG):
-        """Create quantum debug handler"""
-        log_file = self.log_dir / "quantum" / f"{name}_quantum.log"
-
-        handler = QuantumFileHandler(
-            log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"  # 5MB
-        )
-        handler.setLevel(level)
-
-        return handler
-
-    def get_log_statistics(self):
-        """Get neural log statistics"""
-        stats = {"total_logs": 0, "by_level": {}, "by_module": {}, "disk_usage": 0}
-
-        # Calculate disk usage
-        for log_file in self.log_dir.rglob("*.log"):
-            stats["disk_usage"] += log_file.stat().st_size
-
-        return stats
+def get_neural_logger(name: str):
+    """Returns a logger instance with the neural logging configuration."""
+    return logging.getLogger(name)
 
 
-def setup_neural_logging(log_level="INFO", log_dir="logs", enable_quantum=True):
-    """Setup comprehensive neural logging system"""
+class OperationTimer:
+    """Context manager for timing operations."""
 
-    # Initialize quantum log manager
-    quantum_manager = QuantumLogManager(log_dir)
-
-    # Configure log level
-    numeric_level = getattr(logging, log_level.upper(), logging.INFO)
-
-    # Setup root logger
-    root_logger = logging.getLogger()
-    root_logger.setLevel(logging.DEBUG)  # Capture all levels
-
-    # Clear existing handlers
-    for handler in root_logger.handlers[:]:
-        root_logger.removeHandler(handler)
-
-    # === Core Neural Handlers ===
-
-    # 1. Main neural log
-    main_handler = quantum_manager.create_neural_handler("neural_matrix", numeric_level)
-    root_logger.addHandler(main_handler)
-
-    # 2. Error-specific handler
-    error_handler = quantum_manager.create_neural_handler("errors", logging.ERROR)
-    root_logger.addHandler(error_handler)
-
-    # 3. Holographic console handler
-    console_handler = HolographicConsoleHandler()
-    console_handler.setLevel(numeric_level)
-    root_logger.addHandler(console_handler)
-
-    # === Quantum Debug Handlers ===
-    if enable_quantum:
-        # Quantum sync operations
-        sync_handler = quantum_manager.create_quantum_handler("sync_operations")
-        sync_logger = logging.getLogger("core.sync_engine")
-        sync_logger.addHandler(sync_handler)
-
-        # Quantum connections
-        conn_handler = quantum_manager.create_quantum_handler("connections")
-        conn_logger = logging.getLogger("core.connection_manager")
-        conn_logger.addHandler(conn_handler)
-
-        # Quantum UI events
-        ui_handler = quantum_manager.create_quantum_handler("ui_events")
-        ui_logger = logging.getLogger("ui")
-        ui_logger.addHandler(ui_handler)
-
-    # === Performance Logging ===
-    perf_handler = quantum_manager.create_neural_handler("performance", logging.WARNING)
-    perf_logger = logging.getLogger("performance")
-    perf_logger.addHandler(perf_handler)
-
-    # Log neural initialization
-    logger = logging.getLogger(__name__)
-    logger.info("◉ Neural logging system initialized")
-    logger.info(f"◦ Log level: {log_level}")
-    logger.info(f"◦ Quantum directory: {quantum_manager.log_dir.absolute()}")
-    logger.info(f"◦ Quantum mode: {'enabled' if enable_quantum else 'disabled'}")
-
-    return quantum_manager
-
-
-def get_neural_logger(name):
-    """Get specialized neural logger"""
-    logger = logging.getLogger(name)
-
-    # Add neural context
-    class NeuralLoggerAdapter(logging.LoggerAdapter):
-        def process(self, msg, kwargs):
-            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-            return f"[{timestamp}] {msg}", kwargs
-
-    return NeuralLoggerAdapter(logger, {})
-
-
-class PerformanceLogger:
-    """Specialized performance logging for neural operations"""
-
-    def __init__(self, operation_name):
+    def __init__(self, operation_name: str, logger_name: str = "__main__"):
         self.operation_name = operation_name
-        self.logger = logging.getLogger("performance")
+        self.logger = get_neural_logger(logger_name)
         self.start_time = None
 
     def __enter__(self):
         self.start_time = datetime.now()
-        self.logger.info(f"◈ Starting: {self.operation_name}")
+        self.logger.info(f"▶ Starting: {self.operation_name}...")
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -319,11 +179,56 @@ class NeuralDebugger:
         logger = get_neural_logger("data_flow")
 
         if hasattr(data, "__len__"):
-            logger.info(f"◦ {stage_name}: {len(data)} items")
+            logger.info(f"Data Flow: {stage_name} - Records: {len(data)}")
         else:
-            logger.info(f"◦ {stage_name}: {type(data).__name__}")
+            logger.info(f"Data Flow: {stage_name} - Data Type: {type(data).__name__}")
+
+        # Optionally, log a snippet of data for debugging purposes
+        if isinstance(data, (list, pd.DataFrame)) and len(data) > 0:
+            if isinstance(data, pd.DataFrame):
+                logger.debug(f"  Snippet:\n{data.head(2).to_string()}")
+            else:
+                logger.debug(f"  Snippet: {data[:2]}...")
 
 
-# Backward compatibility
-UILogHandler = NeuraUILogHandler
-setup_logging = setup_neural_logging
+if __name__ == "__main__":
+    # Example usage for testing
+    ui_handler = setup_neural_logging(log_level="DEBUG")
+
+    # You would connect ui_handler.log_record_emitted to your UI's log display
+    # For testing, we can print it
+    # ui_handler.log_record_emitted.connect(lambda msg, level: print(f"[UI_SIGNAL] {level.upper()}: {msg}"))
+
+    my_logger = get_neural_logger("test_module")
+
+    my_logger.debug("This is a debug message.")
+    my_logger.info("This is an info message.")
+    my_logger.warning("This is a warning message.")
+
+    try:
+        raise ValueError("Something went wrong!")
+    except ValueError:
+        my_logger.error("An error occurred.", exc_info=True)
+
+    my_logger.critical("This is a critical message.")
+
+    with OperationTimer("ComplexCalculation"):
+        time.sleep(0.5)  # Simulate work
+        my_logger.info("Intermediate step completed.")
+
+    @NeuralDebugger.log_function_entry
+    def example_function(a, b):
+        my_logger.info(f"Calculating {a} + {b}")
+        return a + b
+
+    result = example_function(5, 3)
+    my_logger.info(f"Result: {result}")
+
+    import pandas as pd
+
+    sample_df = pd.DataFrame({"col1": [1, 2, 3], "col2": ["A", "B", "C"]})
+    NeuralDebugger.log_data_flow(sample_df, "Initial Data Load")
+
+    # To see UI messages if not connected to a real UI
+    # for msg, level in ui_handler.log_record_emitted: # This won't work directly outside of Qt loop
+    #     print(f"UI Logged: [{level}] {msg}")

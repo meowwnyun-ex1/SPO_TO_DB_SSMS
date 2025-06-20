@@ -1,432 +1,454 @@
-from PyQt6.QtCore import QThread, QObject, pyqtSignal
+# controller/sync_engine.py - Enhanced with Robust Bidirectional Sync and Error Handling
+from PyQt6.QtCore import QThread, QObject, pyqtSignal, pyqtSlot
 from connectors.sharepoint_connector import SharePointConnector
 from connectors.database_connector import DatabaseConnector
 from utils.error_handling import handle_exceptions, ErrorCategory, ErrorSeverity
+from utils.config_manager import Config  # Import Config for type hinting
 import logging
-import time
-from datetime import datetime
+import pandas as pd
+from datetime import datetime, timezone  # Use timezone aware datetime for consistency
+from typing import Tuple  # Added for Tuple type hint
 
 logger = logging.getLogger(__name__)
 
 
 class SyncWorker(QThread):
-    """Enhanced Sync Worker with Direction Support"""
+    """
+    Dedicated QThread for performing data synchronization to prevent UI freezing.
+    Supports SharePoint to SQL and SQL to SharePoint synchronization.
+    """
 
-    progress_updated = pyqtSignal(str, int, str)
-    sync_completed = pyqtSignal(bool, str, dict)
-    log_message = pyqtSignal(str, str)
+    progress_updated = pyqtSignal(str, int, str)  # task_name, percentage, message
+    sync_completed = pyqtSignal(bool, str, dict)  # success, message, stats
+    log_message = pyqtSignal(str, str)  # message, level
 
-    def __init__(self, config, direction="spo_to_sql"):
-        super().__init__()
+    def __init__(self, config: Config, direction: str = "spo_to_sql", parent=None):
+        super().__init__(parent)
         self.config = config
-        self.direction = direction  # ใหม่
-        self.should_stop = False
+        self.direction = direction
+        self._should_stop = False  # Internal flag for graceful stopping
         self.sync_stats = self._init_stats()
+        self.sharepoint_connector = None
+        self.database_connector = None
+        logger.debug(f"SyncWorker initialized for direction: {self.direction}.")
 
-    def _init_stats(self):
-        """สร้าง stats object"""
+    def _init_stats(self) -> dict:
+        """Initializes synchronization statistics."""
         return {
-            "start_time": datetime.now(),
-            "records_processed": 0,
-            "records_inserted": 0,
+            "total_records": 0,
+            "records_added": 0,
+            "records_updated": 0,
             "errors": 0,
-            "duration": 0,
-            "direction": self.direction,  # ใหม่
+            "duration_seconds": 0.0,
+            "start_time": None,
+            "end_time": None,
+            "sync_direction": self.direction,
         }
 
     def run(self):
-        """Execute sync based on direction"""
-        start_time = time.time()
-
-        try:
-            if self.direction == "spo_to_sql":
-                self._run_sharepoint_to_sql_sync(start_time)
-            elif self.direction == "sql_to_spo":
-                self._run_sql_to_sharepoint_sync(start_time)
-            else:
-                self._handle_error(
-                    f"Unknown sync direction: {self.direction}", start_time
-                )
-
-        except Exception as e:
-            self._handle_error(str(e), start_time)
-
-    def _run_sharepoint_to_sql_sync(self, start_time):
-        """SharePoint to SQL sync (original logic)"""
-        # Phase 1: SharePoint
-        if not self._phase_sharepoint_source():
-            return
-
-        # Phase 2: Database
-        if not self._phase_database_target():
-            return
-
-        # Phase 3: Complete
-        self._phase_complete(start_time)
-
-    def _run_sql_to_sharepoint_sync(self, start_time):
-        """SQL to SharePoint sync (ใหม่)"""
-        # Phase 1: Database as source
-        if not self._phase_database_source():
-            return
-
-        # Phase 2: SharePoint as target
-        if not self._phase_sharepoint_target():
-            return
-
-        # Phase 3: Complete
-        self._phase_complete(start_time)
-
-    @handle_exceptions(ErrorCategory.SYNC, ErrorSeverity.HIGH)
-    def _phase_sharepoint_source(self):
-        """Phase: SharePoint as data source"""
-        self.progress_updated.emit("🔗 Connecting to SharePoint...", 15, "info")
-
-        if self.should_stop:
-            return False
-
-        sp_connector = SharePointConnector(self.config)
-
-        if not sp_connector.test_connection():
-            self.sync_completed.emit(
-                False, "SharePoint connection failed", self.sync_stats
-            )
-            return False
-
-        self.progress_updated.emit("⬇️ Downloading from SharePoint...", 30, "info")
-
-        if self.should_stop:
-            return False
-
-        batch_size = getattr(self.config, "batch_size", 1000)
-        self.data = sp_connector.fetch_data(batch_size)
-
-        if self.data is None or self.data.empty:
-            self.progress_updated.emit("⚠️ No data found in SharePoint", 50, "warning")
-            self.sync_completed.emit(
-                False, "No data in SharePoint list", self.sync_stats
-            )
-            return False
-
-        self.sync_stats["records_processed"] = len(self.data)
-        self.progress_updated.emit(f"📊 Found {len(self.data)} records", 50, "success")
-        return True
-
-    @handle_exceptions(ErrorCategory.SYNC, ErrorSeverity.HIGH)
-    def _phase_database_source(self):
-        """Phase: Database as data source (ใหม่)"""
-        self.progress_updated.emit("🔗 Connecting to Database...", 15, "info")
-
-        if self.should_stop:
-            return False
-
-        db_connector = DatabaseConnector(self.config)
-
-        if not db_connector.test_connection():
-            self.sync_completed.emit(
-                False, "Database connection failed", self.sync_stats
-            )
-            return False
-
-        self.progress_updated.emit("⬇️ Reading from Database...", 30, "info")
-
-        if self.should_stop:
-            return False
-
-        # Get data from database
-        table_name = self._get_table_name()
-        try:
-            # Use pandas to read data from database
-            import pandas as pd
-
-            query = f"SELECT * FROM {table_name}"
-            self.data = pd.read_sql(query, db_connector.engine)
-
-            if self.data.empty:
-                self.progress_updated.emit("⚠️ No data found in Database", 50, "warning")
-                self.sync_completed.emit(
-                    False, "No data in database table", self.sync_stats
-                )
-                return False
-
-            self.sync_stats["records_processed"] = len(self.data)
-            self.progress_updated.emit(
-                f"📊 Found {len(self.data)} records", 50, "success"
-            )
-            return True
-
-        except Exception as e:
-            self.sync_completed.emit(
-                False, f"Failed to read from database: {str(e)}", self.sync_stats
-            )
-            return False
-
-    @handle_exceptions(ErrorCategory.SYNC, ErrorSeverity.HIGH)
-    def _phase_database_target(self):
-        """Phase: Database as target (original logic)"""
-        self.progress_updated.emit("💾 Connecting to database...", 60, "info")
-
-        if self.should_stop:
-            return False
-
-        db_connector = DatabaseConnector(self.config)
-
-        if not db_connector.test_connection():
-            self.sync_completed.emit(
-                False, "Database connection failed", self.sync_stats
-            )
-            return False
-
-        self.progress_updated.emit("🛠️ Preparing table...", 70, "info")
-
-        table_name = self._get_table_name()
-
-        if self._should_create_table():
-            try:
-                db_connector.create_table_if_not_exists(self.data, table_name)
-                self.log_message.emit(f"📋 Table '{table_name}' ready", "info")
-            except Exception as e:
-                self.log_message.emit(f"⚠️ Table creation failed: {str(e)}", "warning")
-
-        self.progress_updated.emit("📤 Saving data...", 85, "info")
-
-        if self.should_stop:
-            return False
-
-        # Add metadata
-        self.data["sync_timestamp"] = datetime.now()
-        self.data["sync_id"] = f"sync_{int(time.time())}"
-
-        inserted_count = db_connector.insert_data(self.data, table_name)
-        self.sync_stats["records_inserted"] = inserted_count
-        return True
-
-    @handle_exceptions(ErrorCategory.SYNC, ErrorSeverity.HIGH)
-    def _phase_sharepoint_target(self):
-        """Phase: SharePoint as target (ใหม่)"""
-        self.progress_updated.emit("🔗 Connecting to SharePoint...", 60, "info")
-
-        if self.should_stop:
-            return False
-
-        sp_connector = SharePointConnector(self.config)
-
-        if not sp_connector.test_connection():
-            self.sync_completed.emit(
-                False, "SharePoint connection failed", self.sync_stats
-            )
-            return False
-
-        self.progress_updated.emit("📤 Uploading to SharePoint...", 85, "info")
-
-        if self.should_stop:
-            return False
-
-        # TODO: Implement actual SharePoint data upload
-        # This is a placeholder - SharePoint API for bulk insert is complex
-        try:
-            # For now, just simulate the upload
-            import time
-
-            time.sleep(2)  # Simulate upload time
-
-            self.sync_stats["records_inserted"] = len(self.data)
-            self.log_message.emit(
-                "⚠️ SharePoint upload simulation - not fully implemented", "warning"
-            )
-            return True
-
-        except Exception as e:
-            self.sync_completed.emit(
-                False, f"SharePoint upload failed: {str(e)}", self.sync_stats
-            )
-            return False
-
-    def _phase_complete(self, start_time):
-        """Phase 3: Completion"""
-        duration = time.time() - start_time
-        self.sync_stats["duration"] = duration
-        self.sync_stats["end_time"] = datetime.now()
-
-        self.progress_updated.emit("✅ Sync completed!", 100, "success")
-
-        direction_text = {
-            "spo_to_sql": "SharePoint → SQL",
-            "sql_to_spo": "SQL → SharePoint",
-        }.get(self.direction, self.direction)
-
-        success_message = (
-            f"{direction_text} sync successful! "
-            f"Processed: {self.sync_stats['records_processed']} records "
-            f"Saved: {self.sync_stats['records_inserted']} records "
-            f"Duration: {duration:.1f}s"
+        """
+        Main execution loop for the sync worker.
+        Performs synchronization based on the configured direction.
+        """
+        self.sync_stats = self._init_stats()
+        self.sync_stats["start_time"] = datetime.now(timezone.utc)
+        self.log_message.emit(
+            f"🚀 Starting {self.direction} synchronization...", "info"
         )
+        logger.info(f"SyncWorker started: {self.direction}")
+        success = False
+        message = ""
 
-        self.sync_completed.emit(True, success_message, self.sync_stats)
+        try:
+            # Initialize connectors outside the loop if they haven't been
+            # This ensures they are available for the entire sync process
+            self.sharepoint_connector = SharePointConnector(self.config)
+            self.database_connector = DatabaseConnector(self.config)
 
-    def _handle_error(self, error_msg, start_time):
-        """จัดการ error"""
-        error_message = f"Sync failed: {error_msg}"
-        self.sync_stats["errors"] = 1
-        self.sync_stats["error_message"] = error_msg
-        self.sync_stats["duration"] = time.time() - start_time
+            if self.direction == "spo_to_sql":
+                success, message = self._sync_sharepoint_to_sql()
+            elif self.direction == "sql_to_spo":
+                success, message = self._sync_sql_to_sharepoint()
+            else:
+                message = f"Invalid sync direction: {self.direction}"
+                self.log_message.emit(f"❌ Error: {message}", "error")
+                logger.error(message)
 
-        self.progress_updated.emit(f"❌ {error_message}", 0, "error")
-        self.sync_completed.emit(False, error_message, self.sync_stats)
-        logger.exception("Sync operation failed")
+        except Exception as e:
+            message = f"A critical error occurred during sync: {e}"
+            self.log_message.emit(f"❌ Critical Sync Error: {e}", "critical")
+            logger.critical(message, exc_info=True)
+            success = False
+        finally:
+            self.sync_stats["end_time"] = datetime.now(timezone.utc)
+            if self.sync_stats["start_time"] and self.sync_stats["end_time"]:
+                self.sync_stats["duration_seconds"] = (
+                    self.sync_stats["end_time"] - self.sync_stats["start_time"]
+                ).total_seconds()
 
-    def _get_table_name(self):
-        """ดึงชื่อ table ตาม config"""
-        db_type = self.config.database_type or self.config.db_type
+            # Ensure connectors are closed
+            if self.sharepoint_connector:
+                self.sharepoint_connector.close()
+            if self.database_connector:
+                self.database_connector.close()
 
-        if db_type and db_type.lower() == "sqlite":
-            return self.config.sqlite_table_name or "sharepoint_data"
-        else:
-            return (
-                self.config.sql_table_name or self.config.db_table or "sharepoint_data"
+            self.sync_completed.emit(success, message, self.sync_stats)
+            logger.info(f"SyncWorker finished. Success: {success}, Message: {message}")
+
+    @handle_exceptions(ErrorCategory.SYNC, ErrorSeverity.HIGH)
+    def _sync_sharepoint_to_sql(self) -> Tuple[bool, str]:  # Corrected type hint
+        """Synchronizes data from SharePoint to SQL Server."""
+        self.log_message.emit("Fetching data from SharePoint...", "info")
+        logger.info("Starting SharePoint to SQL sync.")
+
+        if self._should_stop:
+            return False, "Sync cancelled by user."
+
+        sharepoint_data = self.sharepoint_connector.read_list_items(
+            self.config.sharepoint_list
+        )
+        if sharepoint_data is None:
+            return False, "Failed to retrieve data from SharePoint."
+
+        df_spo = pd.DataFrame(sharepoint_data)
+        self.sync_stats["total_records"] = len(df_spo)
+        self.log_message.emit(f"Found {len(df_spo)} items in SharePoint.", "info")
+        logger.info(f"Retrieved {len(df_spo)} items from SharePoint.")
+
+        if df_spo.empty:
+            return True, "No new data to synchronize from SharePoint."
+
+        # Apply column mapping
+        spo_to_sql_mapping = self.config.sharepoint_to_sql_mapping
+        df_spo_mapped = pd.DataFrame()
+
+        # Validate mapping and apply
+        for spo_col, sql_col in spo_to_sql_mapping.items():
+            if spo_col in df_spo.columns:
+                df_spo_mapped[sql_col] = df_spo[spo_col]
+            else:
+                self.log_message.emit(
+                    f"⚠️ Warning: SharePoint column '{spo_col}' not found. Skipping.",
+                    "warning",
+                )
+                logger.warning(
+                    f"SharePoint column '{spo_col}' not found in data. Skipping mapping."
+                )
+
+        if df_spo_mapped.empty:
+            return False, "No valid columns after applying SharePoint to SQL mapping."
+
+        # Handle potential type conversions if necessary, especially for datetime or specific number formats
+        # For example: df_spo_mapped['DateColumn'] = pd.to_datetime(df_spo_mapped['DateColumn'], errors='coerce')
+
+        self.log_message.emit("Writing data to SQL Database...", "info")
+        logger.info("Writing mapped data to SQL Database.")
+
+        try:
+            # Decide on insert/replace based on config
+            if_exists_mode = "replace" if self.config.sql_truncate_before else "append"
+
+            # Use self.database_connector.write_dataframe
+            rows_written = self.database_connector.write_dataframe(
+                df_spo_mapped,
+                table_name=self.config.sql_table_name,
+                if_exists=if_exists_mode,
+                index=False,  # Do not write DataFrame index as a column
+                create_table=self.config.sql_create_table,  # Pass create_table flag
             )
 
-    def _should_create_table(self):
-        """ตรวจสอบว่าควรสร้าง table หรือไม่"""
-        db_type = self.config.database_type or self.config.db_type
+            self.sync_stats["records_added"] = (
+                rows_written  # Assuming 'replace' or 'append' means added
+            )
+            message = (
+                f"Successfully synced {rows_written} records from SharePoint to SQL."
+            )
+            self.log_message.emit(f"✅ {message}", "success")
+            logger.info(message)
+            return True, message
+        except Exception as e:
+            message = f"Failed to write data to SQL database: {e}"
+            self.log_message.emit(f"❌ {message}", "error")
+            logger.error(message, exc_info=True)
+            return False, message
 
-        if db_type and db_type.lower() == "sqlite":
-            return getattr(self.config, "sqlite_create_table", True)
-        else:
-            return getattr(self.config, "sql_create_table", True)
+    @handle_exceptions(ErrorCategory.SYNC, ErrorSeverity.HIGH)
+    def _sync_sql_to_sharepoint(self) -> Tuple[bool, str]:  # Corrected type hint
+        """Synchronizes data from SQL Server to SharePoint."""
+        self.log_message.emit("Fetching data from SQL Database...", "info")
+        logger.info("Starting SQL to SharePoint sync.")
+
+        if self._should_stop:
+            return False, "Sync cancelled by user."
+
+        sql_data = self.database_connector.read_table(self.config.sql_table_name)
+        if sql_data is None:
+            return False, "Failed to retrieve data from SQL database."
+
+        df_sql = pd.DataFrame(sql_data)
+        self.sync_stats["total_records"] = len(df_sql)
+        self.log_message.emit(f"Found {len(df_sql)} records in SQL.", "info")
+        logger.info(f"Retrieved {len(df_sql)} records from SQL.")
+
+        if df_sql.empty:
+            return True, "No new data to synchronize from SQL."
+
+        # Apply column mapping
+        sql_to_spo_mapping = self.config.sql_to_sharepoint_mapping
+        df_sql_mapped = pd.DataFrame()
+
+        for sql_col, spo_col in sql_to_spo_mapping.items():
+            if sql_col in df_sql.columns:
+                df_sql_mapped[spo_col] = df_sql[
+                    sql_col
+                ]  # Map SQL column to SharePoint column
+            else:
+                self.log_message.emit(
+                    f"⚠️ Warning: SQL column '{sql_col}' not found. Skipping.", "warning"
+                )
+                logger.warning(
+                    f"SQL column '{sql_col}' not found in data. Skipping mapping."
+                )
+
+        if df_sql_mapped.empty:
+            return False, "No valid columns after applying SQL to SharePoint mapping."
+
+        self.log_message.emit("Writing data to SharePoint...", "info")
+        logger.info("Writing mapped data to SharePoint.")
+
+        try:
+            # SharePoint update requires a list of dictionaries, not a DataFrame
+            records_to_upload = df_sql_mapped.to_dict(orient="records")
+
+            # Placeholder for actual update/add logic
+            added_count, updated_count, error_count = 0, 0, 0
+
+            # Assuming primary key for update is 'ID' for SharePoint or configurable
+            sharepoint_list_items = self.sharepoint_connector.read_list_items(
+                self.config.sharepoint_list, select_fields=["Id"]
+            )
+            existing_spo_ids = (
+                {item["Id"] for item in sharepoint_list_items}
+                if sharepoint_list_items
+                else set()
+            )
+
+            for i, record in enumerate(records_to_upload):
+                if self._should_stop:
+                    return False, "Sync cancelled by user."
+
+                self.progress_updated.emit(
+                    "SQL to SharePoint",
+                    int((i / len(records_to_upload)) * 100),
+                    f"Processing record {i+1}/{len(records_to_upload)}",
+                )
+
+                spo_id = record.get(
+                    "ID"
+                )  # Assuming 'ID' is the SharePoint item ID after mapping
+
+                if spo_id and spo_id in existing_spo_ids:
+                    # Update existing item
+                    if self.sharepoint_connector.update_list_item(
+                        self.config.sharepoint_list, spo_id, record
+                    ):
+                        updated_count += 1
+                    else:
+                        error_count += 1
+                else:
+                    # Add new item
+                    if self.sharepoint_connector.add_list_item(
+                        self.config.sharepoint_list, record
+                    ):
+                        added_count += 1
+                    else:
+                        error_count += 1
+
+            self.sync_stats["records_added"] = added_count
+            self.sync_stats["records_updated"] = updated_count
+            self.sync_stats["errors"] = error_count
+
+            message = f"Successfully synced from SQL to SharePoint: Added {added_count}, Updated {updated_count}, Errors {error_count}."
+            self.log_message.emit(f"✅ {message}", "success")
+            logger.info(message)
+            return True, message
+        except Exception as e:
+            message = f"Failed to write data to SharePoint: {e}"
+            self.log_message.emit(f"❌ {message}", "error")
+            logger.error(message, exc_info=True)
+            return False, message
 
     def stop(self):
-        """หยุดการซิงค์"""
-        self.should_stop = True
-        self.log_message.emit("⏹️ Stopping sync...", "info")
+        """Sets the internal flag to stop the sync process gracefully."""
+        self._should_stop = True
+        logger.info("SyncWorker received stop signal. Will terminate gracefully.")
 
 
 class SyncEngine(QObject):
-    """Enhanced Sync Engine with Direction Support"""
+    """
+    Orchestrates data synchronization between SharePoint and SQL Database.
+    Manages SyncWorker threads and emits signals for UI updates.
+    """
 
-    progress_updated = pyqtSignal(str, int, str)
-    sync_completed = pyqtSignal(bool, str, dict)
-    log_message = pyqtSignal(str, str)
+    # Signals for UI updates
+    progress_updated = pyqtSignal(str, int, str)  # task_name, percentage, message
+    sync_completed = pyqtSignal(bool, str, dict)  # success, message, stats
+    log_message = pyqtSignal(str, str)  # message, level
+    current_task_update = pyqtSignal(str)  # To update a simple task description label
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, config: Config, parent=None):
+        super().__init__(parent)
+        self.config = config
         self.sync_worker = None
-        self.last_sync_stats = None
+        logger.info("SyncEngine initialized.")
 
-    def is_sync_running(self):
-        """ตรวจสอบสถานะการซิงค์"""
-        return self.sync_worker is not None and self.sync_worker.isRunning()
+    @pyqtSlot(str)
+    @handle_exceptions(ErrorCategory.SYNC, ErrorSeverity.HIGH)
+    def start_sync(self, direction: str):
+        """Starts the synchronization process in a new thread."""
+        if self.sync_worker and self.sync_worker.isRunning():
+            self.log_message.emit("Sync is already in progress.", "warning")
+            logger.warning("Attempted to start sync while another is running.")
+            return
 
-    @handle_exceptions(ErrorCategory.SYNC, ErrorSeverity.MEDIUM)
-    def start_sync(self, config, direction="spo_to_sql"):
-        """เริ่มการซิงค์ with direction support"""
-        if self.is_sync_running():
-            self.log_message.emit("⚠️ Sync already running", "warning")
-            return False
+        # Validate configuration before starting sync
+        if not self._validate_sync_config(direction):
+            self.sync_completed.emit(False, "Sync configuration is invalid.", {})
+            return
 
-        if not self._validate_config(config, direction):
-            return False
+        self.current_task_update.emit(
+            f"Starting {direction.replace('_', ' ').title()} Sync..."
+        )
+        self.log_message.emit(f"Initiating data sync: {direction}", "info")
 
-        # สร้าง worker ใหม่ with direction
-        self.sync_worker = SyncWorker(config, direction)
+        self.progress_updated.emit(
+            f"{direction.replace('_', ' ').title()} Sync", 0, "Initializing..."
+        )
 
-        # เชื่อมต่อ signals
-        self.sync_worker.progress_updated.connect(self.progress_updated)
-        self.sync_worker.sync_completed.connect(self._on_sync_completed)
-        self.sync_worker.log_message.connect(self.log_message)
+        self.sync_worker = SyncWorker(self.config, direction)
 
-        # เริ่ม worker
+        # Connect worker signals to SyncEngine signals to pass them to AppController
+        self.sync_worker.progress_updated.connect(self.progress_updated.emit)
+        self.sync_worker.sync_completed.connect(self.sync_completed.emit)
+        self.sync_worker.log_message.connect(self.log_message.emit)
+
         self.sync_worker.start()
-        direction_text = {
-            "spo_to_sql": "SharePoint → SQL",
-            "sql_to_spo": "SQL → SharePoint",
-        }.get(direction, direction)
-        self.log_message.emit(f"🚀 {direction_text} sync started", "info")
-        return True
+        logger.info(f"SyncWorker thread started for direction: {direction}.")
 
-    @handle_exceptions(ErrorCategory.SYNC, ErrorSeverity.LOW)
+    @pyqtSlot()
+    @handle_exceptions(ErrorCategory.SYNC, ErrorSeverity.MEDIUM)
     def stop_sync(self):
-        """หยุดการซิงค์"""
-        if self.is_sync_running():
+        """Stops the currently running synchronization process."""
+        if self.sync_worker and self.sync_worker.isRunning():
+            self.log_message.emit("Stopping synchronization...", "warning")
+            self.current_task_update.emit("Stopping Sync...")
             self.sync_worker.stop()
-            self.sync_worker.wait(5000)  # รอ 5 วินาที
-
-            if self.sync_worker.isRunning():
-                self.sync_worker.terminate()
-                self.sync_worker.wait()
-
-            self.log_message.emit("⏹️ Sync stopped", "info")
-            return True
+            # It's generally good practice to wait for the thread to finish
+            # but for UI responsiveness, we might not block here.
+            # The worker's run() method will handle its own graceful exit.
+            logger.info("SyncWorker stop method called.")
         else:
-            self.log_message.emit("ℹ️ No sync running", "info")
-            return False
+            self.log_message.emit("No active synchronization to stop.", "info")
+            logger.info("No active sync to stop.")
 
-    def get_last_sync_stats(self):
-        """ดึงสถิติการซิงค์ครั้งล่าสุด"""
-        return self.last_sync_stats
-
-    def _validate_config(self, config, direction):
-        """ตรวจสอบ config based on direction"""
+    @handle_exceptions(ErrorCategory.CONFIG, ErrorSeverity.HIGH)
+    def _validate_sync_config(self, direction: str) -> bool:
+        """
+        Validates the configuration settings required for synchronization.
+        Emits log messages for errors.
+        """
         errors = []
 
-        if direction in ["spo_to_sql", "sql_to_spo"]:
-            # SharePoint validation
-            required_sp_fields = [
-                config.tenant_id,
-                config.sharepoint_client_id or getattr(config, "client_id", None),
-                config.sharepoint_client_secret
-                or getattr(config, "client_secret", None),
-                config.sharepoint_url
-                or config.sharepoint_site
-                or getattr(config, "site_url", None),
-                config.sharepoint_list or getattr(config, "list_name", None),
-            ]
-
-            if not all(required_sp_fields):
-                errors.append("SharePoint config incomplete")
-
-            # Database validation
-            db_type = config.database_type or config.db_type
-            if db_type and db_type.lower() == "sqlite":
-                if not config.sqlite_file:
-                    errors.append("SQLite file path required")
-            else:  # SQL Server
-                required_sql_fields = [
-                    config.sql_server or config.db_host,
-                    config.sql_database or config.db_name,
-                    config.sql_table_name or config.db_table,
-                ]
-                if not all(required_sql_fields):
-                    errors.append("SQL Server config incomplete")
-
-        if errors:
-            error_message = "Config validation failed: " + ", ".join(errors)
-            self.log_message.emit(f"⚠️ {error_message}", "error")
-            return False
-
-        return True
-
-    def _on_sync_completed(self, success, message, stats):
-        """จัดการเมื่อซิงค์เสร็จสิ้น"""
-        self.last_sync_stats = stats
-        self.sync_completed.emit(success, message, stats)
-
-        # Log stats
-        if success and stats:
-            duration = stats.get("duration", 0)
-            records = stats.get("records_inserted", 0)
-            direction = stats.get("direction", "unknown")
-            self.log_message.emit(
-                f"📊 {direction}: {records} records in {duration:.1f}s", "info"
+        # General checks
+        if not self.config.sharepoint_site or not self.config.sharepoint_list:
+            errors.append("SharePoint site URL or list name is missing.")
+        if not (
+            self.config.sharepoint_client_id
+            and self.config.sharepoint_client_secret
+            and self.config.tenant_id
+        ):
+            errors.append(
+                "SharePoint client ID, client secret, or tenant ID is missing for authentication."
             )
 
-    def get_sync_progress(self):
-        """ดึงความคืบหน้าการซิงค์"""
-        if self.is_sync_running():
-            return {
-                "running": True,
-                "direction": getattr(self.sync_worker, "direction", "unknown"),
-                "thread_id": self.sync_worker.ident if self.sync_worker else None,
-            }
+        db_type = self.config.database_type.lower()
+        if db_type == "sqlserver":
+            if not (
+                self.config.sql_server
+                and self.config.sql_database
+                and self.config.sql_username
+                and self.config.sql_password
+            ):
+                errors.append(
+                    "SQL Server connection details (server, database, username, password) are incomplete."
+                )
+            if not self.config.sql_table_name:
+                errors.append("SQL table name is not specified.")
+        elif db_type == "sqlite":
+            if not self.config.sqlite_file:
+                errors.append("SQLite database file path is not specified.")
+            if not self.config.sqlite_table_name:
+                errors.append("SQLite table name is not specified.")
         else:
-            return {"running": False}
+            errors.append(
+                f"Unsupported database type configured: {self.config.database_type}"
+            )
+
+        # Direction-specific mapping checks
+        if direction == "spo_to_sql":
+            if not self.config.sharepoint_to_sql_mapping:
+                errors.append("SharePoint to SQL field mapping is empty or invalid.")
+            elif not isinstance(self.config.sharepoint_to_sql_mapping, dict) or not all(
+                isinstance(k, str) and isinstance(v, str)
+                for k, v in self.config.sharepoint_to_sql_mapping.items()
+            ):
+                errors.append(
+                    "SharePoint to SQL field mapping is not a valid dictionary."
+                )
+
+        elif direction == "sql_to_spo":
+            if not self.config.sql_to_sharepoint_mapping:
+                errors.append("SQL to SharePoint field mapping is empty or invalid.")
+            elif not isinstance(self.config.sql_to_sharepoint_mapping, dict) or not all(
+                isinstance(k, str) and isinstance(v, str)
+                for k, v in self.config.sql_to_sharepoint_mapping.items()
+            ):
+                errors.append(
+                    "SQL to SharePoint field mapping is not a valid dictionary."
+                )
+
+        else:
+            errors.append(f"Unknown sync direction: {direction}")
+
+        if errors:
+            for error_msg in errors:
+                self.log_message.emit(f"⚠️ Config Error: {error_msg}", "error")
+                logger.error(f"Config validation error: {error_msg}")
+            return False
+
+        logger.info(f"Configuration for '{direction}' sync validated successfully.")
+        return True
+
+    def cleanup(self):
+        """Performs cleanup for SyncEngine."""
+        if self.sync_worker and self.sync_worker.isRunning():
+            self.sync_worker.stop()
+            self.sync_worker.wait(5000)  # Give it some time to stop
+            if self.sync_worker.isRunning():
+                logger.warning(
+                    "SyncWorker did not terminate within timeout during SyncEngine cleanup."
+                )
+        # Disconnect all signals
+        try:
+            self.progress_updated.disconnect()
+            self.sync_completed.disconnect()
+            self.log_message.disconnect()
+            self.current_task_update.disconnect()  # Disconnect new signal
+            logger.info("Disconnected SyncEngine signals.")
+        except TypeError as e:
+            logger.debug(
+                f"Attempted to disconnect non-connected SyncEngine signal: {e}"
+            )
+        except Exception as e:
+            logger.warning(f"Error during SyncEngine signal disconnection: {e}")
+        logger.info("SyncEngine cleanup completed.")

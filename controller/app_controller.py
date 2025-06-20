@@ -4,572 +4,430 @@ from .connection_manager import ConnectionManager
 from utils.config_manager import ConfigManager
 from utils.cache_cleaner import AutoCacheManager
 from utils.excel_import_handler import ExcelImportHandler
+from utils.error_handling import handle_exceptions, ErrorCategory, ErrorSeverity
 import logging
 
 logger = logging.getLogger(__name__)
 
 
 class AppController(QObject):
-    """Enhanced App Controller with Excel Import และ Sync Direction"""
+    """
+    Enhanced App Controller for DENSO Neural Matrix.
+    Manages application logic, orchestrates data sync, connection tests,
+    and interacts with UI components via signals.
+    """
 
-    # Core signals
-    status_changed = pyqtSignal(str, str)
-    progress_updated = pyqtSignal(str, int, str)
-    sync_completed = pyqtSignal(bool, str, dict)
-    log_message = pyqtSignal(str, str)
+    # Core signals (emitted from controller to UI/other modules)
+    status_changed = pyqtSignal(
+        str, str
+    )  # service_name, status (e.g., "SharePoint", "connected")
+    progress_updated = pyqtSignal(str, int, str)  # task_name, percentage, message
+    sync_completed = pyqtSignal(bool, str, dict)  # success, message, stats
+    log_message = pyqtSignal(str, str)  # message, level (e.g., "Data synced", "info")
 
-    # UI update signals
+    # UI specific update signals (emitted to update UI dropdowns/labels)
     sharepoint_sites_updated = pyqtSignal(list)
     sharepoint_lists_updated = pyqtSignal(list)
     database_names_updated = pyqtSignal(list)
     database_tables_updated = pyqtSignal(list)
-    ui_enable_request = pyqtSignal(bool)
+    ui_enable_request = pyqtSignal(bool)  # Request to enable/disable UI
+    sharepoint_status_update = pyqtSignal(str)  # "connected", "disconnected", "error"
+    database_status_update = pyqtSignal(str)  # "connected", "disconnected", "error"
+    last_sync_status_update = pyqtSignal(str)  # success, failed, never
+    auto_sync_status_update = pyqtSignal(bool)  # True if auto sync is enabled
+    progress_update = pyqtSignal(int)  # For main progress bar (0-100)
+    current_task_update = pyqtSignal(str)  # Current task description
 
-    # Status signals
-    sharepoint_status_update = pyqtSignal(str)
-    database_status_update = pyqtSignal(str)
-    last_sync_status_update = pyqtSignal(str)
-    auto_sync_status_update = pyqtSignal(bool)
-    progress_update = pyqtSignal(int)
-    current_task_update = pyqtSignal(str)
-
-    def __init__(self):
-        super().__init__()
-
-        # Services
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        logger.info("Initializing AppController...")
         self.config_manager = ConfigManager()
+        self.config = self.config_manager.get_config()
+
         self.connection_manager = ConnectionManager()
         self.sync_engine = SyncEngine()
-        self.cache_manager = AutoCacheManager()
-        self.excel_handler = ExcelImportHandler()  # ใหม่
+        self.excel_import_handler = ExcelImportHandler()
+        self.auto_cache_manager = AutoCacheManager(
+            cleanup_interval_hours=self.config.cache_cleanup_interval_hours,
+            auto_cleanup_enabled=self.config.auto_cache_cleanup_enabled,
+        )
 
-        # Auto-sync timer
-        self.auto_sync_timer = QTimer()
-        self.auto_sync_enabled = False
+        self._connect_signals()
+        self._initialize_data()
+        self.auto_sync_timer = QTimer(self)
+        self.auto_sync_timer.timeout.connect(self._on_auto_sync_timeout)
+        self.toggle_auto_sync(self.config.auto_sync_enabled)
 
-        # Sync direction ใหม่
-        self.current_sync_direction = "spo_to_sql"  # default
+        logger.info("AppController initialized.")
 
-        self._setup_connections()
-        self._start_cache_manager()
-
-        logger.info("🎉 Enhanced AppController initialized")
-
-    def _setup_connections(self):
-        """Setup signal connections"""
-        self.sync_engine.progress_updated.connect(self.progress_updated)
-        self.sync_engine.sync_completed.connect(self._handle_sync_completion)
-        self.sync_engine.log_message.connect(self.log_message)
-
+    def _connect_signals(self):
+        """Connects signals between components and to UI update methods."""
+        # Connect ConnectionManager signals
         self.connection_manager.status_changed.connect(
-            self._handle_connection_status_change
+            self._handle_service_status_change
         )
-        self.connection_manager.log_message.connect(self.log_message)
-
-        self.auto_sync_timer.timeout.connect(self._auto_sync_triggered)
-
-        # Cache manager
-        self.cache_manager.cleanup_completed.connect(self._on_cache_cleaned)
-        self.cache_manager.log_message.connect(self.log_message)
-
-    def _start_cache_manager(self):
-        """เริ่ม cache manager"""
-        self.cache_manager.start_auto_cleanup()
-
-    # Configuration Management
-    def get_config(self):
-        return self.config_manager.get_config()
-
-    def update_config(self, config_object):
-        self.config_manager.save_config(config_object)
-        self.log_message.emit("💾 Configuration updated", "success")
-
-    # Sync Direction Management (ใหม่)
-    def set_sync_direction(self, direction: str):
-        """ตั้งค่าทิศทางการ sync"""
-        valid_directions = ["spo_to_sql", "sql_to_spo", "excel_to_spo", "excel_to_sql"]
-        if direction in valid_directions:
-            self.current_sync_direction = direction
-            self.log_message.emit(f"🔄 Sync direction: {direction}", "info")
-        else:
-            self.log_message.emit(f"⚠️ Invalid sync direction: {direction}", "warning")
-
-    def get_sync_direction(self) -> str:
-        """ดึงทิศทางการ sync ปัจจุบัน"""
-        return self.current_sync_direction
-
-    # Connection Testing
-    def test_sharepoint_connection(self):
-        return self._test_connection("sharepoint")
-
-    def test_database_connection(self):
-        return self._test_connection("database")
-
-    def _test_connection(self, conn_type):
-        """Generic connection test method"""
-        self.ui_enable_request.emit(False)
-
-        try:
-            config = self.get_config()
-
-            if conn_type == "sharepoint":
-                if not self._validate_sharepoint_config(config):
-                    return False
-                self.sharepoint_status_update.emit("connecting")
-                success = self.connection_manager.test_sharepoint_connection(config)
-                status = "connected" if success else "error"
-                self.sharepoint_status_update.emit(status)
-
-            else:  # database
-                if not self._validate_database_config(config):
-                    return False
-                self.database_status_update.emit("connecting")
-                success = self.connection_manager.test_database_connection(config)
-                status = "connected" if success else "error"
-                self.database_status_update.emit(status)
-
-            msg = (
-                f"✅ {conn_type.title()} connected"
-                if success
-                else f"❌ {conn_type.title()} failed"
-            )
-            self.log_message.emit(msg, "success" if success else "error")
-
-            return success
-
-        except Exception as e:
-            self.log_message.emit(f"❌ {conn_type.title()} error: {str(e)}", "error")
-            return False
-        finally:
-            self.ui_enable_request.emit(True)
-
-    def _validate_sharepoint_config(self, config):
-        """SharePoint validation"""
-        required_fields = [
-            config.sharepoint_client_id,
-            config.sharepoint_client_secret,
-            config.tenant_id,
-            config.sharepoint_url or config.sharepoint_site,
-        ]
-        if not all(required_fields):
-            self.log_message.emit("⚠️ SharePoint config incomplete", "warning")
-            self.sharepoint_status_update.emit("warning")
-            return False
-        return True
-
-    def _validate_database_config(self, config):
-        """Database validation"""
-        db_type = config.database_type or config.db_type
-
-        if db_type and db_type.lower() == "sqlite":
-            if not config.sqlite_file:
-                self.log_message.emit("⚠️ SQLite file path required", "warning")
-                self.database_status_update.emit("warning")
-                return False
-        else:  # SQL Server
-            required_fields = [
-                config.sql_server or config.db_host,
-                config.sql_database or config.db_name,
-            ]
-            if not all(required_fields):
-                self.log_message.emit("⚠️ Database config incomplete", "warning")
-                self.database_status_update.emit("warning")
-                return False
-        return True
-
-    def test_all_connections(self):
-        """ทดสอบการเชื่อมต่อทั้งหมด"""
-        self.log_message.emit("🔍 Testing all connections...", "info")
-
-        sp_result = self.test_sharepoint_connection()
-        db_result = self.test_database_connection()
-
-        if sp_result and db_result:
-            self.log_message.emit("🎉 All connections successful!", "success")
-        else:
-            self.log_message.emit("⚠️ Some connections failed", "warning")
-
-        return sp_result and db_result
-
-    # Data refresh methods
-    def refresh_sharepoint_sites(self):
-        self._refresh_data(
-            "sites",
-            self.connection_manager.get_sharepoint_sites,
-            self.sharepoint_sites_updated,
+        self.connection_manager.log_message.connect(
+            lambda msg, level: self.log_message.emit(f"[CONN] {msg}", level)
         )
 
-    def refresh_sharepoint_lists(self):
-        self._refresh_data(
-            "lists",
-            self.connection_manager.get_sharepoint_lists,
-            self.sharepoint_lists_updated,
+        # Connect SyncEngine signals
+        self.sync_engine.progress_updated.connect(self.progress_updated.emit)
+        self.sync_engine.sync_completed.connect(self._handle_sync_completed)
+        self.sync_engine.log_message.connect(
+            lambda msg, level: self.log_message.emit(f"[SYNC] {msg}", level)
         )
 
-    def refresh_database_names(self):
-        self._refresh_data(
-            "databases",
-            self.connection_manager.get_databases,
-            self.database_names_updated,
+        # Connect CacheCleaner signals
+        self.auto_cache_manager.log_message.connect(
+            lambda msg, level: self.log_message.emit(f"[CACHE] {msg}", level)
         )
 
-    def refresh_database_tables(self):
-        self._refresh_data(
-            "tables", self.connection_manager.get_tables, self.database_tables_updated
+        # Connect ConfigManager signals (if any, for config reload notifications)
+        self.config_manager.config_updated.connect(self._handle_config_update)
+
+        # Connect ExcelImportHandler signals
+        self.excel_import_handler.log_message.connect(
+            lambda msg, level: self.log_message.emit(f"[EXCEL] {msg}", level)
+        )
+        self.excel_import_handler.import_progress.connect(
+            lambda p: self.progress_update.emit(p)
+        )
+        self.excel_import_handler.import_completed.connect(
+            self._handle_excel_import_completed
         )
 
-    def _refresh_data(self, data_type, fetch_method, signal):
-        """Generic data refresh method"""
-        self.ui_enable_request.emit(False)
-        try:
-            config = self.get_config()
-            data = fetch_method(config)
-            signal.emit(data)
-            self.log_message.emit(f"📡 Found {len(data)} {data_type}", "success")
-        except Exception as e:
-            self.log_message.emit(f"❌ Failed to get {data_type}: {str(e)}", "error")
-        finally:
-            self.ui_enable_request.emit(True)
+    def _initialize_data(self):
+        """Initializes data for UI components."""
+        self.config_manager.load_config()
+        self.update_ui_with_config()
+        self.test_all_connections()
+        self.get_available_sharepoint_sites()  # Populate sites dropdown
+        self.get_available_sharepoint_lists()  # Populate lists dropdown
+        self.get_available_databases()
+        self.get_available_tables()
 
-    # Synchronization Methods
-    def run_full_sync(self):
-        """เริ่มการซิงค์ตามทิศทางที่เลือก"""
-        direction = self.get_sync_direction()
-
-        if direction == "spo_to_sql":
-            return self._run_sharepoint_to_sql_sync()
-        elif direction == "sql_to_spo":
-            return self._run_sql_to_sharepoint_sync()
-        else:
-            self.log_message.emit(
-                f"⚠️ Invalid sync direction for full sync: {direction}", "warning"
-            )
-            return False
-
-    def _run_sharepoint_to_sql_sync(self):
-        """SharePoint to SQL sync (original)"""
-        self.ui_enable_request.emit(False)
-        self.last_sync_status_update.emit("in_progress")
-
-        try:
-            config = self.get_config()
-            validation_result = self._validate_sync_config(config)
-
-            if not validation_result["valid"]:
-                self.log_message.emit(f"⚠️ {validation_result['message']}", "warning")
-                self._sync_failed()
-                return False
-
-            if self.sync_engine.is_sync_running():
-                self.log_message.emit("⚠️ Sync already running", "warning")
-                self.ui_enable_request.emit(True)
-                return False
-
-            self.log_message.emit("🚀 Starting SharePoint → SQL sync...", "info")
-            self.sync_engine.start_sync(config, "spo_to_sql")
-            return True
-
-        except Exception as e:
-            self.log_message.emit(f"❌ Sync start failed: {str(e)}", "error")
-            self._sync_failed()
-            return False
-
-    def _run_sql_to_sharepoint_sync(self):
-        """SQL to SharePoint sync (ใหม่)"""
-        self.ui_enable_request.emit(False)
-        self.last_sync_status_update.emit("in_progress")
-
-        try:
-            config = self.get_config()
-            validation_result = self._validate_sync_config(config)
-
-            if not validation_result["valid"]:
-                self.log_message.emit(f"⚠️ {validation_result['message']}", "warning")
-                self._sync_failed()
-                return False
-
-            if self.sync_engine.is_sync_running():
-                self.log_message.emit("⚠️ Sync already running", "warning")
-                self.ui_enable_request.emit(True)
-                return False
-
-            self.log_message.emit("🚀 Starting SQL → SharePoint sync...", "info")
-            self.sync_engine.start_sync(config, "sql_to_spo")
-            return True
-
-        except Exception as e:
-            self.log_message.emit(f"❌ Reverse sync start failed: {str(e)}", "error")
-            self._sync_failed()
-            return False
-
-    # Excel Import Methods (ใหม่)
-    def run_excel_import(self, file_path: str, target_type: str):
-        """Import Excel file to SharePoint or Database"""
-        self.ui_enable_request.emit(False)
-        self.current_task_update.emit("Validating Excel file...")
-
-        try:
-            # Validate Excel file
-            validation_result = self.excel_handler.validate_file(file_path)
-
-            if not validation_result["is_valid"]:
-                self.log_message.emit(
-                    f"❌ Excel validation failed: {validation_result['error_message']}",
-                    "error",
-                )
-                self.ui_enable_request.emit(True)
-                return False
-
-            file_info = validation_result["file_info"]
-            self.log_message.emit(
-                f"📊 Excel file validated: {file_info['total_rows']} rows, {file_info['total_columns']} columns",
-                "success",
-            )
-
-            # Prepare data based on target
-            if target_type == "spo":
-                return self._import_excel_to_sharepoint(file_path, validation_result)
-            elif target_type == "sql":
-                return self._import_excel_to_sql(file_path, validation_result)
-            else:
-                self.log_message.emit(
-                    f"⚠️ Unknown target type: {target_type}", "warning"
-                )
-                return False
-
-        except Exception as e:
-            self.log_message.emit(f"❌ Excel import failed: {str(e)}", "error")
-            self.ui_enable_request.emit(True)
-            return False
-
-    def _import_excel_to_sharepoint(self, file_path: str, validation_result: dict):
-        """Import Excel to SharePoint"""
-        self.current_task_update.emit("Preparing data for SharePoint...")
-
-        try:
-            # Read Excel data
-            df = self.excel_handler._read_excel_file(file_path)
-
-            # Prepare for SharePoint
-            prep_result = self.excel_handler.prepare_for_sharepoint(df)
-
-            if not prep_result["success"]:
-                self.log_message.emit(
-                    "❌ Failed to prepare data for SharePoint", "error"
-                )
-                return False
-
-            # Show warnings if any
-            for warning in prep_result["warnings"]:
-                self.log_message.emit(f"⚠️ {warning}", "warning")
-
-            self.current_task_update.emit("Importing to SharePoint...")
-
-            # TODO: Implement actual SharePoint import via sync engine
-            self.log_message.emit(
-                "⚠️ SharePoint import not yet fully implemented", "warning"
-            )
-            self.log_message.emit(
-                f"📊 Data ready for import: {len(prep_result['data'])} rows", "info"
-            )
-
-            return True
-
-        except Exception as e:
-            self.log_message.emit(f"❌ SharePoint import error: {str(e)}", "error")
-            return False
-        finally:
-            self.ui_enable_request.emit(True)
-
-    def _import_excel_to_sql(self, file_path: str, validation_result: dict):
-        """Import Excel to SQL Database"""
-        self.current_task_update.emit("Preparing data for Database...")
-
-        try:
-            # Read Excel data
-            df = self.excel_handler._read_excel_file(file_path)
-
-            # Prepare for SQL
-            prep_result = self.excel_handler.prepare_for_sql(df)
-
-            if not prep_result["success"]:
-                self.log_message.emit("❌ Failed to prepare data for Database", "error")
-                return False
-
-            # Show warnings if any
-            for warning in prep_result["warnings"]:
-                self.log_message.emit(f"⚠️ {warning}", "warning")
-
-            self.current_task_update.emit("Importing to Database...")
-
-            # TODO: Implement actual SQL import via database connector
-            self.log_message.emit(
-                "⚠️ Database import not yet fully implemented", "warning"
-            )
-            self.log_message.emit(
-                f"📊 Data ready for import: {len(prep_result['data'])} rows", "info"
-            )
-
-            return True
-
-        except Exception as e:
-            self.log_message.emit(f"❌ Database import error: {str(e)}", "error")
-            return False
-        finally:
-            self.ui_enable_request.emit(True)
-
-    def _sync_failed(self):
-        """Centralize sync failure handling"""
-        self.ui_enable_request.emit(True)
-        self.last_sync_status_update.emit("error")
-
-    def stop_sync(self):
-        """หยุดการซิงค์"""
-        try:
-            if self.sync_engine.is_sync_running():
-                self.sync_engine.stop_sync()
-                self.log_message.emit("⏹️ Sync stopped", "info")
-                self.ui_enable_request.emit(True)
-                self.last_sync_status_update.emit("never")
-                return True
-            else:
-                self.log_message.emit("ℹ️ No sync running", "info")
-                return False
-        except Exception as e:
-            self.log_message.emit(f"❌ Stop sync failed: {str(e)}", "error")
-            return False
-
-    # Auto-sync Management
-    def toggle_auto_sync(self, enabled):
-        """เปิด/ปิดการซิงค์อัตโนมัติ"""
-        try:
-            self.auto_sync_enabled = enabled
-            config = self.get_config()
-            interval = config.sync_interval
-
-            if enabled:
-                self.auto_sync_timer.start(interval * 60 * 1000)
-                self.log_message.emit(
-                    f"⏰ Auto sync enabled ({interval}min)", "success"
-                )
-            else:
-                self.auto_sync_timer.stop()
-                self.log_message.emit("⏸️ Auto sync disabled", "info")
-
-            self.auto_sync_status_update.emit(enabled)
-            return True
-
-        except Exception as e:
-            self.log_message.emit(f"❌ Auto sync toggle failed: {str(e)}", "error")
-            return False
-
-    def _auto_sync_triggered(self):
-        """จัดการ auto-sync trigger"""
-        if not self.sync_engine.is_sync_running():
-            self.log_message.emit("🔄 Auto sync triggered", "info")
-            self.run_full_sync()
-        else:
-            self.log_message.emit("⏭️ Auto sync skipped (running)", "info")
-
-    # Utility Methods
-    def clear_system_cache(self):
-        """ล้างแคชระบบ"""
-        try:
-            self.log_message.emit("🧹 Clearing system cache...", "info")
-            self.cache_manager.force_cleanup()
-            return True
-        except Exception as e:
-            self.log_message.emit(f"❌ Cache clear failed: {str(e)}", "error")
-            return False
-
-    def _validate_sync_config(self, config):
-        """ตรวจสอบการตั้งค่าสำหรับซิงค์"""
-        # SharePoint validation
-        sp_fields = [
-            config.sharepoint_client_id,
-            config.sharepoint_client_secret,
-            config.tenant_id,
-            config.sharepoint_url or config.sharepoint_site,
-        ]
-        if not all(sp_fields):
-            return {"valid": False, "message": "SharePoint config incomplete"}
-
-        if not config.sharepoint_list:
-            return {"valid": False, "message": "No SharePoint list selected"}
-
-        # Database validation
-        db_type = config.database_type or config.db_type
-        if db_type and db_type.lower() == "sqlite":
-            if not all([config.sqlite_file, config.sqlite_table_name]):
-                return {"valid": False, "message": "SQLite config incomplete"}
-        else:  # SQL Server
-            if not all(
-                [
-                    config.sql_server or config.db_host,
-                    config.sql_database or config.db_name,
-                    config.sql_table_name or config.db_table,
-                ]
-            ):
-                return {"valid": False, "message": "SQL Server config incomplete"}
-
-        return {"valid": True, "message": "Configuration valid"}
-
-    # Event Handlers
-    def _handle_sync_completion(self, success, message, stats):
-        """จัดการเมื่อซิงค์เสร็จสิ้น"""
-        self.sync_completed.emit(success, message, stats)
-
-        if success:
-            self.last_sync_status_update.emit("success")
-            self.log_message.emit(f"✅ Sync completed: {message}", "success")
-        else:
-            self.last_sync_status_update.emit("error")
-            self.log_message.emit(f"❌ Sync failed: {message}", "error")
-
-        self.progress_update.emit(0)
-        self.current_task_update.emit("Idle")
-        self.ui_enable_request.emit(True)
-
-    def _handle_connection_status_change(self, service_name, status):
-        """จัดการการเปลี่ยนสถานะการเชื่อมต่อ"""
+    @pyqtSlot(str, str)
+    def _handle_service_status_change(self, service_name: str, status: str):
+        """Handle status updates from ConnectionManager."""
+        logger.info(f"Service status changed: {service_name} - {status}")
         if service_name == "SharePoint":
             self.sharepoint_status_update.emit(status)
         elif service_name == "Database":
             self.database_status_update.emit(status)
-        self.status_changed.emit(service_name, status)
 
-    def _on_cache_cleaned(self, result):
-        """จัดการเมื่อล้างแคชเสร็จ"""
+    @pyqtSlot(bool, str, dict)
+    @handle_exceptions(ErrorCategory.SYNC, ErrorSeverity.HIGH)
+    def _handle_sync_completed(self, success: bool, message: str, stats: dict):
+        """Handle synchronization completion."""
+        logger.info(f"Sync completed: Success={success}, Message='{message}'")
+        sync_status = "success" if success else "failed"
+        self.last_sync_status_update.emit(sync_status)
+        self.sync_completed.emit(success, message, stats)
+        self.ui_enable_request.emit(True)  # Re-enable UI after sync
+        self.progress_update.emit(0)  # Reset progress bar
+        self.current_task_update.emit("Idle")
+        if success:
+            self.log_message.emit(
+                "Data synchronization completed successfully.", "info"
+            )
+        else:
+            self.log_message.emit(f"Data synchronization failed: {message}", "error")
+
+    @pyqtSlot()
+    @handle_exceptions(ErrorCategory.CONFIG, ErrorSeverity.MEDIUM)
+    def _handle_config_update(self):
+        """Handle configuration update. Reloads config and updates UI."""
+        logger.info("Configuration updated, reloading and applying to UI.")
+        self.config = self.config_manager.get_config()  # Get the latest config
+        self.update_ui_with_config()
+        # Potentially re-test connections if relevant config changed
+        self.test_all_connections()
+        self.toggle_auto_sync(
+            self.config.auto_sync_enabled
+        )  # Re-evaluate auto-sync based on new config
+
+    @pyqtSlot()
+    @handle_exceptions(ErrorCategory.CONNECTION, ErrorSeverity.HIGH)
+    def test_all_connections(self):
+        """Tests connections to SharePoint and Database and updates UI."""
+        logger.info("Testing all connections...")
+        self.ui_enable_request.emit(False)  # Disable UI during connection test
+        self.current_task_update.emit("Testing connections...")
+
+        sp_status = "disconnected"
+        db_status = "disconnected"
+
+        try:
+            sp_connected = self.connection_manager.test_sharepoint_connection(
+                self.config
+            )
+            sp_status = "connected" if sp_connected else "error"
+            self.sharepoint_status_update.emit(sp_status)
+            self.log_message.emit(
+                f"SharePoint connection: {'Connected' if sp_connected else 'Failed'}",
+                "info" if sp_connected else "error",
+            )
+        except Exception as e:
+            sp_status = "error"
+            self.sharepoint_status_update.emit(sp_status)
+            self.log_message.emit(f"SharePoint connection error: {e}", "critical")
+            logger.exception("SharePoint connection test failed.")
+
+        try:
+            db_connected = self.connection_manager.test_database_connection(self.config)
+            db_status = "connected" if db_connected else "error"
+            self.database_status_update.emit(db_status)
+            self.log_message.emit(
+                f"Database connection: {'Connected' if db_connected else 'Failed'}",
+                "info" if db_connected else "error",
+            )
+        except Exception as e:
+            db_status = "error"
+            self.database_status_update.emit(db_status)
+            self.log_message.emit(f"Database connection error: {e}", "critical")
+            logger.exception("Database connection test failed.")
+
+        self.ui_enable_request.emit(True)  # Re-enable UI
+        self.current_task_update.emit("Idle")
+        logger.info(
+            f"Connection test completed. SharePoint: {sp_status}, Database: {db_status}"
+        )
         self.log_message.emit(
-            f"✅ Cache cleaned: {result.space_freed_mb:.1f}MB freed", "success"
+            f"Connection tests complete. SharePoint: {sp_status.capitalize()}, Database: {db_status.capitalize()}",
+            "info",
         )
 
-    def get_sync_status(self):
-        """ดึงสถานะการซิงค์"""
-        return {
-            "is_running": self.sync_engine.is_sync_running(),
-            "auto_sync_enabled": self.auto_sync_enabled,
-            "auto_sync_interval": (
-                self.auto_sync_timer.interval() // (1000 * 60)
-                if self.auto_sync_timer.isActive()
-                else 0
-            ),
-            "current_direction": self.current_sync_direction,
-        }
+    @pyqtSlot(str)
+    @handle_exceptions(ErrorCategory.SYNC, ErrorSeverity.HIGH)
+    def run_full_sync(self, direction: str = "spo_to_sql"):
+        """Initiates a full data synchronization."""
+        logger.info(f"Initiating full sync in direction: {direction}...")
+        self.ui_enable_request.emit(False)  # Disable UI during sync
+        self.current_task_update.emit(f"Running full sync ({direction})...")
+        self.log_message.emit(f"Starting full sync: {direction}", "info")
+        self.progress_update.emit(0)
+
+        # Validate config before starting sync
+        if not self.sync_engine.validate_config_for_sync(self.config, direction):
+            self.log_message.emit(
+                "Sync configuration validation failed. Aborting sync.", "error"
+            )
+            self.ui_enable_request.emit(True)
+            self.current_task_update.emit("Idle")
+            return
+
+        self.sync_engine.start_sync(self.config, direction)
+        self.last_sync_status_update.emit("in_progress")
+
+    @pyqtSlot(str, str, dict)
+    @handle_exceptions(ErrorCategory.DATA, ErrorSeverity.HIGH)
+    def import_excel_data(self, file_path: str, table_name: str, column_mapping: dict):
+        """Initiates Excel data import."""
+        logger.info(f"Initiating Excel import from {file_path} to {table_name}...")
+        self.ui_enable_request.emit(False)
+        self.current_task_update.emit("Importing Excel data...")
+        self.log_message.emit(f"Starting Excel import: {file_path}", "info")
+        self.progress_update.emit(0)
+        self.excel_import_handler.start_import(
+            file_path, table_name, column_mapping, self.config
+        )
+
+    @pyqtSlot(bool, str)
+    @handle_exceptions(ErrorCategory.DATA, ErrorSeverity.HIGH)
+    def _handle_excel_import_completed(self, success: bool, message: str):
+        """Handles Excel import completion."""
+        logger.info(f"Excel import completed: Success={success}, Message='{message}'")
+        self.ui_enable_request.emit(True)
+        self.progress_update.emit(0)
+        self.current_task_update.emit("Idle")
+        if success:
+            self.log_message.emit("Excel import completed successfully.", "info")
+        else:
+            self.log_message.emit(f"Excel import failed: {message}", "error")
+
+    @pyqtSlot(str, str, str)
+    @handle_exceptions(ErrorCategory.CONFIG, ErrorSeverity.MEDIUM)
+    def update_setting(self, key_path: str, value: Any, value_type: str):
+        """Updates a configuration setting and saves it."""
+        logger.info(
+            f"Attempting to update setting: {key_path} with value '{value}' (type: {value_type})"
+        )
+        # Convert value to appropriate type
+        if value_type == "bool":
+            converted_value = value.lower() == "true"
+        elif value_type == "int":
+            converted_value = int(value)
+        elif value_type == "float":
+            converted_value = float(value)
+        else:  # string or other types
+            converted_value = value
+
+        self.config_manager.update_setting(key_path, converted_value)
+        self.log_message.emit(f"Setting '{key_path}' updated.", "info")
+        # ConfigManager's config_updated signal will trigger _handle_config_update
+
+    @pyqtSlot()
+    @handle_exceptions(ErrorCategory.SYSTEM, ErrorSeverity.LOW)
+    def run_cache_cleanup(self):
+        """Manually triggers cache cleanup."""
+        logger.info("Manual cache cleanup initiated.")
+        self.auto_cache_manager.run_cleanup()
+
+    @pyqtSlot(bool)
+    @handle_exceptions(ErrorCategory.CONFIG, ErrorSeverity.MEDIUM)
+    def toggle_auto_sync(self, enabled: bool):
+        """Toggles automatic synchronization."""
+        self.config_manager.update_setting("auto_sync_enabled", enabled)
+        self.config.auto_sync_enabled = enabled  # Update local config immediately
+        self.auto_sync_status_update.emit(enabled)
+        if enabled:
+            interval = self.config.sync_interval * 60 * 1000  # Convert minutes to ms
+            self.auto_sync_timer.start(interval)
+            logger.info(
+                f"Auto-sync enabled with interval: {self.config.sync_interval} minutes."
+            )
+            self.log_message.emit(
+                f"Auto-sync enabled. Next sync in {self.config.sync_interval} minutes.",
+                "info",
+            )
+        else:
+            self.auto_sync_timer.stop()
+            logger.info("Auto-sync disabled.")
+            self.log_message.emit("Auto-sync disabled.", "info")
+
+    @pyqtSlot()
+    def _on_auto_sync_timeout(self):
+        """Triggered by the auto-sync timer."""
+        logger.info("Auto-sync triggered.")
+        self.run_full_sync(self.config.auto_sync_direction)
+
+    @pyqtSlot()
+    def get_available_sharepoint_sites(self):
+        """Fetches and emits available SharePoint sites."""
+        try:
+            sites = self.connection_manager.get_sharepoint_available_sites(self.config)
+            self.sharepoint_sites_updated.emit(sites)
+            logger.debug(f"SharePoint sites fetched: {sites}")
+        except Exception as e:
+            logger.error(f"Failed to fetch SharePoint sites: {e}")
+            self.log_message.emit(f"Failed to load SharePoint sites: {e}", "error")
+            self.sharepoint_sites_updated.emit([])
+
+    @pyqtSlot()
+    def get_available_sharepoint_lists(self):
+        """Fetches and emits available SharePoint lists for the configured site."""
+        try:
+            lists = self.connection_manager.get_sharepoint_available_lists(self.config)
+            self.sharepoint_lists_updated.emit(lists)
+            logger.debug(f"SharePoint lists fetched: {lists}")
+        except Exception as e:
+            logger.error(f"Failed to fetch SharePoint lists: {e}")
+            self.log_message.emit(f"Failed to load SharePoint lists: {e}", "error")
+            self.sharepoint_lists_updated.emit([])
+
+    @pyqtSlot()
+    def get_available_databases(self):
+        """Fetches and emits available databases for the configured connection."""
+        try:
+            databases = self.connection_manager.get_database_available_databases(
+                self.config
+            )
+            self.database_names_updated.emit(databases)
+            logger.debug(f"Available databases fetched: {databases}")
+        except Exception as e:
+            logger.error(f"Failed to fetch available databases: {e}")
+            self.log_message.emit(f"Failed to load databases: {e}", "error")
+            self.database_names_updated.emit([])
+
+    @pyqtSlot()
+    def get_available_tables(self):
+        """Fetches and emits available tables for the configured database."""
+        try:
+            tables = self.connection_manager.get_database_available_tables(self.config)
+            self.database_tables_updated.emit(tables)
+            logger.debug(f"Available tables fetched: {tables}")
+        except Exception as e:
+            logger.error(f"Failed to fetch available tables: {e}")
+            self.log_message.emit(f"Failed to load tables: {e}", "error")
+            self.database_tables_updated.emit([])
+
+    @pyqtSlot()
+    def update_ui_with_config(self):
+        """Emits signals to update various UI elements based on current config."""
+        logger.debug("Updating UI with current configuration...")
+        self.sharepoint_status_update.emit(
+            "disconnected"
+        )  # Reset to disconnected until tested
+        self.database_status_update.emit(
+            "disconnected"
+        )  # Reset to disconnected until tested
+        self.last_sync_status_update.emit(self.config.last_sync_status)
+        self.auto_sync_status_update.emit(self.config.auto_sync_enabled)
+        self.progress_update.emit(0)
+        self.current_task_update.emit("Idle")
+
+    def _cleanup_signals(self):
+        """Centralized method to disconnect all signals."""
+        logger.info("Disconnecting AppController signals...")
+        signals_to_disconnect = [
+            self.connection_manager.status_changed,
+            self.connection_manager.log_message,
+            self.sync_engine.progress_updated,
+            self.sync_engine.sync_completed,
+            self.sync_engine.log_message,
+            self.auto_cache_manager.log_message,
+            self.config_manager.config_updated,
+            self.excel_import_handler.log_message,
+            self.excel_import_handler.import_progress,
+            self.excel_import_handler.import_completed,
+            self.auto_sync_timer.timeout,
+        ]
+
+        for signal in signals_to_disconnect:
+            try:
+                signal.disconnect()
+            except TypeError as e:
+                logger.debug(
+                    f"Attempted to disconnect non-connected signal {signal.name}: {e}"
+                )
+            except Exception as e:
+                logger.warning(f"Error during signal {signal.name} disconnection: {e}")
+        logger.info("All AppController signals disconnected.")
 
     def cleanup(self):
-        """ทำความสะอาดก่อนปิดโปรแกรม"""
-        try:
-            if self.sync_engine.is_sync_running():
-                self.sync_engine.stop_sync()
+        """
+        Performs comprehensive cleanup for the AppController and its managed components.
+        Ensures all threads, timers, and connections are properly terminated.
+        """
+        logger.info("Initiating AppController cleanup...")
 
+        # Stop auto-sync timer
+        if self.auto_sync_timer.isActive():
             self.auto_sync_timer.stop()
+            self.auto_sync_timer.deleteLater()
+            logger.info("Auto-sync timer stopped.")
 
-            # แก้: ตรวจสอบว่า cache_manager มี method นี้หรือไม่
-            if hasattr(self.cache_manager, "stop_auto_cleanup"):
-                self.cache_manager.stop_auto_cleanup()
+        # Clean up SyncEngine
+        if self.sync_engine:
+            self.sync_engine.cleanup()
+            logger.info("SyncEngine cleanup completed.")
 
-            self.log_message.emit("🧹 Resources cleaned", "info")
+        # Clean up ConnectionManager
+        if self.connection_manager:
+            self.connection_manager.cleanup()
+            logger.info("ConnectionManager cleanup completed.")
 
-        except Exception as e:
-            logger.error(f"Cleanup error: {str(e)}")
+        # Clean up ExcelImportHandler
+        if self.excel_import_handler:
+            self.excel_import_handler.cleanup()
+            logger.info("ExcelImportHandler cleanup completed.")
+
+        # Clean up cache manager (e.g., stop its timer if any)
+        if hasattr(self.auto_cache_manager, "cleanup"):
+            self.auto_cache_manager.cleanup()
+            logger.info("AutoCacheManager cleanup completed.")
+
+        # Disconnect all signals to prevent dangling connections
+        self._cleanup_signals()
+
+        logger.info("AppController cleanup completed successfully.")

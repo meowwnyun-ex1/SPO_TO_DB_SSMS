@@ -5,9 +5,8 @@ Configuration Validation System - ระบบตรวจสอบความ�
 
 import re
 import sqlite3
-import pyodbc
-import requests
-from typing import Dict, List, Optional
+import pyodbc  # Might not be directly used if SQLAlchemy handles, but useful for driver check
+from typing import Dict, List
 from dataclasses import dataclass
 from pathlib import Path
 import logging
@@ -44,546 +43,263 @@ class SharePointValidator:
                 "SharePoint URL is required",
                 error_code="SP001",
                 suggestions=[
-                    "กรอก URL ในรูปแบบ https://company.sharepoint.com/sites/sitename"
+                    "กรอก URL ในรูปแบบ https://company.sharepoint.com/sites/sitename หรือ https://company.sharepoint.com"
                 ],
             )
 
-        # Pattern สำหรับ SharePoint URL
-        sp_pattern = r"^https://[a-zA-Z0-9-]+\.sharepoint\.com/sites/[a-zA-Z0-9-_]+/?$"
-
+        # Pattern สำหรับ SharePoint URL (รองรับทั้ง site collection และ root site)
+        sp_pattern = (
+            r"^https:\/\/[a-zA-Z0-9-]+\.sharepoint\.com(\/sites\/[a-zA-Z0-9_-]+)?$"
+        )
         if not re.match(sp_pattern, url):
             return ValidationResult(
                 False,
-                "Invalid SharePoint URL format",
+                f"Invalid SharePoint URL format: {url}",
                 error_code="SP002",
-                details={"provided_url": url},
                 suggestions=[
-                    "ใช้รูปแบบ: https://company.sharepoint.com/sites/sitename",
-                    "ตรวจสอบว่าไม่มี path เพิ่มเติมหลัง site name",
+                    "URL ต้องขึ้นต้นด้วย 'https://' และเป็นโดเมน 'sharepoint.com'",
+                    "ตัวอย่าง: https://yourdomain.sharepoint.com/sites/YourSite หรือ https://yourdomain.sharepoint.com",
                 ],
             )
-
-        return ValidationResult(True, "SharePoint URL format is valid")
+        return ValidationResult(True, "SharePoint URL is valid")
 
     @staticmethod
-    def validate_credentials(
-        tenant_id: str, client_id: str, client_secret: str
+    def validate_client_credentials(
+        client_id: str, client_secret: str, tenant_id: str
     ) -> ValidationResult:
-        """ตรวจสอบ credentials"""
-        missing_fields = []
-
-        if not tenant_id:
-            missing_fields.append("Tenant ID")
+        """ตรวจสอบ Client ID, Client Secret, Tenant ID"""
         if not client_id:
-            missing_fields.append("Client ID")
+            return ValidationResult(
+                False, "SharePoint Client ID is required", error_code="SP003"
+            )
         if not client_secret:
-            missing_fields.append("Client Secret")
-
-        if missing_fields:
             return ValidationResult(
-                False,
-                f"Missing required fields: {', '.join(missing_fields)}",
-                error_code="SP003",
-                suggestions=[
-                    "รับ credentials จาก Azure AD App Registration",
-                    "ตรวจสอบ permissions: Sites.Read.All, Sites.ReadWrite.All",
-                ],
+                False, "SharePoint Client Secret is required", error_code="SP004"
+            )
+        if not tenant_id:
+            return ValidationResult(
+                False, "SharePoint Tenant ID is required", error_code="SP005"
             )
 
-        # ตรวจสอบรูปแบบ GUID
-        guid_pattern = r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-
-        if not re.match(guid_pattern, tenant_id, re.IGNORECASE):
+        # Basic format validation for GUIDs (Client ID, Tenant ID)
+        guid_pattern = r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        if not re.match(guid_pattern, client_id):
             return ValidationResult(
-                False,
-                "Invalid Tenant ID format (must be GUID)",
-                error_code="SP004",
-                suggestions=[
-                    "Tenant ID ต้องเป็น GUID เช่น 12345678-1234-1234-1234-123456789012"
-                ],
+                False, "Invalid Client ID format. Must be a GUID.", error_code="SP006"
+            )
+        if not re.match(guid_pattern, tenant_id):
+            return ValidationResult(
+                False, "Invalid Tenant ID format. Must be a GUID.", error_code="SP007"
             )
 
-        if not re.match(guid_pattern, client_id, re.IGNORECASE):
-            return ValidationResult(
-                False,
-                "Invalid Client ID format (must be GUID)",
-                error_code="SP005",
-                suggestions=["Client ID ต้องเป็น GUID จาก Azure AD App Registration"],
-            )
-
-        return ValidationResult(True, "SharePoint credentials format is valid")
+        return ValidationResult(True, "SharePoint credentials are valid")
 
     @staticmethod
-    def test_connection(
-        url: str, tenant_id: str, client_id: str, client_secret: str
-    ) -> ValidationResult:
-        """ทดสอบการเชื่อมต่อจริง"""
-        try:
-            # ลองขอ access token
-            domain = url.split("/")[2]
-            token_url = (
-                f"https://accounts.accesscontrol.windows.net/{tenant_id}/tokens/OAuth/2"
-            )
-
-            payload = {
-                "grant_type": "client_credentials",
-                "client_id": f"{client_id}@{tenant_id}",
-                "client_secret": client_secret,
-                "resource": f"00000003-0000-0ff1-ce00-000000000000/{domain}@{tenant_id}",
-            }
-
-            response = requests.post(token_url, data=payload, timeout=10)
-
-            if response.status_code == 200:
-                # ทดสอบเรียก API
-                token = response.json().get("access_token")
-                headers = {
-                    "Authorization": f"Bearer {token}",
-                    "Accept": "application/json;odata=verbose",
-                }
-
-                test_url = f"{url}/_api/web"
-                test_response = requests.get(test_url, headers=headers, timeout=10)
-
-                if test_response.status_code == 200:
-                    return ValidationResult(True, "SharePoint connection successful")
-                else:
-                    return ValidationResult(
-                        False,
-                        f"SharePoint API test failed: {test_response.status_code}",
-                        error_code="SP006",
-                        details={"status_code": test_response.status_code},
-                        suggestions=["ตรวจสอบ Site URL และ permissions"],
-                    )
-            else:
-                error_data = (
-                    response.json()
-                    if response.headers.get("content-type", "").startswith(
-                        "application/json"
-                    )
-                    else {}
-                )
-                return ValidationResult(
-                    False,
-                    f"Authentication failed: {response.status_code}",
-                    error_code="SP007",
-                    details={"auth_error": error_data},
-                    suggestions=[
-                        "ตรวจสอบ Tenant ID, Client ID, Client Secret",
-                        "ตรวจสอบ App Registration permissions",
-                    ],
-                )
-
-        except requests.exceptions.Timeout:
+    def validate_list_name(list_name: str) -> ValidationResult:
+        """ตรวจสอบชื่อ List"""
+        if not list_name:
             return ValidationResult(
-                False,
-                "Connection timeout",
-                error_code="SP008",
-                suggestions=["ตรวจสอบการเชื่อมต่อ internet", "ลองใหม่อีกครั้ง"],
+                False, "SharePoint List Name is required", error_code="SP008"
             )
-        except Exception as e:
-            return ValidationResult(
-                False,
-                f"Connection error: {str(e)}",
-                error_code="SP009",
-                suggestions=["ตรวจสอบ network settings", "ตรวจสอบ firewall"],
-            )
+        # Add more specific validation if SharePoint list names have character restrictions
+        return ValidationResult(True, "SharePoint List Name is valid")
 
 
 class DatabaseValidator:
-    """ตรวจสอบการตั้งค่าฐานข้อมูล"""
+    """ตรวจสอบการตั้งค่า Database"""
 
     @staticmethod
-    def validate_sql_server_config(
+    def validate_sqlserver_config(
         server: str, database: str, username: str, password: str
     ) -> ValidationResult:
-        """ตรวจสอบการตั้งค่า SQL Server"""
-        missing_fields = []
-
+        """ตรวจสอบ SQL Server config fields"""
         if not server:
-            missing_fields.append("Server")
+            return ValidationResult(
+                False, "SQL Server address is required", error_code="DB001"
+            )
         if not database:
-            missing_fields.append("Database")
+            return ValidationResult(
+                False, "SQL Database name is required", error_code="DB002"
+            )
         if not username:
-            missing_fields.append("Username")
-
-        if missing_fields:
             return ValidationResult(
-                False,
-                f"Missing SQL Server fields: {', '.join(missing_fields)}",
-                error_code="DB001",
-                suggestions=["กรอกข้อมูลให้ครบทุกฟิลด์"],
+                False, "SQL Username is required", error_code="DB003"
             )
-
-        # ตรวจสอบ server format
-        server_pattern = r"^[a-zA-Z0-9.-]+(?:\\[a-zA-Z0-9]+)?(?:,[0-9]+)?$"
-        if not re.match(server_pattern, server):
+        if not password:
             return ValidationResult(
-                False,
-                "Invalid SQL Server format",
-                error_code="DB002",
-                suggestions=[
-                    "รูปแบบที่ถูกต้อง: server\\instance หรือ server,port",
-                    "ตัวอย่าง: localhost\\SQLEXPRESS หรือ server.com,1433",
-                ],
+                False, "SQL Password is required", error_code="DB004"
             )
-
-        return ValidationResult(True, "SQL Server configuration is valid")
+        return ValidationResult(True, "SQL Server configuration fields are valid")
 
     @staticmethod
     def validate_sqlite_config(file_path: str) -> ValidationResult:
-        """ตรวจสอบการตั้งค่า SQLite"""
+        """ตรวจสอบ SQLite config fields"""
         if not file_path:
             return ValidationResult(
-                False,
-                "SQLite file path is required",
-                error_code="DB003",
-                suggestions=["ระบุ path ของไฟล์ SQLite"],
+                False, "SQLite database file path is required", error_code="DB005"
             )
-
-        path = Path(file_path)
-
-        # ตรวจสอบ extension
-        if not file_path.endswith((".db", ".sqlite", ".sqlite3")):
-            return ValidationResult(
-                False,
-                "Invalid SQLite file extension",
-                error_code="DB004",
-                suggestions=["ใช้นามสกุล .db, .sqlite หรือ .sqlite3"],
-            )
-
-        # ตรวจสอบ directory
-        if not path.parent.exists():
-            return ValidationResult(
-                False,
-                f"Directory does not exist: {path.parent}",
-                error_code="DB005",
-                suggestions=[f"สร้าง directory: {path.parent}"],
-            )
-
-        # ตรวจสอบสิทธิ์การเขียน
+        # Ensure it's a valid path format
         try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            test_file = path.parent / "test_write.tmp"
-            test_file.touch()
-            test_file.unlink()
-        except PermissionError:
+            p = Path(file_path)
+            # Check if directory is writable if file doesn't exist, or file is readable/writable if it exists
+            if not p.parent.exists():
+                return ValidationResult(
+                    False,
+                    f"Directory for SQLite file does not exist: {p.parent}",
+                    error_code="DB006",
+                )
+            if not (p.parent.is_dir() and os.access(p.parent, os.W_OK)):
+                return ValidationResult(
+                    False,
+                    f"Directory for SQLite file is not writable: {p.parent}",
+                    error_code="DB007",
+                )
+        except Exception as e:
             return ValidationResult(
-                False,
-                "No write permission to SQLite directory",
-                error_code="DB006",
-                suggestions=["ตรวจสอบสิทธิ์การเขียนในโฟลเดอร์"],
+                False, f"Invalid SQLite file path: {e}", error_code="DB008"
             )
-
-        return ValidationResult(True, "SQLite configuration is valid")
+        return ValidationResult(True, "SQLite configuration fields are valid")
 
     @staticmethod
     def test_sql_server_connection(
         server: str, database: str, username: str, password: str
     ) -> ValidationResult:
-        """ทดสอบการเชื่อมต่อ SQL Server"""
+        """ทดสอบการเชื่อมต่อ SQL Server โดยตรง"""
         try:
-            conn_string = (
+            # Use pyodbc for direct testing outside of SQLAlchemy
+            conn_str = (
                 f"DRIVER={{ODBC Driver 17 for SQL Server}};"
-                f"SERVER={server};"
-                f"DATABASE={database};"
-                f"UID={username};"
-                f"PWD={password};"
-                f"Encrypt=yes;"
-                f"TrustServerCertificate=yes;"
-                f"Connection Timeout=30;"
+                f"SERVER={server};DATABASE={database};UID={username};PWD={password}"
             )
-
-            conn = pyodbc.connect(conn_string)
-            cursor = conn.cursor()
-            cursor.execute("SELECT 1 as test")
-            result = cursor.fetchone()
-
-            if result and result[0] == 1:
-                conn.close()
-                return ValidationResult(True, "SQL Server connection successful")
-            else:
-                conn.close()
-                return ValidationResult(
-                    False, "SQL Server test query failed", error_code="DB007"
-                )
-
+            with pyodbc.connect(conn_str, timeout=10) as conn:  # Short timeout for test
+                cursor = conn.cursor()
+                cursor.execute("SELECT 1")
+            return ValidationResult(True, "SQL Server connection successful.")
         except pyodbc.Error as e:
-            error_msg = str(e)
-            suggestions = []
-
-            if "Login failed" in error_msg:
-                suggestions = [
-                    "ตรวจสอบ username และ password",
-                    "ตรวจสอบ SQL Server Authentication",
-                ]
-            elif "Server not found" in error_msg:
-                suggestions = ["ตรวจสอบ server name", "ตรวจสอบ SQL Server instance"]
-            elif "timeout" in error_msg.lower():
-                suggestions = ["ตรวจสอบ network connection", "เพิ่ม connection timeout"]
+            sqlstate = e.args[0]
+            if sqlstate == "08001":  # SQLSTATE for connection errors
+                return ValidationResult(
+                    False,
+                    f"SQL Server connection failed: Host or port unreachable.",
+                    error_code="DB009",
+                    suggestions=[
+                        "ตรวจสอบ Server Address และ Port",
+                        "ตรวจสอบ Firewall",
+                        "ตรวจสอบ Network",
+                    ],
+                )
+            elif sqlstate == "28000":  # SQLSTATE for authentication errors
+                return ValidationResult(
+                    False,
+                    f"SQL Server authentication failed: Invalid username or password.",
+                    error_code="DB010",
+                    suggestions=["ตรวจสอบ Username และ Password"],
+                )
             else:
-                suggestions = [
-                    "ตรวจสอบ SQL Server configuration",
-                    "ตรวจสอบ firewall settings",
-                ]
-
-            return ValidationResult(
-                False,
-                f"SQL Server connection failed: {error_msg}",
-                error_code="DB008",
-                suggestions=suggestions,
-            )
+                return ValidationResult(
+                    False,
+                    f"SQL Server connection failed: {e}",
+                    error_code="DB011",
+                    suggestions=["ตรวจสอบการตั้งค่า SQL Server", "ตรวจสอบ ODBC Driver"],
+                )
         except Exception as e:
             return ValidationResult(
-                False, f"Unexpected database error: {str(e)}", error_code="DB009"
+                False,
+                f"An unexpected error occurred during SQL Server connection test: {e}",
+                error_code="DB012",
             )
 
     @staticmethod
     def test_sqlite_connection(file_path: str) -> ValidationResult:
-        """ทดสอบการเชื่อมต่อ SQLite"""
+        """ทดสอบการเชื่อมต่อ SQLite โดยตรง"""
         try:
-            # สร้าง directory ถ้าไม่มี
-            Path(file_path).parent.mkdir(parents=True, exist_ok=True)
-
-            conn = sqlite3.connect(file_path, timeout=10)
-            cursor = conn.cursor()
-            cursor.execute("SELECT 1 as test")
-            result = cursor.fetchone()
-
-            if result and result[0] == 1:
+            # Attempt to connect and close to test file access
+            with sqlite3.connect(file_path, timeout=5) as conn:
                 conn.close()
-                return ValidationResult(True, "SQLite connection successful")
-            else:
-                conn.close()
-                return ValidationResult(
-                    False, "SQLite test query failed", error_code="DB010"
-                )
-
+            return ValidationResult(
+                True, f"SQLite connection to '{file_path}' successful."
+            )
         except sqlite3.Error as e:
             return ValidationResult(
                 False,
-                f"SQLite connection failed: {str(e)}",
-                error_code="DB011",
-                suggestions=["ตรวจสอบ file path และ permissions"],
+                f"SQLite connection failed: {e}",
+                error_code="DB013",
+                suggestions=["ตรวจสอบ Path ไฟล์ SQLite", "ตรวจสอบสิทธิ์การเข้าถึงไฟล์"],
             )
         except Exception as e:
             return ValidationResult(
-                False, f"Unexpected SQLite error: {str(e)}", error_code="DB012"
-            )
-
-
-class ConfigValidator:
-    """ตัวจัดการการตรวจสอบการตั้งค่าหลัก"""
-
-    def __init__(self):
-        self.sp_validator = SharePointValidator()
-        self.db_validator = DatabaseValidator()
-
-    def validate_all(self, config) -> Dict[str, ValidationResult]:
-        """ตรวจสอบการตั้งค่าทั้งหมด"""
-        results = {}
-
-        # SharePoint validation
-        results["sp_url"] = self.sp_validator.validate_url(config.sharepoint_site)
-        results["sp_credentials"] = self.sp_validator.validate_credentials(
-            config.tenant_id,
-            config.sharepoint_client_id,
-            config.sharepoint_client_secret,
-        )
-
-        # Database validation
-        if config.database_type == "sqlserver":
-            results["db_config"] = self.db_validator.validate_sql_server_config(
-                config.sql_server,
-                config.sql_database,
-                config.sql_username,
-                config.sql_password,
-            )
-        else:  # SQLite
-            results["db_config"] = self.db_validator.validate_sqlite_config(
-                config.sqlite_file
-            )
-
-        # Sync configuration
-        results["sync_config"] = self._validate_sync_config(config)
-
-        return results
-
-    def test_connections(self, config) -> Dict[str, ValidationResult]:
-        """ทดสอบการเชื่อมต่อจริง"""
-        results = {}
-
-        # Test SharePoint
-        if all(
-            [
-                config.sharepoint_site,
-                config.tenant_id,
-                config.sharepoint_client_id,
-                config.sharepoint_client_secret,
-            ]
-        ):
-            results["sp_connection"] = self.sp_validator.test_connection(
-                config.sharepoint_site,
-                config.tenant_id,
-                config.sharepoint_client_id,
-                config.sharepoint_client_secret,
-            )
-
-        # Test Database
-        if config.database_type == "sqlserver":
-            if all([config.sql_server, config.sql_database, config.sql_username]):
-                results["db_connection"] = self.db_validator.test_sql_server_connection(
-                    config.sql_server,
-                    config.sql_database,
-                    config.sql_username,
-                    config.sql_password,
-                )
-        else:  # SQLite
-            if config.sqlite_file:
-                results["db_connection"] = self.db_validator.test_sqlite_connection(
-                    config.sqlite_file
-                )
-
-        return results
-
-    def _validate_sync_config(self, config) -> ValidationResult:
-        """ตรวจสอบการตั้งค่า sync"""
-        issues = []
-
-        if config.sync_interval < 60:
-            issues.append("Sync interval ต้องไม่น้อยกว่า 60 วินาที")
-
-        if config.batch_size < 1 or config.batch_size > 10000:
-            issues.append("Batch size ต้องอยู่ระหว่าง 1-10000")
-
-        if config.connection_timeout < 5:
-            issues.append("Connection timeout ต้องไม่น้อยกว่า 5 วินาที")
-
-        if issues:
-            return ValidationResult(
                 False,
-                f"Sync configuration issues: {'; '.join(issues)}",
-                error_code="SYNC001",
-                suggestions=["ปรับค่าตามข้อแนะนำ", "ใช้ค่าเริ่มต้นที่แนะนำ"],
+                f"An unexpected error occurred during SQLite connection test: {e}",
+                error_code="DB014",
             )
 
-        return ValidationResult(True, "Sync configuration is valid")
 
-    def get_validation_summary(self, results: Dict[str, ValidationResult]) -> Dict:
-        """สรุปผลการตรวจสอบ"""
-        total_checks = len(results)
-        passed_checks = sum(1 for result in results.values() if result.is_valid)
-        failed_checks = total_checks - passed_checks
+class GeneralValidator:
+    """General validation for application settings."""
 
-        errors = []
-        warnings = []
-        suggestions = []
+    @staticmethod
+    def validate_sync_interval(interval: int) -> ValidationResult:
+        """Validate synchronization interval."""
+        if not isinstance(interval, int) or interval <= 0:
+            return ValidationResult(
+                False, "Sync interval must be a positive integer.", error_code="GEN001"
+            )
+        return ValidationResult(True, "Sync interval is valid.")
 
-        for check_name, result in results.items():
-            if not result.is_valid:
-                errors.append(f"{check_name}: {result.message}")
-                if result.suggestions:
-                    suggestions.extend(result.suggestions)
+    @staticmethod
+    def validate_batch_size(batch_size: int) -> ValidationResult:
+        """Validate batch size for data operations."""
+        if not isinstance(batch_size, int) or batch_size <= 0:
+            return ValidationResult(
+                False, "Batch size must be a positive integer.", error_code="GEN002"
+            )
+        return ValidationResult(True, "Batch size is valid.")
 
-        return {
-            "total_checks": total_checks,
-            "passed": passed_checks,
-            "failed": failed_checks,
-            "success_rate": (
-                (passed_checks / total_checks * 100) if total_checks > 0 else 0
-            ),
-            "errors": errors,
-            "suggestions": suggestions,
-            "overall_status": "valid" if failed_checks == 0 else "invalid",
-        }
-
-
-class ValidationCache:
-    """แคชสำหรับเก็บผลการตรวจสอบ"""
-
-    def __init__(self, ttl_seconds: int = 300):  # Cache 5 นาที
-        self.cache = {}
-        self.ttl = ttl_seconds
-
-    def get(self, key: str) -> Optional[ValidationResult]:
-        """ดึงผลการตรวจสอบจากแคช"""
-        if key in self.cache:
-            result, timestamp = self.cache[key]
-            if (datetime.now() - timestamp).total_seconds() < self.ttl:
-                return result
-            else:
-                del self.cache[key]
-        return None
-
-    def set(self, key: str, result: ValidationResult):
-        """เก็บผลการตรวจสอบในแคช"""
-        self.cache[key] = (result, datetime.now())
-
-    def clear(self):
-        """ล้างแคช"""
-        self.cache.clear()
+    @staticmethod
+    def validate_mapping(mapping: Dict) -> ValidationResult:
+        """Validate a field mapping dictionary."""
+        if not isinstance(mapping, dict) or not mapping:
+            return ValidationResult(
+                False, "Field mapping cannot be empty.", error_code="GEN003"
+            )
+        for key, value in mapping.items():
+            if not isinstance(key, str) or not key.strip():
+                return ValidationResult(
+                    False,
+                    f"Mapping key '{key}' is invalid (must be non-empty string).",
+                    error_code="GEN004",
+                )
+            if not isinstance(value, str) or not value.strip():
+                return ValidationResult(
+                    False,
+                    f"Mapping value for key '{key}' is invalid (must be non-empty string).",
+                    error_code="GEN005",
+                )
+        return ValidationResult(True, "Field mapping is valid.")
 
 
-class SmartConfigValidator(ConfigValidator):
-    """ตัวตรวจสอบการตั้งค่าอัจฉริยะพร้อมแคช"""
-
-    def __init__(self, use_cache: bool = True):
-        super().__init__()
-        self.cache = ValidationCache() if use_cache else None
-
-    def validate_with_cache(
-        self, config, force_refresh: bool = False
-    ) -> Dict[str, ValidationResult]:
-        """ตรวจสอบการตั้งค่าพร้อมใช้แคช"""
-        cache_key = self._generate_cache_key(config)
-
-        if not force_refresh and self.cache:
-            cached_result = self.cache.get(cache_key)
-            if cached_result:
-                logger.debug("Using cached validation result")
-                return cached_result
-
-        results = self.validate_all(config)
-
-        if self.cache:
-            self.cache.set(cache_key, results)
-
-        return results
-
-    def _generate_cache_key(self, config) -> str:
-        """สร้าง cache key จาก config"""
-        import hashlib
-
-        key_data = f"{config.sharepoint_site}_{config.tenant_id}_{config.database_type}_{config.sql_server}_{config.sqlite_file}"
-        return hashlib.md5(key_data.encode()).hexdigest()
-
-
-# Helper functions สำหรับใช้งานง่าย
 def quick_validate_sharepoint(
-    url: str, tenant_id: str, client_id: str, client_secret: str
+    url: str, client_id: str, client_secret: str, tenant_id: str, list_name: str
 ) -> ValidationResult:
-    """ตรวจสอบ SharePoint แบบเร็ว"""
-    validator = SharePointValidator()
-
-    # ตรวจสอบ format ก่อน
-    url_result = validator.validate_url(url)
-    if not url_result.is_valid:
-        return url_result
-
-    cred_result = validator.validate_credentials(tenant_id, client_id, client_secret)
-    if not cred_result.is_valid:
-        return cred_result
-
-    # ถ้า format ถูกต้อง ลองเชื่อมต่อ
-    return validator.test_connection(url, tenant_id, client_id, client_secret)
+    """Quick validation for SharePoint settings."""
+    result = SharePointValidator.validate_url(url)
+    if not result.is_valid:
+        return result
+    result = SharePointValidator.validate_client_credentials(
+        client_id, client_secret, tenant_id
+    )
+    if not result.is_valid:
+        return result
+    result = SharePointValidator.validate_list_name(list_name)
+    if not result.is_valid:
+        return result
+    return ValidationResult(True, "All SharePoint basic configurations are valid.")
 
 
 def quick_validate_database(db_type: str, **kwargs) -> ValidationResult:
-    """ตรวจสอบฐานข้อมูลแบบเร็ว"""
-    validator = DatabaseValidator()
-
+    """Quick validation for database settings based on type."""
     if db_type.lower() == "sqlserver":
-        config_result = validator.validate_sql_server_config(
+        config_result = DatabaseValidator.validate_sqlserver_config(
             kwargs.get("server", ""),
             kwargs.get("database", ""),
             kwargs.get("username", ""),
@@ -592,22 +308,32 @@ def quick_validate_database(db_type: str, **kwargs) -> ValidationResult:
         if not config_result.is_valid:
             return config_result
 
-        return validator.test_sql_server_connection(
-            kwargs["server"], kwargs["database"], kwargs["username"], kwargs["password"]
+        # This part should ideally be in a connection test, not pure config validation
+        # return DatabaseValidator.test_sql_server_connection(
+        #     kwargs["server"], kwargs["database"], kwargs["username"], kwargs["password"]
+        # )
+        return ValidationResult(
+            True, "SQL Server configuration fields are valid for quick check."
         )
 
     elif db_type.lower() in ["sqlite", "sqlite3"]:
-        config_result = validator.validate_sqlite_config(kwargs.get("file_path", ""))
+        config_result = DatabaseValidator.validate_sqlite_config(
+            kwargs.get("file_path", "")
+        )
         if not config_result.is_valid:
             return config_result
 
-        return validator.test_sqlite_connection(kwargs["file_path"])
+        # This part should ideally be in a connection test, not pure config validation
+        # return DatabaseValidator.test_sqlite_connection(kwargs["file_path"])
+        return ValidationResult(
+            True, "SQLite configuration fields are valid for quick check."
+        )
 
     else:
         return ValidationResult(
             False,
             f"Unsupported database type: {db_type}",
-            error_code="DB013",
+            error_code="DB015",
             suggestions=["ใช้ 'sqlserver' หรือ 'sqlite'"],
         )
 
@@ -616,15 +342,97 @@ def quick_validate_database(db_type: str, **kwargs) -> ValidationResult:
 if __name__ == "__main__":
     from datetime import datetime
 
-    # ทดสอบ SharePoint validation
+    print("--- SharePoint Validation Tests ---")
+    # Valid
     sp_result = quick_validate_sharepoint(
         "https://company.sharepoint.com/sites/test",
         "12345678-1234-1234-1234-123456789012",
+        "some_secret",
         "87654321-4321-4321-4321-210987654321",
-        "secret123",
+        "MyList",
     )
-    print(f"SharePoint validation: {sp_result.is_valid} - {sp_result.message}")
+    print(f"Valid SharePoint Config: {sp_result.is_valid} - {sp_result.message}")
 
-    # ทดสอบ SQLite validation
-    sqlite_result = quick_validate_database("sqlite", file_path="test.db")
-    print(f"SQLite validation: {sqlite_result.is_valid} - {sqlite_result.message}")
+    # Invalid URL
+    sp_result = quick_validate_sharepoint(
+        "http://invalid.com",
+        "12345678-1234-1234-1234-123456789012",
+        "some_secret",
+        "87654321-4321-4321-4321-210987654321",
+        "MyList",
+    )
+    print(f"Invalid URL: {sp_result.is_valid} - {sp_result.message}")
+
+    # Missing Client ID
+    sp_result = quick_validate_sharepoint(
+        "https://company.sharepoint.com/sites/test",
+        "",
+        "some_secret",
+        "87654321-4321-4321-4321-210987654321",
+        "MyList",
+    )
+    print(f"Missing Client ID: {sp_result.is_valid} - {sp_result.message}")
+
+    print("\n--- Database Validation Tests ---")
+    # Valid SQL Server (config check only, not connection)
+    db_result = quick_validate_database(
+        "sqlserver",
+        server="localhost",
+        database="mydb",
+        username="user",
+        password="pwd",
+    )
+    print(f"Valid SQL Server Config: {db_result.is_valid} - {db_result.message}")
+
+    # Missing SQL Server Username
+    db_result = quick_validate_database(
+        "sqlserver", server="localhost", database="mydb", username="", password="pwd"
+    )
+    print(f"Missing SQL Username: {db_result.is_valid} - {db_result.message}")
+
+    # Valid SQLite (config check only, not connection)
+    db_result = quick_validate_database("sqlite", file_path="test_db.db")
+    print(f"Valid SQLite Config: {db_result.is_valid} - {db_result.message}")
+
+    # Missing SQLite file path
+    db_result = quick_validate_database("sqlite", file_path="")
+    print(f"Missing SQLite Path: {db_result.is_valid} - {db_result.message}")
+
+    print("\n--- General Validation Tests ---")
+    print(
+        f"Valid Sync Interval (60): {GeneralValidator.validate_sync_interval(60).is_valid}"
+    )
+    print(
+        f"Invalid Sync Interval (0): {GeneralValidator.validate_sync_interval(0).is_valid}"
+    )
+    print(
+        f"Valid Batch Size (100): {GeneralValidator.validate_batch_size(100).is_valid}"
+    )
+    print(
+        f"Invalid Batch Size (-1): {GeneralValidator.validate_batch_size(-1).is_valid}"
+    )
+
+    valid_mapping = {"SharePointField": "SQLColumn", "AnotherSPField": "AnotherSQLCol"}
+    invalid_mapping_empty = {}
+    invalid_mapping_value = {"SP": ""}
+    print(f"Valid Mapping: {GeneralValidator.validate_mapping(valid_mapping).is_valid}")
+    print(
+        f"Invalid Empty Mapping: {GeneralValidator.validate_mapping(invalid_mapping_empty).is_valid}"
+    )
+    print(
+        f"Invalid Mapping Value: {GeneralValidator.validate_mapping(invalid_mapping_value).is_valid}"
+    )
+
+    print("\n--- Direct Connection Tests (requires actual drivers and servers) ---")
+    # For these tests, you need actual SQL Server/SQLite to be set up.
+    # try:
+    #     print(f"SQL Server Live Test: {DatabaseValidator.test_sql_server_connection('your_server', 'your_db', 'your_user', 'your_pass').is_valid}")
+    # except Exception as e:
+    #     print(f"SQL Server Live Test Failed: {e}")
+
+    # try:
+    #     Path("temp_test.db").touch()
+    #     print(f"SQLite Live Test: {DatabaseValidator.test_sqlite_connection('temp_test.db').is_valid}")
+    #     Path("temp_test.db").unlink()
+    # except Exception as e:
+    #     print(f"SQLite Live Test Failed: {e}")

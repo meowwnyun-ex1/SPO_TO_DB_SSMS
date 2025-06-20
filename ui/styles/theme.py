@@ -1,4 +1,6 @@
 # ui/styles/theme.py - Ultra Modern Design System (Enhanced)
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtGui import QColor, QPalette
 
 
 class UltraModernColors:
@@ -16,362 +18,390 @@ class UltraModernColors:
     NEON_GREEN = "#00F5A0"  # เขียวสดใส
     NEON_YELLOW = "#FFD23F"  # เหลืองอบอุ่น
 
-    # Gradient definitions
-    PRIMARY_GRADIENT = (
-        "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #9D4EDD, stop:1 #00D4FF)"
-    )
-    SECONDARY_GRADIENT = (
-        "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #FF006E, stop:1 #FFD23F)"
-    )
-    SUCCESS_GRADIENT = (
-        "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #00F5A0, stop:1 #00D4FF)"
-    )
-    ERROR_GRADIENT = (
-        "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #FF006E, stop:1 #FF4081)"
-    )
-
     # Text colors
-    TEXT_PRIMARY = "#FFFFFF"
-    TEXT_SECONDARY = "#E0E0E0"
-    TEXT_ACCENT = "#FFD23F"
+    TEXT_PRIMARY = "#E0E0E0"  # สีเทาอ่อนสำหรับข้อความหลัก
+    TEXT_SECONDARY = "#A0A0A0"  # สีเทาสำหรับข้อความรอง
+    TEXT_SECONDARY_ALT = "#707070"  # สีเทาเข้มขึ้นสำหรับข้อความรองอื่นๆ
 
     # Status colors
-    SUCCESS_COLOR = "#00F5A0"
-    ERROR_COLOR = "#FF4757"
-    WARNING_COLOR = "#FFD23F"
+    SUCCESS_COLOR = "#00FF7F"  # Spring Green
+    ERROR_COLOR = "#FF6347"  # Tomato
+    WARNING_COLOR = "#FFD700"  # Gold
+
+    # Gradient definitions
+    PRIMARY_GRADIENT = (
+        f"qlineargradient(x1:0, y1:0, x2:1, y2:1, "
+        f"stop:0 {NEON_BLUE}, stop:1 {NEON_PURPLE})"
+    )
+    SECONDARY_GRADIENT = (
+        f"qlineargradient(x1:0, y1:0, x2:1, y2:1, "
+        f"stop:0 {NEON_GREEN}, stop:1 {NEON_YELLOW})"
+    )
+    ERROR_GRADIENT = (
+        f"qlineargradient(x1:0, y1:0, x2:1, y2:1, "
+        f"stop:0 {ERROR_COLOR}, stop:1 {NEON_PINK})"
+    )
+    SUCCESS_GRADIENT = (
+        f"qlineargradient(x1:0, y1:0, x2:1, y2:1, "
+        f"stop:0 {SUCCESS_COLOR}, stop:1 {NEON_GREEN})"
+    )
+
+    # Hover/Press effects (defined in CSS for simplicity)
+    # No direct colors here, but rather patterns for use in styles.
 
 
-def apply_ultra_modern_theme(app):
-    """Apply enhanced ultra-modern theme"""
-    app.setStyleSheet(
-        f"""
-        QMainWindow {{
-            background: transparent;
+def apply_ultra_modern_theme(app: QApplication):
+    """Applies the ultra-modern theme globally to the QApplication."""
+    palette = app.palette()
+
+    # Set overall background and foreground colors
+    palette.setColor(QPalette.ColorRole.Window, QColor(UltraModernColors.GLASS_BG_DARK))
+    palette.setColor(
+        QPalette.ColorRole.WindowText, QColor(UltraModernColors.TEXT_PRIMARY)
+    )
+    palette.setColor(
+        QPalette.ColorRole.Base, QColor(UltraModernColors.GLASS_BG_DARK)
+    )  # For input fields background
+    palette.setColor(
+        QPalette.ColorRole.Text, QColor(UltraModernColors.TEXT_PRIMARY)
+    )  # For text in input fields
+    palette.setColor(
+        QPalette.ColorRole.Button, QColor(UltraModernColors.NEON_BLUE)
+    )  # Default button color
+    palette.setColor(
+        QPalette.ColorRole.ButtonText, QColor("#FFFFFF")
+    )  # Button text color
+    palette.setColor(
+        QPalette.ColorRole.Highlight, QColor(UltraModernColors.NEON_PURPLE)
+    )  # Selection highlight
+    palette.setColor(
+        QPalette.ColorRole.HighlightedText, QColor("#FFFFFF")
+    )  # Selected text color
+
+    app.setPalette(palette)
+
+    # Apply global stylesheet for consistent looks
+    app.setStyleSheet(get_global_stylesheet())
+
+
+def get_global_stylesheet():
+    """Returns the global stylesheet for the application."""
+    return f"""
+        * {{
+            font-family: "Segoe UI", sans-serif;
             color: {UltraModernColors.TEXT_PRIMARY};
-            font-family: 'Segoe UI', 'SF Pro Display', 'Helvetica Neue', sans-serif;
-            font-size: 14px;
-            font-weight: 400;
+            border-radius: 8px; /* Global rounded corners */
+        }}
+        QMainWindow {{
+            background: transparent; /* Handled by main.py for image */
         }}
         QWidget {{
-            background: transparent;
-            color: {UltraModernColors.TEXT_PRIMARY};
-            font-family: 'Segoe UI', 'SF Pro Display', sans-serif;
+            background-color: transparent; /* Default transparent for layering */
         }}
-        QLabel {{
+        QMessageBox {{
+            background-color: {UltraModernColors.GLASS_BG_DARK};
             color: {UltraModernColors.TEXT_PRIMARY};
-            font-weight: 500;
+            border: 1px solid {UltraModernColors.NEON_PURPLE};
+            border-radius: 10px;
+        }}
+        QMessageBox QLabel {{
+            color: {UltraModernColors.TEXT_PRIMARY};
+        }}
+        QMessageBox QPushButton {{
+            {get_modern_button_style('primary', 'md')}
+            padding: 8px 20px;
+            margin: 5px;
+        }}
+        QToolTip {{
+            background-color: {UltraModernColors.GLASS_BG_DARK};
+            color: {UltraModernColors.TEXT_PRIMARY};
+            border: 1px solid {UltraModernColors.NEON_BLUE};
+            border-radius: 5px;
+            padding: 5px;
+            opacity: 200; /* Fully opaque */
         }}
         QScrollArea {{
             border: none;
-            background: transparent;
         }}
         QScrollBar:vertical {{
-            border: none;
-            background: {UltraModernColors.GLASS_BG};
-            width: 8px;
-            border-radius: 4px;
+            border: 1px solid {UltraModernColors.GLASS_BORDER_BRIGHT};
+            background: {UltraModernColors.GLASS_BG_DARK};
+            width: 10px;
+            margin: 15px 0 15px 0;
+            border-radius: 5px;
         }}
         QScrollBar::handle:vertical {{
             background: {UltraModernColors.NEON_PURPLE};
-            border-radius: 4px;
+            border-radius: 5px;
             min-height: 20px;
-        }}
-        QScrollBar::handle:vertical:hover {{
-            background: {UltraModernColors.NEON_PINK};
         }}
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
             background: none;
-            border: none;
         }}
-        QStatusBar {{
-            background: {UltraModernColors.GLASS_BG_DARK};
-            color: {UltraModernColors.TEXT_PRIMARY};
-            border-top: 1px solid {UltraModernColors.GLASS_BORDER};
-            padding: 5px;
-            font-weight: 500;
+        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+            background: none;
         }}
-    """
-    )
-
-
-def get_modern_card_style(variant="default"):
-    """Generate modern glassmorphism card style"""
-    base_style = f"""
-        QFrame {{
-            background: {UltraModernColors.GLASS_BG};
-            border: 1px solid {UltraModernColors.GLASS_BORDER};
-            border-radius: 16px;
-            padding: 20px;
-            color: {UltraModernColors.TEXT_PRIMARY};
-        }}
-        QFrame:hover {{
-            background: {UltraModernColors.GLASS_BG_LIGHT};
+        QScrollBar:horizontal {{
             border: 1px solid {UltraModernColors.GLASS_BORDER_BRIGHT};
+            background: {UltraModernColors.GLASS_BG_DARK};
+            height: 10px;
+            margin: 0 15px 0 15px;
+            border-radius: 5px;
         }}
+        QScrollBar::handle:horizontal {{
+            background: {UltraModernColors.NEON_BLUE};
+            border-radius: 5px;
+            min-width: 20px;
+        }}
+        QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+            background: none;
+        }}
+        QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
+            background: none;
+    }}
     """
-
-    if variant == "highlight":
-        return f"""
-            QFrame {{
-                background: {UltraModernColors.GLASS_BG_DARK};
-                border: 2px solid {UltraModernColors.NEON_PURPLE};
-                border-radius: 16px;
-                padding: 20px;
-                color: {UltraModernColors.TEXT_PRIMARY};
-            }}
-            QFrame:hover {{
-                border: 2px solid {UltraModernColors.NEON_PINK};
-                background: rgba(157, 78, 221, 0.1);
-            }}
-        """
-    elif variant == "success":
-        return f"""
-            QFrame {{
-                background: rgba(0, 245, 160, 0.1);
-                border: 1px solid {UltraModernColors.SUCCESS_COLOR};
-                border-radius: 16px;
-                padding: 20px;
-                color: {UltraModernColors.TEXT_PRIMARY};
-            }}
-        """
-    elif variant == "error":
-        return f"""
-            QFrame {{
-                background: rgba(255, 71, 87, 0.1);
-                border: 1px solid {UltraModernColors.ERROR_COLOR};
-                border-radius: 16px;
-                padding: 20px;
-                color: {UltraModernColors.TEXT_PRIMARY};
-            }}
-        """
-
-    return base_style
 
 
 def get_modern_button_style(variant="primary", size="md"):
-    """Generate modern button style with enhanced gradients"""
-    padding_map = {"sm": "8px 16px", "md": "12px 24px", "lg": "16px 32px"}
-
-    font_size_map = {"sm": "12px", "md": "14px", "lg": "16px"}
-
-    padding = padding_map.get(size, padding_map["md"])
-    font_size = font_size_map.get(size, font_size_map["md"])
-
+    """Generates modern button styles based on variant and size."""
     base_style = f"""
         QPushButton {{
-            border: none;
+            border: 1px solid {UltraModernColors.GLASS_BORDER_BRIGHT};
             border-radius: 12px;
-            padding: {padding};
-            font-size: {font_size};
+            padding: 10px 20px;
+            transition: all 0.2s ease-in-out;
+            color: {UltraModernColors.TEXT_PRIMARY};
             font-weight: 600;
-            color: #FFFFFF;
         }}
         QPushButton:hover {{
-            /* Qt doesn't support transform, use margin instead */
-            margin-top: 1px;
+            border-color: {UltraModernColors.NEON_BLUE};
+            box-shadow: 0 0 15px {UltraModernColors.NEON_BLUE};
         }}
         QPushButton:pressed {{
-            margin-top: 0px;
+            transform: translateY(1px);
         }}
         QPushButton:disabled {{
-            /* Qt doesn't support opacity in stylesheets */
-            color: #888888;
+            background-color: {UltraModernColors.GLASS_BG_DARK};
+            border: 1px solid {UltraModernColors.GLASS_BORDER};
+            color: {UltraModernColors.TEXT_SECONDARY_ALT};
+            opacity: 0.6;
         }}
     """
 
+    # Variant specific styles
     if variant == "primary":
-        return (
-            base_style
-            + f"""
+        variant_style = f"""
             QPushButton {{
                 background: {UltraModernColors.PRIMARY_GRADIENT};
+                color: #FFFFFF;
                 border: 1px solid {UltraModernColors.NEON_PURPLE};
             }}
             QPushButton:hover {{
-                background: {UltraModernColors.SECONDARY_GRADIENT};
-                border: 1px solid {UltraModernColors.NEON_PINK};
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {UltraModernColors.NEON_BLUE.replace('FF', 'E0')}, stop:1 {UltraModernColors.NEON_PURPLE.replace('DD', 'C0')}); /* Slightly desaturated hover */
+                border-color: {UltraModernColors.NEON_BLUE};
             }}
         """
-        )
     elif variant == "secondary":
-        return (
-            base_style
-            + f"""
+        variant_style = f"""
             QPushButton {{
-                background: {UltraModernColors.GLASS_BG};
-                border: 1px solid {UltraModernColors.GLASS_BORDER_BRIGHT};
+                background: {UltraModernColors.GLASS_BG_LIGHT};
+                border: 1px solid {UltraModernColors.NEON_GREEN};
+                color: {UltraModernColors.NEON_GREEN};
             }}
             QPushButton:hover {{
-                background: {UltraModernColors.GLASS_BG_LIGHT};
-                border: 1px solid {UltraModernColors.NEON_BLUE};
+                background-color: {UltraModernColors.NEON_GREEN};
+                color: {UltraModernColors.GLASS_BG_DARK};
             }}
         """
-        )
     elif variant == "ghost":
-        return (
-            base_style
-            + f"""
+        variant_style = f"""
             QPushButton {{
                 background: transparent;
                 border: 1px solid {UltraModernColors.GLASS_BORDER};
+                color: {UltraModernColors.TEXT_PRIMARY};
             }}
             QPushButton:hover {{
-                background: {UltraModernColors.GLASS_BG};
-                border: 1px solid {UltraModernColors.NEON_PURPLE};
+                background-color: {UltraModernColors.GLASS_BG_LIGHT};
+                border-color: {UltraModernColors.TEXT_PRIMARY};
             }}
         """
-        )
+    else:  # Default to primary
+        variant_style = ""
 
-    return base_style
+    # Size specific styles
+    size_style = ""
+    if size == "sm":
+        size_style = "padding: 6px 12px; font-size: 12px;"
+    elif size == "lg":
+        size_style = "padding: 14px 28px; font-size: 16px;"
+
+    return f"{base_style} {variant_style} QPushButton {{ {size_style} }}"
 
 
 def get_modern_input_style():
-    """Generate modern input field style"""
+    """Generates modern input field (QLineEdit, QTextEdit, QComboBox) styles."""
     return f"""
         QLineEdit, QTextEdit, QComboBox, QSpinBox {{
-            background: {UltraModernColors.GLASS_BG};
+            background-color: {UltraModernColors.GLASS_BG_DARK};
             border: 1px solid {UltraModernColors.GLASS_BORDER};
-            border-radius: 10px;
-            padding: 12px 16px;
+            border-radius: 8px;
+            padding: 8px 12px;
             color: {UltraModernColors.TEXT_PRIMARY};
-            font-weight: 500;
-            font-size: 14px;
             selection-background-color: {UltraModernColors.NEON_PURPLE};
-            selection-color: #FFFFFF;
+            selection-color: white;
         }}
-        QLineEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus {{
-            border: 2px solid {UltraModernColors.NEON_PURPLE};
-            background: {UltraModernColors.GLASS_BG_LIGHT};
-        }}
-        QLineEdit:hover, QTextEdit:hover, QComboBox:hover, QSpinBox:hover {{
-            border: 1px solid {UltraModernColors.GLASS_BORDER_BRIGHT};
+        QLineEdit:focus, QTextEdit:focus, QSpinBox:focus {{
+            border: 1px solid {UltraModernColors.NEON_BLUE};
         }}
         QComboBox::drop-down {{
-            border: none;
-            width: 30px;
+            border: 0px; /* No border for dropdown */
         }}
         QComboBox::down-arrow {{
-            image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIiIGhlaWdodD0iMTIiIHZpZXdCb3g9IjAgMCAxMiAxMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTMgNS41TDYgOC41TDkgNS41IiBzdHJva2U9IiNGRkZGRkYiIHN0cm9rZS13aWR0aD0iMS41IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz4KPC9zdmc+);
+            image: url(resources/icons/arrow_down.png); /* Placeholder for custom arrow */
+            /* Or use a font icon like FontAwesome or Phosphor icons */
         }}
         QComboBox QAbstractItemView {{
-            background: {UltraModernColors.GLASS_BG_DARK};
-            border: 1px solid {UltraModernColors.NEON_PURPLE};
-            border-radius: 10px;
+            border: 1px solid {UltraModernColors.NEON_BLUE};
+            background-color: {UltraModernColors.GLASS_BG_DARK};
             selection-background-color: {UltraModernColors.NEON_PURPLE};
             color: {UltraModernColors.TEXT_PRIMARY};
-            padding: 8px;
+            outline: 0; /* Remove dotted outline on focus */
         }}
         QSpinBox::up-button, QSpinBox::down-button {{
+            subcontrol-origin: border;
             width: 20px;
-            border: none;
-            background: {UltraModernColors.GLASS_BG};
+            border-left: 1px solid {UltraModernColors.GLASS_BORDER};
+            background: {UltraModernColors.GLASS_BG_LIGHT};
+            border-top-right-radius: 8px;
+            border-bottom-right-radius: 8px;
+        }}
+        QSpinBox::up-arrow, QSpinBox::down-arrow {{
+            width: 12px;
+            height: 12px;
+            color: {UltraModernColors.TEXT_PRIMARY};
         }}
         QSpinBox::up-arrow {{
-            image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAiIGhlaWdodD0iMTAiIHZpZXdCb3g9IjAgMCAxMCAxMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTIuNSA2LjI1TDUgMy43NUw3LjUgNi4yNSIgc3Ryb2tlPSIjRkZGRkZGIiBzdHJva2Utd2lkdGg9IjEuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+Cjwvc3ZnPg==);
+            image: url(resources/icons/arrow_up.png); /* Placeholder */
         }}
         QSpinBox::down-arrow {{
-            image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAiIGhlaWdodD0iMTAiIHZpZXdCb3g9IjAgMCAxMCAxMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTcuNSAzLjc1TDUgNi4yNUwyLjUgMy43NSIgc3Ryb2tlPSIjRkZGRkZGIiBzdHJva2Utd2lkdGg9IjEuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+Cjwvc3ZnPg==);
+            image: url(resources/icons/arrow_down.png); /* Placeholder */
+        }}
+        QSpinBox::up-button:hover, QSpinBox::down-button:hover {{
+            background-color: {UltraModernColors.NEON_BLUE};
         }}
     """
 
 
 def get_modern_checkbox_style():
-    """Generate modern checkbox style"""
+    """Generates modern checkbox style."""
     return f"""
         QCheckBox {{
-            spacing: 12px;
+            spacing: 5px;
             color: {UltraModernColors.TEXT_PRIMARY};
-            font-weight: 500;
             font-size: 14px;
+            padding: 5px;
         }}
         QCheckBox::indicator {{
-            width: 20px;
-            height: 20px;
-            border-radius: 6px;
-            border: 2px solid {UltraModernColors.GLASS_BORDER_BRIGHT};
-            background: {UltraModernColors.GLASS_BG};
+            width: 18px;
+            height: 18px;
+            border-radius: 4px;
+            border: 1px solid {UltraModernColors.GLASS_BORDER_BRIGHT};
+            background-color: {UltraModernColors.GLASS_BG_DARK};
         }}
-        QCheckBox::indicator:hover {{
-            border: 2px solid {UltraModernColors.NEON_PURPLE};
-            background: {UltraModernColors.GLASS_BG_LIGHT};
+        QCheckBox::indicator:unchecked {{
+            background-color: {UltraModernColors.GLASS_BG_DARK};
         }}
         QCheckBox::indicator:checked {{
-            background: {UltraModernColors.PRIMARY_GRADIENT};
-            border: 2px solid {UltraModernColors.NEON_PURPLE};
-            image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIiIGhlaWdodD0iMTIiIHZpZXdCb3g9IjAgMCAxMiAxMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEwIDNMNC41IDguNUwyIDYiIHN0cm9rZT0iI0ZGRkZGRiIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz4KPC9zdmc+);
+            background-color: {UltraModernColors.NEON_GREEN}; /* Use a vibrant color when checked */
+            border: 1px solid {UltraModernColors.NEON_GREEN};
+            image: url(resources/icons/check_mark.png); /* Placeholder for checkmark icon */
+            /* Or use unicode character: content: "\\2713"; */
         }}
-    """
-
-
-def get_modern_progress_style():
-    """Generate modern progress bar style"""
-    return f"""
-        QProgressBar {{
-            background: {UltraModernColors.GLASS_BG};
+        QCheckBox::indicator:hover {{
+            border-color: {UltraModernColors.NEON_BLUE};
+        }}
+        QCheckBox::indicator:disabled {{
+            background-color: {UltraModernColors.GLASS_BG_DARK};
             border: 1px solid {UltraModernColors.GLASS_BORDER};
-            border-radius: 10px;
-            height: 20px;
-            text-align: center;
-            color: {UltraModernColors.TEXT_PRIMARY};
-            font-weight: 600;
-        }}
-        QProgressBar::chunk {{
-            background: {UltraModernColors.PRIMARY_GRADIENT};
-            border-radius: 10px;
+            opacity: 0.5;
         }}
     """
 
 
 def get_modern_tab_style():
-    """Generate modern tab widget style"""
+    """Generates modern tab widget style."""
     return f"""
-        QTabWidget::pane {{
+        QTabWidget::pane {{ /* The tab widget frame */
             border: 1px solid {UltraModernColors.GLASS_BORDER};
-            background: {UltraModernColors.GLASS_BG_DARK};
-            border-radius: 16px;
-            margin-top: -1px;
+            border-radius: 10px;
+            background-color: {UltraModernColors.GLASS_BG};
+            margin-top: -1px; /* Overlap with tabs */
+        }}
+        QTabWidget::tab-bar {{
+            left: 5px; /* Move tabs a bit to the right */
         }}
         QTabBar::tab {{
-            background: {UltraModernColors.GLASS_BG};
+            background: {UltraModernColors.GLASS_BG_DARK};
             border: 1px solid {UltraModernColors.GLASS_BORDER};
-            border-bottom: none;
-            border-top-left-radius: 12px;
-            border-top-right-radius: 12px;
-            padding: 12px 20px;
-            color: {UltraModernColors.TEXT_SECONDARY};
-            font-weight: 500;
-            margin-right: 4px;
+            border-bottom-color: {UltraModernColors.GLASS_BORDER}; /* same as pane */
+            border-top-left-radius: 8px;
+            border-top-right-radius: 8px;
+            padding: 8px 15px;
             min-width: 80px;
+            color: {UltraModernColors.TEXT_SECONDARY};
+            margin-right: 2px;
         }}
         QTabBar::tab:selected {{
-            background: {UltraModernColors.GLASS_BG_DARK};
-            border: 1px solid {UltraModernColors.NEON_PURPLE};
-            border-bottom: none;
-            color: {UltraModernColors.TEXT_PRIMARY};
+            background: {UltraModernColors.PRIMARY_GRADIENT};
+            border-color: {UltraModernColors.NEON_PURPLE};
+            border-bottom-color: transparent; /* Make bottom transparent to blend with pane */
+            color: white;
+            font-weight: bold;
         }}
-        QTabBar::tab:hover:!selected {{
+        QTabBar::tab:hover {{
             background: {UltraModernColors.GLASS_BG_LIGHT};
-            border: 1px solid {UltraModernColors.GLASS_BORDER_BRIGHT};
-            color: {UltraModernColors.NEON_BLUE};
+            border-color: {UltraModernColors.NEON_BLUE};
+        }}
+        QTabBar::tab:!selected {{
+            margin-top: 2px; /* make non-selected tabs look sunken */
         }}
     """
 
 
-def get_modern_groupbox_style():
-    """Generate modern group box style"""
+def get_modern_card_style():
+    """Generates modern card/frame style."""
+    return f"""
+        QWidget {{ /* Applied to QWidget acting as a card */
+            background: {UltraModernColors.GLASS_BG_DARK};
+            border: 1px solid {UltraModernColors.GLASS_BORDER};
+            border-radius: 12px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); /* Soft shadow */
+            padding: 5px; /* Inner padding for content */
+            transition: all 0.2s ease-in-out;
+        }}
+        QWidget:hover {{
+            border-color: {UltraModernColors.NEON_BLUE};
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3); /* Enhanced shadow on hover */
+            transform: translateY(-2px); /* Slight lift effect */
+        }}
+    """
+
+
+def get_modern_groupbox_style():  # This function is present
+    """Generates modern group box style."""
     return f"""
         QGroupBox {{
             background: {UltraModernColors.GLASS_BG_DARK};
             border: 1px solid {UltraModernColors.GLASS_BORDER};
             border-radius: 16px;
-            margin-top: 30px;
-            padding-top: 20px;
+            margin-top: 30px; /* Space for title */
+            padding-top: 20px; /* Padding below title */
             color: {UltraModernColors.TEXT_PRIMARY};
             font-weight: 500;
         }}
         QGroupBox::title {{
             subcontrol-origin: margin;
-            subcontrol-position: top center;
+            subcontrol-position: top center; /* Center the title */
             padding: 8px 16px;
             background: {UltraModernColors.PRIMARY_GRADIENT};
             border: 1px solid {UltraModernColors.NEON_PURPLE};
@@ -383,12 +413,31 @@ def get_modern_groupbox_style():
     """
 
 
+def get_holographic_progress_style():
+    """Generates holographic progress bar style."""
+    return f"""
+        QProgressBar {{
+            background: {UltraModernColors.GLASS_BG_DARK};
+            border: 1px solid {UltraModernColors.NEON_PURPLE};
+            border-radius: 8px;
+            height: 20px;
+            text-align: center;
+            color: {UltraModernColors.TEXT_PRIMARY};
+            font-weight: bold;
+        }}
+        QProgressBar::chunk {{
+            background: qlineargradient(
+                x1:0, y1:0, x2:1, y2:0,
+                stop:0 {UltraModernColors.NEON_PURPLE},
+                stop:1 {UltraModernColors.NEON_PINK}
+            );
+            border-radius: 8px;
+        }}
+    """
+
+
 # Compatibility aliases
 get_ultra_modern_card_style = get_modern_card_style
 get_ultra_modern_button_style = get_modern_button_style
 get_ultra_modern_input_style = get_modern_input_style
-get_neon_checkbox_style = get_modern_checkbox_style
-get_holographic_progress_style = get_modern_progress_style
-get_holographic_tab_style = get_modern_tab_style
-get_holographic_groupbox_style = get_modern_groupbox_style
-get_gradient_button_style = get_modern_button_style
+get_holographic_groupbox_style = get_modern_groupbox_style  # Ensure this alias exists and points to the correct function

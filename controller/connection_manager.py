@@ -1,152 +1,179 @@
+# controller/connection_manager.py - Enhanced with Caching and Robustness
 from PyQt6.QtCore import QObject, pyqtSignal
 from connectors.sharepoint_connector import SharePointConnector
 from connectors.database_connector import DatabaseConnector
+from utils.error_handling import handle_exceptions, ErrorCategory, ErrorSeverity
+from utils.config_manager import Config  # Import Config dataclass for type hinting
 import logging
+import functools
 
 logger = logging.getLogger(__name__)
 
 
 class ConnectionManager(QObject):
-    """Manages connections to external services"""
+    """
+    Manages connections to external services (SharePoint, Database).
+    Uses caching for connector instances to improve performance.
+    """
 
     status_changed = pyqtSignal(str, str)  # service_name, status
     log_message = pyqtSignal(str, str)  # message, level
 
-    def __init__(self):
-        super().__init__()
-        self._sharepoint_connector = None
-        self._database_connector = None
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        # Use functools.lru_cache for memoization of connector instances.
+        # This prevents recreating expensive objects like database engines or session objects
+        # as long as the config (hashable) is the same.
+        self._get_sharepoint_connector_cached = functools.lru_cache(maxsize=1)(
+            self._get_sharepoint_connector
+        )
+        self._get_database_connector_cached = functools.lru_cache(maxsize=1)(
+            self._get_database_connector
+        )
+        logger.info("ConnectionManager initialized.")
 
-    # SharePoint Connection Management
-    def test_sharepoint_connection(self, config):
-        """Test SharePoint connection"""
+    @handle_exceptions(
+        ErrorCategory.CONNECTION, ErrorSeverity.HIGH
+    )  # Removed user_message
+    def _get_sharepoint_connector(
+        self, config: Config
+    ) -> Optional[SharePointConnector]:
+        """Internal method to create and return a SharePointConnector instance."""
         try:
-            self.status_changed.emit("SharePoint", "connecting")
-
             connector = SharePointConnector(config)
-            success = connector.test_connection()
-
-            if success:
+            if connector.test_connection():
                 self.status_changed.emit("SharePoint", "connected")
-                self._sharepoint_connector = connector
+                self.log_message.emit(
+                    "✅ SharePoint connection established.", "success"
+                )
+                logger.info(
+                    "SharePoint connector created and connection tested successfully."
+                )
+                return connector
             else:
-                self.status_changed.emit("SharePoint", "error")
-
-            return success
-
+                self.status_changed.emit("SharePoint", "disconnected")
+                self.log_message.emit("❌ SharePoint connection failed.", "error")
+                logger.error(
+                    "SharePoint connection test failed after connector creation."
+                )
+                return None
         except Exception as e:
             self.status_changed.emit("SharePoint", "error")
             self.log_message.emit(
-                f"SharePoint connection test failed: {str(e)}", "error"
+                f"❌ Error creating SharePoint connector: {e}", "critical"
             )
-            logger.exception("SharePoint connection test failed")
-            return False
+            logger.critical(f"Error creating SharePointConnector: {e}", exc_info=True)
+            return None
 
-    def get_sharepoint_sites(self, config):
-        """Get available SharePoint sites"""
+    @handle_exceptions(
+        ErrorCategory.CONNECTION, ErrorSeverity.HIGH
+    )  # Removed user_message
+    def _get_database_connector(self, config: Config) -> Optional[DatabaseConnector]:
+        """Internal method to create and return a DatabaseConnector instance."""
         try:
-            connector = SharePointConnector(config)
-            sites = connector.get_sites()
-            return sites
-
-        except Exception as e:
-            self.log_message.emit(f"Failed to get SharePoint sites: {str(e)}", "error")
-            logger.exception("Failed to get SharePoint sites")
-            return []
-
-    def get_sharepoint_lists(self, config, site_url=None):
-        """Get SharePoint lists for a site"""
-        try:
-            connector = SharePointConnector(config)
-            if site_url:
-                lists = connector.get_lists(site_url)
-            else:
-                lists = connector.get_lists()
-            return lists
-
-        except Exception as e:
-            self.log_message.emit(f"Failed to get SharePoint lists: {str(e)}", "error")
-            logger.exception("Failed to get SharePoint lists")
-            return []
-
-    # Database Connection Management
-    def test_database_connection(self, config):
-        """Test database connection"""
-        try:
-            self.status_changed.emit("Database", "connecting")
-
             connector = DatabaseConnector(config)
-            success = connector.test_connection()
-
-            if success:
+            if connector.test_connection():
                 self.status_changed.emit("Database", "connected")
-                self._database_connector = connector
+                self.log_message.emit("✅ Database connection established.", "success")
+                logger.info(
+                    "Database connector created and connection tested successfully."
+                )
+                return connector
             else:
-                self.status_changed.emit("Database", "error")
-
-            return success
-
+                self.status_changed.emit("Database", "disconnected")
+                self.log_message.emit("❌ Database connection failed.", "error")
+                logger.error(
+                    "Database connection test failed after connector creation."
+                )
+                return None
         except Exception as e:
             self.status_changed.emit("Database", "error")
-            self.log_message.emit(f"Database connection test failed: {str(e)}", "error")
-            logger.exception("Database connection test failed")
-            return False
+            self.log_message.emit(
+                f"❌ Error creating database connector: {e}", "critical"
+            )
+            logger.critical(f"Error creating DatabaseConnector: {e}", exc_info=True)
+            return None
 
-    def get_databases(self, config):
-        """Get available databases (SQL Server only)"""
-        try:
-            db_type = config.database_type or config.db_type
-            if db_type and db_type.lower() == "sqlite":
-                return []
+    @handle_exceptions(
+        ErrorCategory.CONNECTION, ErrorSeverity.HIGH
+    )  # Removed user_message
+    def get_sharepoint_connector(self, config: Config) -> Optional[SharePointConnector]:
+        """Returns a cached or new SharePointConnector instance."""
+        return self._get_sharepoint_connector_cached(config)
 
-            connector = DatabaseConnector(config)
-            databases = connector.get_databases()
-            return databases
+    @handle_exceptions(
+        ErrorCategory.CONNECTION, ErrorSeverity.HIGH
+    )  # Removed user_message
+    def get_database_connector(self, config: Config) -> Optional[DatabaseConnector]:
+        """Returns a cached or new DatabaseConnector instance."""
+        return self._get_database_connector_cached(config)
 
-        except Exception as e:
-            self.log_message.emit(f"Failed to get databases: {str(e)}", "error")
-            logger.exception("Failed to get databases")
-            return []
-
-    def get_tables(self, config):
-        """Get available tables"""
-        try:
-            connector = DatabaseConnector(config)
-            tables = connector.get_tables()
-            return tables
-
-        except Exception as e:
-            self.log_message.emit(f"Failed to get tables: {str(e)}", "error")
-            logger.exception("Failed to get tables")
-            return []
-
-    # Connection Status
-    def get_connection_status(self, config):
-        """Get status of all connections"""
+    @handle_exceptions(
+        ErrorCategory.CONNECTION, ErrorSeverity.MEDIUM
+    )  # Removed user_message
+    def check_all_connections_status(self, config: Config) -> Dict[str, str]:
+        """Checks the status of all connections without recreating connectors."""
+        logger.info("Checking all connection statuses...")
         status = {"sharepoint": "disconnected", "database": "disconnected"}
 
-        # Test SharePoint
+        # Check SharePoint status
         try:
-            sp_connector = SharePointConnector(config)
-            if sp_connector.test_connection():
+            sp_connector = self._get_sharepoint_connector_cached(
+                config
+            )  # Get cached instance
+            if sp_connector and sp_connector.test_connection():
                 status["sharepoint"] = "connected"
-        except:
-            pass
+            else:
+                status["sharepoint"] = (
+                    "error"  # Mark as error if test fails or connector is None
+                )
+            logger.debug(f"SharePoint status: {status['sharepoint']}")
+        except Exception:
+            status["sharepoint"] = "error"
+            logger.debug("SharePoint connection failed during status check.")
 
-        # Test Database
+        # Check Database status
         try:
-            db_connector = DatabaseConnector(config)
-            if db_connector.test_connection():
+            db_connector = self._get_database_connector_cached(
+                config
+            )  # Get cached instance
+            if db_connector and db_connector.test_connection():
                 status["database"] = "connected"
-        except:
-            pass
+            else:
+                status["database"] = (
+                    "error"  # Mark as error if test fails or connector is None
+                )
+            logger.debug(f"Database status: {status['database']}")
+        except Exception:
+            status["database"] = "error"
+            logger.debug("Database connection failed during status check.")
 
         return status
 
     def reset_connections(self):
-        """Reset all connections"""
-        self._sharepoint_connector = None
-        self._database_connector = None
+        """
+        Clears all cached connector instances and resets connection status.
+        This forces new connector instances to be created on next request.
+        """
+        self._get_sharepoint_connector_cached.cache_clear()
+        self._get_database_connector_cached.cache_clear()
         self.status_changed.emit("SharePoint", "disconnected")
         self.status_changed.emit("Database", "disconnected")
-        self.log_message.emit("🔄 รีเซ็ตการเชื่อมต่อทั้งหมด", "info")
+        self.log_message.emit("🔄 Connections reset and cache cleared.", "info")
+        logger.info("All connection caches cleared and status reset.")
+
+    def cleanup(self):
+        """Performs cleanup for ConnectionManager."""
+        self.reset_connections()  # Clear all cached connectors
+        # Disconnect all signals
+        try:
+            self.status_changed.disconnect()
+            self.log_message.disconnect()
+            logger.info("Disconnected ConnectionManager signals.")
+        except TypeError as e:
+            logger.debug(
+                f"Attempted to disconnect non-connected ConnectionManager signal: {e}"
+            )
+        except Exception as e:
+            logger.warning(f"Error during ConnectionManager signal disconnection: {e}")
+        logger.info("ConnectionManager cleanup completed.")

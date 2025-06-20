@@ -1,34 +1,21 @@
-from PyQt6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QLabel,
-    QFrame,
-    QSizePolicy,
-    QGridLayout,
-    QCheckBox,
-    QComboBox,
-)
-from PyQt6.QtCore import pyqtSignal, pyqtSlot
+# ui/components/dashboard.py - Enhanced Dashboard with Real-time Updates and Cleanup
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QGridLayout
+from PyQt6.QtCore import pyqtSignal, pyqtSlot, Qt
 from PyQt6.QtGui import QFont
+import logging
+import sys
+import os
 
-# ใช้ relative imports
+# Add project root to path for absolute imports
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(
+    os.path.dirname(current_dir)
+)  # Go up three levels to project root
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+# Import components with fallbacks
 try:
-    from ..widgets.status_card import ModernStatusCard
-    from ..widgets.cyber_log_console import CyberLogConsole
-    from ..widgets.holographic_progress_bar import HolographicProgressBar
-    from ..widgets.modern_button import ActionButton
-    from ..styles.theme import (
-        UltraModernColors,
-        get_modern_card_style,
-        get_modern_checkbox_style,
-    )
-except ImportError:
-    # Fallback imports
-    import sys
-    import os
-
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
     from ui.widgets.status_card import ModernStatusCard
     from ui.widgets.cyber_log_console import CyberLogConsole
     from ui.widgets.holographic_progress_bar import HolographicProgressBar
@@ -37,458 +24,331 @@ except ImportError:
         UltraModernColors,
         get_modern_card_style,
         get_modern_checkbox_style,
+        get_modern_groupbox_style,  # Ensure this is correctly imported
     )
+    from ui.widgets.neon_groupbox import NeonGroupBox
+    from controller.app_controller import AppController  # For type hinting
+    from utils.error_handling import (
+        handle_exceptions,
+        ErrorCategory,
+        ErrorSeverity,
+        get_error_handler,
+    )
+    from utils.config_manager import ConfigManager  # For config access
+except ImportError as e:
+    print(
+        f"CRITICAL IMPORT ERROR in dashboard.py: {e}. Ensure dependencies are installed."
+    )
+    sys.exit(1)
 
-import logging
 
 logger = logging.getLogger(__name__)
 
 
-class CompactFrame(QFrame):
-    """Compact frame สำหรับพื้นที่จำกัด"""
+class Dashboard(QWidget):
+    """
+    The main dashboard panel displaying synchronization status, logs, and controls.
+    """
 
-    def __init__(self, variant="default", parent=None):
-        super().__init__(parent)
-        self.variant = variant
-        self.setup_compact_style()
-
-    def setup_compact_style(self):
-        """Apply compact styling"""
-        self.setStyleSheet(
-            f"""
-            QFrame {{
-                background: {UltraModernColors.GLASS_BG_DARK};
-                border: 1px solid {UltraModernColors.NEON_PURPLE};
-                border-radius: 8px;
-                margin: 2px;
-                padding: 8px;
-            }}
-            """
-        )
-
-
-class SyncDirectionSelector(QWidget):
-    """ตัวเลือกทิศทางการ sync ใหม่"""
-
-    direction_changed = pyqtSignal(
-        str
-    )  # "spo_to_sql", "sql_to_spo", "excel_to_spo", "excel_to_sql"
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setup_ui()
-
-    def setup_ui(self):
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(5, 5, 5, 5)
-        layout.setSpacing(8)
-
-        # Direction selector
-        direction_label = QLabel("Sync:")
-        direction_label.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
-        direction_label.setStyleSheet(f"color: {UltraModernColors.TEXT_PRIMARY};")
-        layout.addWidget(direction_label)
-
-        self.direction_combo = QComboBox()
-        self.direction_combo.addItems(
-            ["SPO → SQL", "SQL → SPO", "Excel → SPO", "Excel → SQL"]
-        )
-        self.direction_combo.setStyleSheet(
-            f"""
-            QComboBox {{
-                background: {UltraModernColors.GLASS_BG};
-                border: 1px solid {UltraModernColors.NEON_PURPLE};
-                border-radius: 6px;
-                padding: 4px 8px;
-                color: {UltraModernColors.TEXT_PRIMARY};
-                font-size: 9px;
-                min-width: 80px;
-            }}
-            QComboBox::drop-down {{
-                border: none;
-                width: 20px;
-            }}
-            QComboBox QAbstractItemView {{
-                background: {UltraModernColors.GLASS_BG_DARK};
-                border: 1px solid {UltraModernColors.NEON_PURPLE};
-                selection-background-color: {UltraModernColors.NEON_PURPLE};
-            }}
-            """
-        )
-        self.direction_combo.currentTextChanged.connect(self._on_direction_changed)
-        layout.addWidget(self.direction_combo)
-
-        layout.addStretch()
-
-    def _on_direction_changed(self, text):
-        """Map UI text to direction codes"""
-        direction_map = {
-            "SPO → SQL": "spo_to_sql",
-            "SQL → SPO": "sql_to_spo",
-            "Excel → SPO": "excel_to_spo",
-            "Excel → SQL": "excel_to_sql",
-        }
-        direction = direction_map.get(text, "spo_to_sql")
-        self.direction_changed.emit(direction)
-
-    def get_current_direction(self):
-        """Get current sync direction"""
-        direction_map = {
-            "SPO → SQL": "spo_to_sql",
-            "SQL → SPO": "sql_to_spo",
-            "Excel → SPO": "excel_to_spo",
-            "Excel → SQL": "excel_to_sql",
-        }
-        return direction_map.get(self.direction_combo.currentText(), "spo_to_sql")
-
-
-class ModernDashboard(QWidget):
-    """Enhanced Dashboard สำหรับขนาด 900x500"""
-
+    # Signals to communicate with AppController
+    run_sync_requested = pyqtSignal(str)  # Direction: 'spo_to_sql' or 'sql_to_spo'
     clear_cache_requested = pyqtSignal()
-    sync_direction_changed = pyqtSignal(str)
+    test_connections_requested = pyqtSignal()
+    import_excel_requested = pyqtSignal(
+        str, str, dict
+    )  # filePath, tableName, columnMapping
 
-    def __init__(self, controller):
-        super().__init__(parent=None)
+    def __init__(self, controller: AppController, parent=None):
+        super().__init__(parent)
         self.controller = controller
+        self.config_manager = ConfigManager()
+        self.cleanup_done = False  # Flag to prevent multiple cleanup calls
+        self._setup_ui()
+        self._connect_signals()
+        logger.info("Dashboard initialized.")
 
-        # Store references
-        self.status_cards = {}
-        self.progress_widgets = {}
-
-        self.setup_compact_ui()
-
-    def setup_compact_ui(self):
-        """Setup compact dashboard UI"""
+    @handle_exceptions(ErrorCategory.UI, ErrorSeverity.HIGH)
+    def _setup_ui(self):
+        """Sets up the layout and widgets for the dashboard."""
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(8, 8, 8, 8)
-        main_layout.setSpacing(8)
+        main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.setSpacing(15)
 
-        # Create compact sections
-        main_layout.addLayout(self._create_status_section())
-        main_layout.addWidget(self._create_control_section())
-        main_layout.addLayout(self._create_progress_section())
-        main_layout.addWidget(self._create_log_section())
+        # 1. Status Cards Section
+        status_groupbox = NeonGroupBox("System Status")
+        status_layout = QGridLayout(status_groupbox)
+        status_layout.setContentsMargins(10, 30, 10, 10)
+        status_layout.setSpacing(10)
 
-        self.add_log_message("🚀 Compact Dashboard initialized", "info")
-
-    def _create_status_section(self) -> QHBoxLayout:
-        """Compact status cards"""
-        layout = QHBoxLayout()
-        layout.setSpacing(8)
-
-        # Create compact status cards
-        self.status_cards["sharepoint"] = ModernStatusCard("SharePoint", "disconnected")
-        self.status_cards["database"] = ModernStatusCard("Database", "disconnected")
-        self.status_cards["last_sync"] = ModernStatusCard("Last Sync", "never")
-
-        for card in self.status_cards.values():
-            card.setMaximumHeight(85)  # ลดความสูง
-            card.setMinimumHeight(85)
-            layout.addWidget(card)
-
-        return layout
-
-    def _create_control_section(self) -> QFrame:
-        """Compact control panel"""
-        control_frame = CompactFrame()
-        control_frame.setMaximumHeight(60)  # ลดความสูง
-        control_layout = QVBoxLayout(control_frame)
-        control_layout.setContentsMargins(10, 8, 10, 8)
-        control_layout.setSpacing(6)
-
-        # Top row - Sync direction
-        top_row = QHBoxLayout()
-        self.sync_direction = SyncDirectionSelector()
-        self.sync_direction.direction_changed.connect(self.sync_direction_changed)
-        top_row.addWidget(self.sync_direction)
-
-        # Auto sync checkbox
-        self.auto_sync_check = QCheckBox("⚡ Auto")
-        self.auto_sync_check.setFont(QFont("Segoe UI", 9, QFont.Weight.Medium))
-        self.auto_sync_check.setStyleSheet(get_modern_checkbox_style())
-        self.auto_sync_check.stateChanged.connect(self.controller.toggle_auto_sync)
-        top_row.addWidget(self.auto_sync_check)
-        control_layout.addLayout(top_row)
-
-        # Bottom row - Action buttons
-        button_row = QHBoxLayout()
-
-        self.run_sync_btn = ActionButton.primary("▶ Sync", size="sm")
-        self.run_sync_btn.setMaximumHeight(30)
-        self.run_sync_btn.clicked.connect(self._handle_sync_click)
-
-        self.test_connections_btn = ActionButton.ghost("🔧 Test", size="sm")
-        self.test_connections_btn.setMaximumHeight(30)
-        self.test_connections_btn.clicked.connect(self.controller.test_all_connections)
-
-        self.clear_cache_btn = ActionButton.secondary("🧹 Cache", size="sm")
-        self.clear_cache_btn.setMaximumHeight(30)
-        self.clear_cache_btn.clicked.connect(self.clear_cache)
-
-        button_row.addWidget(self.run_sync_btn)
-        button_row.addWidget(self.test_connections_btn)
-        button_row.addWidget(self.clear_cache_btn)
-        button_row.addStretch()
-
-        control_layout.addLayout(button_row)
-
-        return control_frame
-
-    def _create_progress_section(self) -> QGridLayout:
-        """Compact progress section"""
-        grid_layout = QGridLayout()
-        grid_layout.setSpacing(8)
-
-        # Progress card
-        progress_frame = CompactFrame()
-        progress_frame.setMaximumHeight(60)  # ลดความสูง
-        progress_layout = QVBoxLayout(progress_frame)
-        progress_layout.setContentsMargins(10, 8, 10, 8)
-        progress_layout.setSpacing(4)
-
-        # Progress header และ bar ในบรรทัดเดียว
-        header_layout = QHBoxLayout()
-        progress_header = QLabel("📊 Progress")
-        progress_header.setFont(QFont("Segoe UI", 10, QFont.Weight.DemiBold))
-        progress_header.setStyleSheet(f"color: {UltraModernColors.TEXT_PRIMARY};")
-        header_layout.addWidget(progress_header)
-
-        # Progress bar
-        self.overall_progress_bar = HolographicProgressBar()
-        self.overall_progress_bar.setTextVisible(True)
-        self.overall_progress_bar.setFixedHeight(18)  # ลดความสูง
-        header_layout.addWidget(self.overall_progress_bar, 1)
-        progress_layout.addLayout(header_layout)
-
-        # Current task
-        self.current_task_label = QLabel("💤 System idle")
-        self.current_task_label.setFont(QFont("Segoe UI", 9))
-        self.current_task_label.setStyleSheet(
-            f"color: {UltraModernColors.TEXT_SECONDARY};"
+        # Initialize status cards
+        self.sp_status_card = ModernStatusCard("SharePoint Connection", "disconnected")
+        self.db_status_card = ModernStatusCard("Database Connection", "disconnected")
+        self.last_sync_status_card = ModernStatusCard("Last Sync Status", "never")
+        self.auto_sync_status_card = ModernStatusCard(
+            "Auto-Sync", False, is_boolean_status=True
         )
+
+        status_layout.addWidget(self.sp_status_card, 0, 0)
+        status_layout.addWidget(self.db_status_card, 0, 1)
+        status_layout.addWidget(self.last_sync_status_card, 1, 0)
+        status_layout.addWidget(self.auto_sync_status_card, 1, 1)
+
+        status_groupbox.setLayout(status_layout)
+        main_layout.addWidget(status_groupbox)
+
+        # 2. Progress and Current Task Section
+        progress_groupbox = NeonGroupBox("Current Operation")
+        progress_layout = QVBoxLayout(progress_groupbox)
+        progress_layout.setContentsMargins(10, 30, 10, 10)
+        progress_layout.setSpacing(10)
+
+        self.current_task_label = QLabel("Idle")
+        self.current_task_label.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        self.current_task_label.setStyleSheet(f"color: {UltraModernColors.NEON_GREEN};")
+        self.current_task_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         progress_layout.addWidget(self.current_task_label)
 
-        grid_layout.addWidget(progress_frame, 0, 0, 1, 2)
+        self.progress_bar = HolographicProgressBar()
+        self.progress_bar.setMinimum(0)
+        self.progress_bar.setMaximum(100)
+        self.progress_bar.setValue(0)
+        progress_layout.addWidget(self.progress_bar)
 
-        return grid_layout
+        progress_groupbox.setLayout(progress_layout)
+        main_layout.addWidget(progress_groupbox)
 
-    def _create_log_section(self) -> QFrame:
-        """Compact log console"""
-        log_frame = QFrame()
-        log_frame.setStyleSheet(
-            f"""
-            QFrame {{
-                background: {UltraModernColors.GLASS_BG_DARK};
-                border: 1px solid {UltraModernColors.NEON_PURPLE};
-                border-radius: 8px;
-                margin: 2px;
-            }}
-            """
+        # 3. Action Buttons Section
+        buttons_groupbox = NeonGroupBox("Actions")
+        buttons_layout = QGridLayout(buttons_groupbox)
+        buttons_layout.setContentsMargins(10, 30, 10, 10)
+        buttons_layout.setSpacing(10)
+
+        self.run_sync_button = ActionButton(
+            "Run Sync (SPO to SQL)", "primary", "md", icon="🚀"
+        )
+        self.test_connection_button = ActionButton(
+            "Test Connections", "secondary", "md", icon="🌐"
+        )
+        self.clear_cache_button = ActionButton(
+            "Clear System Cache", "ghost", "md", icon="🧹"
+        )
+        self.clear_logs_button = ActionButton(
+            "Clear Log Console", "danger", "md", icon="🗑️"
         )
 
-        log_layout = QVBoxLayout(log_frame)
-        log_layout.setContentsMargins(10, 8, 10, 8)
-        log_layout.setSpacing(6)
-
-        # Compact log header
-        header_layout = QHBoxLayout()
-
-        log_header = QLabel("📋 System Log")
-        log_header.setFont(QFont("Segoe UI", 10, QFont.Weight.DemiBold))
-        log_header.setStyleSheet(
-            f"""
-            color: {UltraModernColors.TEXT_PRIMARY};
-            background: {UltraModernColors.GLASS_BG};
-            padding: 4px 8px;
-            border-radius: 4px;
-            border: 1px solid {UltraModernColors.NEON_PURPLE};
-            """
+        # Add Excel Import Button - placeholder action
+        self.import_excel_button = ActionButton(
+            "Import Excel to DB", "secondary", "md", icon="📊"
         )
-        header_layout.addWidget(log_header)
-        header_layout.addStretch()
 
-        # Clear log button
-        clear_log_btn = ActionButton.ghost("🗑️", size="sm")
-        clear_log_btn.setMaximumHeight(24)
-        clear_log_btn.setMaximumWidth(30)
-        clear_log_btn.clicked.connect(self.clear_logs)
-        header_layout.addWidget(clear_log_btn)
+        buttons_layout.addWidget(self.run_sync_button, 0, 0)
+        buttons_layout.addWidget(self.test_connection_button, 0, 1)
+        buttons_layout.addWidget(
+            self.import_excel_button, 1, 0
+        )  # New row for Excel import
+        buttons_layout.addWidget(self.clear_cache_button, 1, 1)
+        buttons_layout.addWidget(self.clear_logs_button, 2, 0, 1, 2)  # Span two columns
 
-        log_layout.addLayout(header_layout)
+        buttons_groupbox.setLayout(buttons_layout)
+        main_layout.addWidget(buttons_groupbox)
 
-        # Compact log console
+        # 4. Log Console Section
+        log_groupbox = NeonGroupBox("System Logs")
+        log_layout = QVBoxLayout(log_groupbox)
+        log_layout.setContentsMargins(10, 30, 10, 10)
+        log_layout.setSpacing(5)
+
         self.log_console = CyberLogConsole()
-        self.log_console.setMinimumHeight(90)  # ลดความสูง
-        self.log_console.setMaximumHeight(120)
-        self.log_console.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
-        )
-
-        # Enhanced compact styling
-        self.log_console.setStyleSheet(
-            f"""
-            QTextEdit {{
-                background: rgba(0, 0, 0, 0.9);
-                border: none;
-                border-radius: 6px;
-                color: {UltraModernColors.TEXT_PRIMARY};
-                padding: 6px;
-                font-family: 'Consolas', 'Monaco', monospace;
-                font-size: 9px;
-                line-height: 1.2;
-            }}
-            QScrollBar:vertical {{
-                border: none;
-                background: rgba(0, 0, 0, 0.3);
-                width: 6px;
-                border-radius: 3px;
-            }}
-            QScrollBar::handle:vertical {{
-                background: {UltraModernColors.NEON_PURPLE};
-                border-radius: 3px;
-                min-height: 15px;
-            }}
-            QScrollBar::handle:vertical:hover {{
-                background: {UltraModernColors.NEON_PINK};
-            }}
-            """
-        )
-
+        self.log_console.setMinimumHeight(150)  # Ensure it's tall enough
         log_layout.addWidget(self.log_console)
 
-        return log_frame
+        log_groupbox.setLayout(log_layout)
+        main_layout.addWidget(log_groupbox)
 
-    def _handle_sync_click(self):
-        """Handle sync button click with direction awareness"""
-        direction = self.sync_direction.get_current_direction()
+        main_layout.addStretch(1)  # Pushes content to top
 
-        # Set sync direction in controller before starting
-        if hasattr(self.controller, "set_sync_direction"):
-            self.controller.set_sync_direction(direction)
+    @handle_exceptions(ErrorCategory.UI, ErrorSeverity.HIGH)
+    def _connect_signals(self):
+        """Connects UI elements to controller actions."""
+        # Connect Dashboard buttons to AppController methods indirectly via signals
+        self.run_sync_button.clicked.connect(self._on_run_sync_clicked)
+        self.test_connection_button.clicked.connect(
+            self.test_connections_requested.emit
+        )
+        self.clear_cache_button.clicked.connect(self.clear_cache_requested.emit)
+        self.clear_logs_button.clicked.connect(self.log_console.clear)
+        self.import_excel_button.clicked.connect(self._on_import_excel_clicked)
 
-        # Start sync based on direction
-        if direction == "spo_to_sql":
-            self.controller.run_full_sync()
-        elif direction == "sql_to_spo":
-            if hasattr(self.controller, "run_reverse_sync"):
-                self.controller.run_reverse_sync()
-            else:
-                self.add_log_message("⚠️ Reverse sync not yet implemented", "warning")
-        elif direction.startswith("excel_"):
-            if hasattr(self.controller, "run_excel_import"):
-                self.controller.run_excel_import(direction)
-            else:
-                self.add_log_message("⚠️ Excel import not yet implemented", "warning")
+        # Connect AppController signals to Dashboard UI updates
+        # These will be connected in MainWindow to bridge AppController to Dashboard instance
+        logger.debug("Dashboard internal signals connected.")
 
-    # Slot methods
-    @pyqtSlot(int)
-    def update_overall_progress(self, value):
-        """Update overall progress"""
-        self.overall_progress_bar.setValue(value)
-        self.overall_progress_bar.setFormat(f"{value}%")
+    @pyqtSlot()
+    @handle_exceptions(ErrorCategory.UI, ErrorSeverity.MEDIUM)
+    def _on_run_sync_clicked(self):
+        """Handles the 'Run Sync' button click."""
+        # For now, always trigger SharePoint to SQL sync.
+        # Future: Add a dropdown to select sync direction.
+        sync_direction = self.config_manager.get_setting(
+            "sync_mode"
+        )  # Use sync_mode from config
+        if sync_direction == "full":  # Assuming "full" means spo_to_sql for now
+            self.run_sync_requested.emit("spo_to_sql")
+        else:  # Add other sync modes later
+            self.run_sync_requested.emit("spo_to_sql")  # Default to SPO to SQL
+
+    @pyqtSlot()
+    @handle_exceptions(ErrorCategory.UI, ErrorSeverity.MEDIUM)
+    def _on_import_excel_clicked(self):
+        """Handles the 'Import Excel' button click."""
+        # This will open a file dialog and then trigger the import
+        file_dialog = QFileDialog(self)
+        file_dialog.setWindowTitle("Select Excel File for Import")
+        file_dialog.setNameFilter("Excel Files (*.xlsx *.xls)")
+        file_dialog.setFileMode(QFileDialog.FileMode.ExistingFile)
+
+        if file_dialog.exec():
+            selected_file = file_dialog.selectedFiles()[0]
+            logger.info(f"Selected Excel file: {selected_file}")
+
+            # Placeholder for actual table name and column mapping.
+            # These should ideally come from config or user input in ConfigPanel.
+            target_table = self.config_manager.get_setting(
+                "sql_table_name"
+            )  # Example target
+            # Example mapping: 'Excel Column Name': 'Database_Column_Name'
+            # This needs to be dynamically configurable for a real app.
+            column_mapping = self.config_manager.get_setting(
+                "excel_import_mapping"
+            )  # Assuming this config exists now
+
+            if not column_mapping:
+                self.log_console.add_log_message(
+                    "Excel import mapping is not configured. Please set it in config.",
+                    "error",
+                )
+                return
+
+            self.import_excel_requested.emit(
+                selected_file, target_table, column_mapping
+            )
+
+    @pyqtSlot(str, int, str)
+    @handle_exceptions(ErrorCategory.UI, ErrorSeverity.LOW)
+    def update_progress(self, task_name: str, percentage: int, message: str):
+        """Updates the progress bar and current task label."""
+        self.current_task_label.setText(f"{task_name}: {message}")
+        self.progress_bar.setValue(percentage)
+        logger.debug(f"Dashboard Progress: {task_name} - {percentage}% - {message}")
+
+    @pyqtSlot(str)
+    @handle_exceptions(ErrorCategory.UI, ErrorSeverity.LOW)
+    def update_current_task(self, task_description: str):
+        """Updates the current task description label."""
+        self.current_task_label.setText(task_description)
 
     @pyqtSlot(str, str)
-    def add_log_message(self, message, level="info"):
-        """Add log message with typing effect"""
-        self.log_console.add_message_with_typing(message, level)
+    @handle_exceptions(ErrorCategory.UI, ErrorSeverity.LOW)
+    def update_status(self, service_name: str, status: str):
+        """Updates specific status cards."""
+        if service_name == "SharePoint":
+            self.sp_status_card.set_status(status)
+        elif service_name == "Database":
+            self.db_status_card.set_status(status)
+        logger.debug(f"Dashboard Status Update: {service_name} to {status}")
 
-    @pyqtSlot(str)
-    def update_current_task(self, task_description):
-        """Update current task display"""
-        icon_map = {
-            "Idle": "💤",
-            "Connecting": "🔗",
-            "Downloading": "⬇️",
-            "Processing": "⚙️",
-            "Saving": "💾",
-            "Completed": "✅",
-        }
-
-        # Extract task type for icon
-        task_type = task_description.split()[0] if task_description else "Idle"
-        icon = icon_map.get(task_type, "⚙️")
-
-        # ตัดข้อความให้สั้นลงสำหรับ compact UI
-        short_task = (
-            task_description[:25] + "..."
-            if len(task_description) > 25
-            else task_description
-        )
-        self.current_task_label.setText(f"{icon} {short_task}")
-
-    # Status update methods
-    @pyqtSlot(str)
-    def update_sharepoint_status(self, status):
-        """Update SharePoint status"""
-        if "sharepoint" in self.status_cards:
-            self.status_cards["sharepoint"].set_status(status)
-
-    @pyqtSlot(str)
-    def update_database_status(self, status):
-        """Update database status"""
-        if "database" in self.status_cards:
-            self.status_cards["database"].set_status(status)
-
-    @pyqtSlot(str)
-    def update_last_sync_status(self, status):
-        """Update last sync status"""
-        if "last_sync" in self.status_cards:
-            self.status_cards["last_sync"].set_status(status)
-
-    @pyqtSlot(bool)
-    def set_auto_sync_enabled(self, enabled):
-        """Set auto sync checkbox state"""
-        self.auto_sync_check.setChecked(enabled)
-
-    def update_statistics(self, stats):
-        """Update statistics display"""
-        if stats:
-            records = stats.get("records_inserted", 0)
-            duration = stats.get("duration", 0)
-            errors = stats.get("errors", 0)
-
-            # แสดงใน current task แทน
-            stats_text = f"✅ Complete: {records} records in {duration:.1f}s"
-            if errors > 0:
-                stats_text = f"⚠️ Done: {records} records, {errors} errors"
-
-            self.current_task_label.setText(stats_text)
-
-    def clear_logs(self):
-        """Clear log console"""
-        self.log_console.clear()
-        self.add_log_message("🧹 Log console cleared", "info")
-
-    def clear_cache(self):
-        """Clear system cache"""
-        self.add_log_message("🧹 Clearing system cache...", "info")
-        try:
-            success = self.controller.clear_system_cache()
-            if success:
-                self.add_log_message("✅ Cache cleared successfully", "success")
-            else:
-                self.add_log_message("❌ Failed to clear cache", "error")
-        except Exception as e:
-            self.add_log_message(f"❌ Cache clear error: {str(e)}", "error")
-            logger.error(f"Cache clear error: {e}")
-
+    @handle_exceptions(ErrorCategory.UI, ErrorSeverity.CRITICAL)
     def cleanup(self):
-        """Cleanup resources"""
+        """Performs cleanup for the Dashboard."""
+        if self.cleanup_done:
+            logger.debug("Dashboard cleanup already performed, skipping.")
+            return
+
+        logger.info("Initiating Dashboard cleanup...")
+
+        # Explicitly clean up widgets that might have timers/threads
+        if hasattr(self, "log_console") and self.log_console:
+            self.log_console.cleanup()
+            self.log_console.deleteLater()
+            self.log_console = None
+            logger.debug("CyberLogConsole cleanup and deletion.")
+
+        # Disconnect signals
         try:
-            # Stop animations in status cards
-            for card in self.status_cards.values():
-                if hasattr(card, "cleanup_animations"):
-                    card.cleanup_animations()
-
-            # Stop typing timer in log console
-            if hasattr(self.log_console, "typing_timer"):
-                self.log_console.typing_timer.stop()
-
-            logger.info("🧹 Compact Dashboard cleanup completed")
+            # Check if signals are connected before disconnecting to avoid TypeError
+            if self.run_sync_button.receivers(self.run_sync_button.clicked) > 0:
+                self.run_sync_button.clicked.disconnect(self._on_run_sync_clicked)
+            if (
+                self.test_connection_button.receivers(
+                    self.test_connection_button.clicked
+                )
+                > 0
+            ):
+                self.test_connection_button.clicked.disconnect(
+                    self.test_connections_requested.emit
+                )
+            if self.clear_cache_button.receivers(self.clear_cache_button.clicked) > 0:
+                self.clear_cache_button.clicked.disconnect(
+                    self.clear_cache_requested.emit
+                )
+            if self.clear_logs_button.receivers(self.clear_logs_button.clicked) > 0:
+                # Disconnect log_console.clear only if log_console exists
+                if (
+                    self.log_console
+                    and self.clear_logs_button.receivers(self.clear_logs_button.clicked)
+                    > 0
+                ):
+                    try:
+                        self.clear_logs_button.clicked.disconnect(
+                            self.log_console.clear
+                        )
+                    except TypeError:  # Catch if it was already disconnected
+                        pass
+            if self.import_excel_button.receivers(self.import_excel_button.clicked) > 0:
+                self.import_excel_button.clicked.disconnect(
+                    self._on_import_excel_clicked
+                )
+            logger.info("Disconnected Dashboard signals.")
         except Exception as e:
-            logger.error(f"Dashboard cleanup error: {e}")
+            logger.warning(f"Error during Dashboard signal disconnection: {e}")
 
+        # Mark other significant widgets for deletion
+        if self.progress_bar:
+            self.progress_bar.deleteLater()
+            self.progress_bar = None
+            logger.debug("HolographicProgressBar deleted.")
+        if self.run_sync_button:
+            self.run_sync_button.deleteLater()
+            self.run_sync_button = None
+        if self.clear_logs_button:
+            self.clear_logs_button.deleteLater()
+            self.clear_logs_button = None
+        if self.clear_cache_button:
+            self.clear_cache_button.deleteLater()
+            self.clear_cache_button = None
+        if self.test_connection_button:
+            self.test_connection_button.deleteLater()
+            self.test_connection_button = None
+        if self.import_excel_button:
+            self.import_excel_button.deleteLater()
+            self.import_excel_button = None
+        if self.current_task_label:
+            self.current_task_label.deleteLater()
+            self.current_task_label = None
 
-# Compatibility alias
-UltraModernDashboard = ModernDashboard
+        if hasattr(self, "sp_status_card") and self.sp_status_card:
+            self.sp_status_card.deleteLater()
+        if hasattr(self, "db_status_card") and self.db_status_card:
+            self.db_status_card.deleteLater()
+        if hasattr(self, "last_sync_status_card") and self.last_sync_status_card:
+            self.last_sync_status_card.deleteLater()
+        if hasattr(self, "auto_sync_status_card") and self.auto_sync_status_card:
+            self.auto_sync_status_card.deleteLater()
+
+        # Delete remaining child widgets
+        for child in self.findChildren(QWidget):
+            if child is not self:
+                child.deleteLater()
+
+        self.cleanup_done = True
+        logger.info("Dashboard cleanup completed.")

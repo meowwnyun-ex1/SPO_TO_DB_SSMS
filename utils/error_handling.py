@@ -4,7 +4,6 @@ Centralized Error Handling System - ระบบจัดการ Error แบ�
 
 import logging
 import traceback
-import sys
 from functools import wraps
 from typing import Optional, Dict, Callable, Any
 from enum import Enum
@@ -27,6 +26,7 @@ class ErrorCategory(Enum):
     UI = "user_interface"
     SYNC = "synchronization"
     SYSTEM = "system"
+    DATA_IMPORT = "data_import"  # Added new category for data import errors
 
 
 @dataclass
@@ -49,98 +49,145 @@ class ErrorHandler(QObject):
         super().__init__()
         self.logger = logging.getLogger("error_handler")
         self.error_callbacks: Dict[ErrorCategory, list] = {}
-        self.recovery_strategies = {}
+        self.recovery_handlers: Dict[ErrorCategory, Callable] = {}
+        self.error_occurred.connect(
+            self._show_message_box
+        )  # Connect to default UI display
+        self.last_error_info: Optional[ErrorInfo] = None
+        self.logger.info("ErrorHandler initialized.")
 
-    def register_callback(self, category: ErrorCategory, callback: Callable):
-        """Register error callback for specific category"""
+    def handle_error(self, error_info: ErrorInfo):
+        """
+        Handles an error by logging it, calling registered callbacks,
+        and triggering a UI message.
+        """
+        self.last_error_info = error_info
+        log_method = {
+            ErrorSeverity.LOW: self.logger.info,
+            ErrorSeverity.MEDIUM: self.logger.warning,
+            ErrorSeverity.HIGH: self.logger.error,
+            ErrorSeverity.CRITICAL: self.logger.critical,
+        }.get(error_info.severity, self.logger.error)
+
+        log_method(
+            f"Error [{error_info.category.value.upper()}/{error_info.severity.value.upper()}]: {error_info.message}",
+            exc_info=error_info.exception,
+        )
+
+        # Call category-specific callbacks
+        for callback in self.error_callbacks.get(error_info.category, []):
+            try:
+                callback(error_info)
+            except Exception as e:
+                self.logger.error(
+                    f"Error in error callback for {error_info.category.value}: {e}",
+                    exc_info=True,
+                )
+
+        # Attempt recovery action
+        recovery_func = self.recovery_handlers.get(error_info.category)
+        if recovery_func:
+            self.logger.info(
+                f"Attempting recovery for {error_info.category.value} error."
+            )
+            try:
+                recovery_func(error_info)
+            except Exception as e:
+                self.logger.error(
+                    f"Recovery failed for {error_info.category.value}: {e}",
+                    exc_info=True,
+                )
+
+        self.error_occurred.emit(error_info)  # Emit signal for UI display
+
+    def _show_message_box(self, error_info: ErrorInfo):
+        """Default UI handler to display an error message box."""
+        # Avoid showing too many popups, especially for low severity or repeated errors
+        if (
+            error_info.severity in [ErrorSeverity.LOW, ErrorSeverity.MEDIUM]
+            and not error_info.user_message
+        ):
+            return  # Don't show popups for minor issues unless explicitly requested
+
+        msg_box = QMessageBox()
+        msg_box.setWindowTitle(
+            f"Error: {error_info.category.value.replace('_', ' ').title()}"
+        )
+
+        icon_map = {
+            ErrorSeverity.LOW: QMessageBox.Icon.Information,
+            ErrorSeverity.MEDIUM: QMessageBox.Icon.Warning,
+            ErrorSeverity.HIGH: QMessageBox.Icon.Critical,
+            ErrorSeverity.CRITICAL: QMessageBox.Icon.Critical,
+        }
+        msg_box.setIcon(icon_map.get(error_info.severity, QMessageBox.Icon.Critical))
+
+        display_message = error_info.user_message or "An unexpected error occurred."
+        if error_info.severity == ErrorSeverity.CRITICAL:
+            display_message += "\nThe application may not function correctly and might need to be restarted."
+
+        msg_box.setText(f"<b>{display_message}</b>")
+
+        details = f"Category: {error_info.category.value}\nSeverity: {error_info.severity.value}\n"
+        details += f"Message: {error_info.message}\n"
+        if error_info.context:
+            details += f"Context: {error_info.context}\n"
+        if error_info.exception:
+            details += f"Exception Type: {type(error_info.exception).__name__}\n"
+            details += "Traceback:\n" + "".join(
+                traceback.format_exception(
+                    type(error_info.exception),
+                    error_info.exception,
+                    error_info.exception.__traceback__,
+                )
+            )
+
+        msg_box.setDetailedText(details)
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg_box.exec()
+
+    def register_callback(
+        self, category: ErrorCategory, callback: Callable[[ErrorInfo], None]
+    ):
+        """Registers a callback function for a specific error category."""
         if category not in self.error_callbacks:
             self.error_callbacks[category] = []
         self.error_callbacks[category].append(callback)
+        self.logger.debug(f"Registered callback for category: {category.value}")
 
-    def register_recovery(self, category: ErrorCategory, strategy: Callable):
-        """Register recovery strategy"""
-        self.recovery_strategies[category] = strategy
+    def register_recovery(
+        self, category: ErrorCategory, recovery_func: Callable[[ErrorInfo], None]
+    ):
+        """Registers a recovery function for a specific error category."""
+        self.recovery_handlers[category] = recovery_func
+        self.logger.debug(f"Registered recovery handler for category: {category.value}")
 
-    def handle_error(self, error_info: ErrorInfo):
-        """Handle error with appropriate response"""
-        # Log error
-        self._log_error(error_info)
+    def get_last_error_info(self) -> Optional[ErrorInfo]:
+        """Returns the information of the last handled error."""
+        return self.last_error_info
 
-        # Emit signal
-        self.error_occurred.emit(error_info)
-
-        # Execute callbacks
-        if error_info.category in self.error_callbacks:
-            for callback in self.error_callbacks[error_info.category]:
-                try:
-                    callback(error_info)
-                except Exception as e:
-                    self.logger.error(f"Error callback failed: {e}")
-
-        # Show user notification if needed
-        if error_info.severity in [ErrorSeverity.HIGH, ErrorSeverity.CRITICAL]:
-            self._show_user_notification(error_info)
-
-        # Attempt recovery
-        self._attempt_recovery(error_info)
-
-    def _log_error(self, error_info: ErrorInfo):
-        """Log error with appropriate level"""
-        context_str = f" Context: {error_info.context}" if error_info.context else ""
-        log_msg = f"[{error_info.category.value}] {error_info.message}{context_str}"
-
-        if error_info.exception:
-            log_msg += f"\nException: {str(error_info.exception)}"
-            log_msg += f"\nTraceback: {traceback.format_exc()}"
-
-        if error_info.severity == ErrorSeverity.CRITICAL:
-            self.logger.critical(log_msg)
-        elif error_info.severity == ErrorSeverity.HIGH:
-            self.logger.error(log_msg)
-        elif error_info.severity == ErrorSeverity.MEDIUM:
-            self.logger.warning(log_msg)
-        else:
-            self.logger.info(log_msg)
-
-    def _show_user_notification(self, error_info: ErrorInfo):
-        """Show notification to user"""
-        title = f"{error_info.category.value.title()} Error"
-        message = error_info.user_message or error_info.message
-
-        if error_info.severity == ErrorSeverity.CRITICAL:
-            icon = QMessageBox.Icon.Critical
-        else:
-            icon = QMessageBox.Icon.Warning
-
-        msg_box = QMessageBox()
-        msg_box.setIcon(icon)
-        msg_box.setWindowTitle(title)
-        msg_box.setText(message)
-
-        if error_info.recovery_actions:
-            actions_text = "\n".join(
-                [f"• {action}" for action in error_info.recovery_actions]
+    def cleanup(self):
+        """Cleans up the error handler by disconnecting signals."""
+        try:
+            self.error_occurred.disconnect(self._show_message_box)
+            self.logger.info("ErrorHandler signals disconnected.")
+        except TypeError as e:
+            self.logger.debug(
+                f"Attempted to disconnect non-connected ErrorHandler signal: {e}"
             )
-            msg_box.setDetailedText(f"Suggested Actions:\n{actions_text}")
-
-        msg_box.exec()
-
-    def _attempt_recovery(self, error_info: ErrorInfo):
-        """Attempt automatic recovery"""
-        if error_info.category in self.recovery_strategies:
-            try:
-                strategy = self.recovery_strategies[error_info.category]
-                strategy(error_info)
-                self.logger.info(f"Recovery attempted for {error_info.category.value}")
-            except Exception as e:
-                self.logger.error(f"Recovery failed: {e}")
+        except Exception as e:
+            self.logger.warning(f"Error during ErrorHandler signal disconnection: {e}")
+        self.error_callbacks.clear()
+        self.recovery_handlers.clear()
+        self.logger.info("ErrorHandler cleanup completed.")
 
 
-# Global error handler instance
-_error_handler = None
+# Global instance of ErrorHandler (Singleton pattern)
+_error_handler: Optional[ErrorHandler] = None
 
 
 def get_error_handler() -> ErrorHandler:
+    """Returns the singleton instance of the ErrorHandler."""
     global _error_handler
     if _error_handler is None:
         _error_handler = ErrorHandler()
@@ -148,156 +195,71 @@ def get_error_handler() -> ErrorHandler:
 
 
 def handle_exceptions(
-    category: ErrorCategory,
-    severity: ErrorSeverity = ErrorSeverity.MEDIUM,
-    user_message: str = None,
-    recovery_actions: list = None,
+    category: ErrorCategory, severity: ErrorSeverity = ErrorSeverity.HIGH
 ):
-    """Decorator for automatic exception handling"""
+    """
+    Decorator for handling exceptions in functions.
+    Catches exceptions, logs them, and triggers the central error handler.
+    """
 
-    def decorator(func):
+    def decorator(func: Callable) -> Callable:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args, **kwargs) -> Any:
             try:
                 return func(*args, **kwargs)
             except Exception as e:
                 error_info = ErrorInfo(
                     category=category,
                     severity=severity,
-                    message=f"Error in {func.__name__}: {str(e)}",
+                    message=f"An error occurred in {func.__name__}: {e}",
                     exception=e,
-                    context={"function": func.__name__, "args": str(args)[:100]},
-                    user_message=user_message,
-                    recovery_actions=recovery_actions,
+                    context={"function": func.__name__},
                 )
                 get_error_handler().handle_error(error_info)
-
-                # Return appropriate default value based on function name/return type
-                if func.__name__.startswith("test_"):
-                    return False
-                elif func.__name__.startswith("get_") or func.__name__.startswith(
-                    "fetch_"
-                ):
-                    return []
-                return None
+                # Depending on severity, you might re-raise or return a default value
+                if severity == ErrorSeverity.CRITICAL:
+                    raise  # Re-raise critical errors to stop execution
+                return None  # Return None for non-critical errors or specific default_return if defined
 
         return wrapper
 
     return decorator
 
 
-class ConnectionErrorHandler:
-    """Specialized handler for connection errors"""
+# Example recovery functions (can be expanded)
+def connection_recovery(error_info: ErrorInfo):
+    """Attempts to recover from connection errors."""
+    logger = logging.getLogger("recovery")
+    logger.info("Attempting to reset connections for recovery...")
+    # In a real app, this might involve:
+    # - Retrying connection attempts
+    # - Clearing cached connection objects
+    # - Prompting user to check network
+    pass
 
-    @staticmethod
-    @handle_exceptions(
-        ErrorCategory.CONNECTION,
-        ErrorSeverity.HIGH,
-        "Connection failed. Please check your network settings.",
-        ["Check internet connection", "Verify server settings", "Try again later"],
+
+def config_recovery(error_info: ErrorInfo):
+    """Attempts to recover from configuration errors."""
+    logger = logging.getLogger("recovery")
+    logger.warning(
+        "Configuration error detected. Suggesting manual review of config files."
     )
-    def handle_sharepoint_error(func):
-        return func
+    # In a real app, this might involve:
+    # - Reloading config
+    # - Prompting user to fix invalid entries
+    pass
 
-    @staticmethod
-    @handle_exceptions(
-        ErrorCategory.CONNECTION,
-        ErrorSeverity.HIGH,
-        "Database connection failed. Please check configuration.",
-        [
-            "Verify database settings",
-            "Check server availability",
-            "Test network connectivity",
-        ],
+
+def sync_recovery(error_info: ErrorInfo):
+    """Attempts to recover from synchronization errors."""
+    logger = logging.getLogger("recovery")
+    logger.warning(
+        "Sync error detected. Consider running a full sync or checking data integrity."
     )
-    def handle_database_error(func):
-        return func
-
-
-class ConfigErrorHandler:
-    """Specialized handler for configuration errors"""
-
-    @staticmethod
-    @handle_exceptions(
-        ErrorCategory.CONFIG,
-        ErrorSeverity.MEDIUM,
-        "Configuration error. Please check your settings.",
-        [
-            "Review configuration values",
-            "Check required fields",
-            "Reset to defaults if needed",
-        ],
-    )
-    def handle_config_error(func):
-        return func
-
-
-class SyncErrorHandler:
-    """Specialized handler for sync errors"""
-
-    @staticmethod
-    @handle_exceptions(
-        ErrorCategory.SYNC,
-        ErrorSeverity.HIGH,
-        "Synchronization failed. Data may be incomplete.",
-        [
-            "Check source and target connections",
-            "Verify data integrity",
-            "Retry synchronization",
-        ],
-    )
-    def handle_sync_error(func):
-        return func
-
-
-def setup_global_exception_handler():
-    """Setup global exception handler for unhandled exceptions"""
-
-    def handle_exception(exc_type, exc_value, exc_traceback):
-        if issubclass(exc_type, KeyboardInterrupt):
-            sys.__excepthook__(exc_type, exc_value, exc_traceback)
-            return
-
-        error_info = ErrorInfo(
-            category=ErrorCategory.SYSTEM,
-            severity=ErrorSeverity.CRITICAL,
-            message=f"Unhandled exception: {exc_type.__name__}: {str(exc_value)}",
-            exception=exc_value,
-            user_message="An unexpected error occurred. The application may need to restart.",
-            recovery_actions=[
-                "Save your work",
-                "Restart the application",
-                "Report this issue",
-            ],
-        )
-
-        get_error_handler().handle_error(error_info)
-
-    sys.excepthook = handle_exception
-
-
-def create_error_recovery_strategies():
-    """Create default recovery strategies"""
-    handler = get_error_handler()
-
-    def connection_recovery(error_info: ErrorInfo):
-        """Recovery for connection errors"""
-        logging.info("Attempting connection recovery...")
-        # Could implement reconnection logic here
-
-    def config_recovery(error_info: ErrorInfo):
-        """Recovery for config errors"""
-        logging.info("Attempting config recovery...")
-        # Could implement config reset/reload here
-
-    def sync_recovery(error_info: ErrorInfo):
-        """Recovery for sync errors"""
-        logging.info("Attempting sync recovery...")
-        # Could implement partial sync retry here
-
-    handler.register_recovery(ErrorCategory.CONNECTION, connection_recovery)
-    handler.register_recovery(ErrorCategory.CONFIG, config_recovery)
-    handler.register_recovery(ErrorCategory.SYNC, sync_recovery)
+    # In a real app, this might involve:
+    # - Retrying specific failed items
+    # - Rolling back partial changes
+    pass
 
 
 # Convenience functions for common error patterns
@@ -338,6 +300,10 @@ def safe_execute(
 # Initialize error handling system
 def init_error_handling():
     """Initialize the error handling system"""
-    setup_global_exception_handler()
-    create_error_recovery_strategies()
-    logging.info("Error handling system initialized")
+    handler = get_error_handler()
+    # Register default recovery handlers (can be overridden or extended)
+    handler.register_recovery(ErrorCategory.CONNECTION, connection_recovery)
+    handler.register_recovery(ErrorCategory.CONFIG, config_recovery)
+    handler.register_recovery(ErrorCategory.SYNC, sync_recovery)
+    # Register new DATA_IMPORT recovery if needed
+    # handler.register_recovery(ErrorCategory.DATA_IMPORT, data_import_recovery)

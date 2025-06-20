@@ -7,213 +7,210 @@ import os
 import shutil
 import glob
 from pathlib import Path
+import logging
+import importlib.util  # Added for robust dependency checking
+
+# Configure basic logging for the script itself
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+logger = logging.getLogger(__name__)
 
 
 def cleanup_pycache():
     """ล้าง __pycache__ ทั้งหมด"""
-    print("🧹 Cleaning __pycache__ directories...")
+    logger.info("🧹 Cleaning __pycache__ directories...")
 
     for root, dirs, files in os.walk("."):
         if "__pycache__" in dirs:
             cache_path = os.path.join(root, "__pycache__")
             try:
                 shutil.rmtree(cache_path)
-                print(f"   ✅ Removed: {cache_path}")
+                logger.info(f"   ✅ Removed: {cache_path}")
+            except OSError as e:
+                logger.error(f"   ❌ Failed to remove {cache_path}: {e}")
             except Exception as e:
-                print(f"   ❌ Failed to remove {cache_path}: {e}")
+                logger.error(f"   ❌ Unexpected error removing {cache_path}: {e}")
 
 
 def cleanup_pyc_files():
     """ล้างไฟล์ .pyc ทั้งหมด"""
-    print("🧹 Cleaning .pyc files...")
+    logger.info("🧹 Cleaning .pyc files...")
 
     pyc_files = glob.glob("**/*.pyc", recursive=True)
     for pyc_file in pyc_files:
         try:
             os.remove(pyc_file)
-            print(f"   ✅ Removed: {pyc_file}")
+            logger.info(f"   ✅ Removed: {pyc_file}")
+        except OSError as e:
+            logger.error(f"   ❌ Failed to remove {pyc_file}: {e}")
         except Exception as e:
-            print(f"   ❌ Failed to remove {pyc_file}: {e}")
+            logger.error(f"   ❌ Unexpected error removing {pyc_file}: {e}")
 
 
 def cleanup_logs():
     """ล้างไฟล์ log เก่า"""
-    print("🧹 Cleaning old log files...")
+    logger.info("🧹 Cleaning old log files...")
 
     log_patterns = ["logs/**/*.log", "*.log"]
-
+    cleaned_count = 0
     for pattern in log_patterns:
         for log_file in glob.glob(pattern, recursive=True):
-            try:
-                # แก้: ไม่ลบ log ที่กำลังใช้งาน
-                if not _is_file_in_use(log_file):
+            if Path(log_file).parent.name == "logs" or Path(log_file).name.endswith(
+                ".log"
+            ):  # Ensure it's explicitly a log file
+                try:
                     os.remove(log_file)
-                    print(f"   ✅ Removed log: {log_file}")
-                else:
-                    print(f"   ⏭️ Skipped (in use): {log_file}")
-            except Exception as e:
-                print(f"   ❌ Failed to remove {log_file}: {e}")
+                    logger.info(f"   ✅ Removed: {log_file}")
+                    cleaned_count += 1
+                except OSError as e:
+                    logger.error(f"   ❌ Failed to remove {log_file}: {e}")
+                except Exception as e:
+                    logger.error(f"   ❌ Unexpected error removing {log_file}: {e}")
+    if cleaned_count == 0:
+        logger.info("   No log files found to clean.")
 
 
 def cleanup_temp_files():
-    """ล้างไฟล์ temporary"""
-    print("🧹 Cleaning temporary files...")
+    """ล้างไฟล์ temp เก่า"""
+    logger.info("🧹 Cleaning temporary files...")
 
-    temp_patterns = ["**/*.tmp", "**/*.temp", "**/*~", "**/*.bak"]
-
+    temp_patterns = [
+        "**/*.tmp",
+        "**/*.temp",
+        "**/temp/**",
+        "~*.xlsx",
+        "~*.docx",
+        "*.bak",
+        "*~",
+    ]
+    cleaned_count = 0
     for pattern in temp_patterns:
         for temp_file in glob.glob(pattern, recursive=True):
             try:
-                if os.path.isfile(temp_file):
+                if Path(
+                    temp_file
+                ).is_file():  # Ensure it's a file, not a directory matching "temp/**"
                     os.remove(temp_file)
-                    print(f"   ✅ Removed temp: {temp_file}")
+                    logger.info(f"   ✅ Removed: {temp_file}")
+                    cleaned_count += 1
+            except OSError as e:
+                logger.error(f"   ❌ Failed to remove {temp_file}: {e}")
             except Exception as e:
-                print(f"   ❌ Failed to remove {temp_file}: {e}")
-
-
-def _is_file_in_use(file_path):
-    """ตรวจสอบว่าไฟล์กำลังถูกใช้งานหรือไม่"""
-    try:
-        # พยายามเปิดไฟล์ในโหมด exclusive
-        with open(file_path, "r+b"):
-            return False
-    except (OSError, IOError):
-        return True
+                logger.error(f"   ❌ Unexpected error removing {temp_file}: {e}")
+    if cleaned_count == 0:
+        logger.info("   No temporary files found to clean.")
 
 
 def check_config_files():
-    """ตรวจสอบไฟล์ config"""
-    print("⚙️ Checking configuration files...")
-
-    config_files = ["config.json", ".env"]
-
-    for config_file in config_files:
-        if os.path.exists(config_file):
-            print(f"   ✅ Found: {config_file}")
+    """ตรวจสอบว่า config files ที่จำเป็นมีอยู่หรือไม่"""
+    logger.info("⚙️ Checking essential configuration files...")
+    required_configs = ["config.json", ".env"]
+    found_all = True
+    for config_file in required_configs:
+        if not os.path.exists(config_file):
+            logger.warning(f"   ⚠️ Missing: {config_file}. Consider creating one.")
+            found_all = False
         else:
-            print(f"   ⚠️ Missing: {config_file}")
+            logger.info(f"   ✅ Found: {config_file}")
+    if found_all:
+        logger.info("   All essential configuration files are present.")
 
 
 def create_missing_directories():
-    """สร้างโฟลเดอร์ที่ขาดหายไป"""
-    print("📁 Creating missing directories...")
-
-    required_dirs = [
+    """สร้าง directories ที่จำเป็นถ้าไม่มี"""
+    logger.info("📁 Creating missing essential directories...")
+    directories = [
         "logs",
-        "logs/neural",
-        "logs/quantum",
+        "resources/images",
+        "resources/audio",
+        "config",
         "data",
-        "assets",
-        "ui/widgets",
-        "utils",
-    ]
-
-    for dir_path in required_dirs:
-        try:
-            Path(dir_path).mkdir(parents=True, exist_ok=True)
-            print(f"   ✅ Directory ready: {dir_path}")
-        except Exception as e:
-            print(f"   ❌ Failed to create {dir_path}: {e}")
-
-
-def check_dependencies():
-    """ตรวจสอบ dependencies"""
-    print("📦 Checking dependencies...")
-
-    try:
-        # ใช้ importlib.metadata แทน pkg_resources (Python 3.8+)
-        try:
-            from importlib.metadata import distributions
-
-            installed_packages = {
-                dist.metadata["name"].lower().replace("-", "_")
-                for dist in distributions()
-            }
-        except ImportError:
-            # Fallback สำหรับ Python เก่า
+        "reports",
+    ]  # Added reports, data
+    for directory in directories:
+        if not os.path.exists(directory):
             try:
-                import pkg_resources
-
-                installed_packages = {
-                    pkg.key.replace("-", "_") for pkg in pkg_resources.working_set
-                }
-            except ImportError:
-                print(
-                    "   ⚠️ Cannot check dependencies - missing importlib.metadata and pkg_resources"
-                )
-                return
-
-        if os.path.exists("requirements.txt"):
-            with open("requirements.txt", "r") as f:
-                requirements = f.read().splitlines()
-
-            missing_packages = []
-            found_packages = []
-
-            for req in requirements:
-                if req and not req.startswith("#"):
-                    # แยกชื่อ package จาก version specifier
-                    pkg_name = (
-                        req.split(">=")[0]
-                        .split("==")[0]
-                        .split("<")[0]
-                        .split(">")[0]
-                        .strip()
-                        .lower()
-                        .replace("-", "_")
-                    )
-
-                    if pkg_name in installed_packages:
-                        found_packages.append(pkg_name)
-                        print(f"   ✅ {pkg_name}")
-                    else:
-                        missing_packages.append(pkg_name)
-                        print(f"   ❌ Missing: {pkg_name}")
-
-            print(
-                f"\n   📊 Summary: {len(found_packages)} found, {len(missing_packages)} missing"
-            )
-
-            if missing_packages:
-                print(
-                    f"   💡 To install missing packages: pip install {' '.join(missing_packages)}"
-                )
+                os.makedirs(directory)
+                logger.info(f"   ✅ Created: {directory}")
+            except OSError as e:
+                logger.error(f"   ❌ Failed to create {directory}: {e}")
+            except Exception as e:
+                logger.error(f"   ❌ Unexpected error creating {directory}: {e}")
         else:
-            print("   ⚠️ requirements.txt not found")
-
-    except Exception as e:
-        print(f"   ⚠️ Could not check dependencies: {e}")
+            logger.info(f"   ☑️ Exists: {directory}")
 
 
 def create_init_files():
-    """สร้างไฟล์ __init__.py ที่ขาดหายไป"""
-    print("📄 Creating missing __init__.py files...")
-
+    """สร้าง __init__.py files ใน package directories"""
+    logger.info("📦 Creating missing __init__.py files...")
+    # These paths are relative to the project root
     directories = [
-        "ui",
-        "ui/components",
-        "ui/widgets",
-        "ui/styles",
         "controller",
         "connectors",
+        "ui",
+        "ui/components",
+        "ui/styles",
+        "ui/widgets",
         "utils",
     ]
 
     for directory in directories:
-        if os.path.exists(directory):
-            init_file = os.path.join(directory, "__init__.py")
-            if not os.path.exists(init_file):
+        # Ensure the directory actually exists before creating __init__.py
+        full_dir_path = Path(os.getcwd()) / directory
+        if full_dir_path.exists() and full_dir_path.is_dir():
+            init_file = full_dir_path / "__init__.py"
+            if not init_file.exists():
                 try:
                     with open(init_file, "w") as f:
                         f.write(f"# {directory}/__init__.py\n")
-                    print(f"   ✅ Created: {init_file}")
+                    logger.info(f"   ✅ Created: {init_file}")
+                except OSError as e:
+                    logger.error(f"   ❌ Failed to create {init_file}: {e}")
                 except Exception as e:
-                    print(f"   ❌ Failed to create {init_file}: {e}")
+                    logger.error(f"   ❌ Unexpected error creating {init_file}: {e}")
+            else:
+                logger.info(f"   ☑️ Exists: {init_file}")
+        else:
+            logger.debug(
+                f"   Directory does not exist, skipping __init__.py: {directory}"
+            )
+
+
+def check_dependencies():
+    """ตรวจสอบว่า dependencies ที่จำเป็นติดตั้งอยู่หรือไม่"""
+    logger.info("➕ Checking Python dependencies...")
+    # List of key packages to check (use the actual module name for importlib check)
+    required_packages = {
+        "PyQt6": "PyQt6",
+        "pandas": "pandas",
+        "requests": "requests",
+        "sqlalchemy": "sqlalchemy",
+        "python-dotenv": "dotenv",  # The actual module imported by python-dotenv is 'dotenv'
+        "pyodbc": "pyodbc",
+        "openpyxl": "openpyxl",
+        "xlrd": "xlrd",
+    }
+    missing_packages = []
+
+    for pkg_name, module_name in required_packages.items():
+        if importlib.util.find_spec(module_name) is None:
+            missing_packages.append(pkg_name)
+            logger.warning(f"   ⚠️ Missing: {pkg_name} (module: {module_name})")
+        else:
+            logger.info(f"   ✅ Found: {pkg_name}")
+
+    if missing_packages:
+        logger.warning(
+            f"   Some dependencies are missing. Please install them using pip:\n   pip install {' '.join(missing_packages)}"
+        )
+        return False
+    else:
+        logger.info("   All essential Python dependencies are installed.")
+        return True
 
 
 def main():
     """Main cleanup function"""
-    print("🚀 Starting project cleanup...")
+    logger.info("🚀 Starting project cleanup...")
     print("=" * 50)
 
     # Basic cleanup
@@ -243,14 +240,7 @@ def main():
     print()
 
     print("=" * 50)
-    print("✅ Project cleanup completed!")
-    print()
-    print("📋 Next steps:")
-    print("   1. Run: python main.py")
-    print("   2. Configure SharePoint settings")
-    print("   3. Configure Database settings")
-    print("   4. Test connections")
-    print("   5. Run your first sync")
+    logger.info("✅ Project cleanup finished.")
 
 
 if __name__ == "__main__":

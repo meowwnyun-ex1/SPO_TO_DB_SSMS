@@ -1,271 +1,332 @@
+# connectors/sharepoint_connector.py - Enhanced with Upload/Update Capability and Robustness
 import requests
-import pandas as pd
-import time
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from utils.auth_helper import SharePointAuth
 from utils.error_handling import handle_exceptions, ErrorCategory, ErrorSeverity
+from utils.config_manager import Config  # For type hinting
 import logging
 
 logger = logging.getLogger(__name__)
 
 
 class SharePointConnector:
-    """SharePoint Connector แก้ field mapping"""
+    """
+    Manages connections and operations with SharePoint Online (Microsoft 365).
+    Includes methods for testing connection, reading list items, and adding/updating items.
+    """
 
-    def __init__(self, config):
+    def __init__(self, config: Config):
         self.config = config
         self.auth = SharePointAuth(config)
         self.session = requests.Session()
-        self.session.timeout = getattr(config, "connection_timeout", 30)
+        # Set a default timeout for all requests using this session
+        self.session.timeout = getattr(
+            config, "connection_timeout", 30
+        )  # Default to 30 seconds
+        logger.info("SharePointConnector initialized.")
 
-    @handle_exceptions(ErrorCategory.CONNECTION, ErrorSeverity.HIGH)
+    @handle_exceptions(
+        ErrorCategory.CONNECTION, ErrorSeverity.HIGH
+    )  # Removed user_message argument
     def test_connection(self) -> bool:
-        """ทดสอบการเชื่อมต่อ SharePoint"""
-        token = self.auth.get_access_token()
-        if not token:
+        """Tests the SharePoint connection by attempting to get web properties."""
+        try:
+            token = self.auth.get_access_token()
+            if not token:
+                logger.error("Failed to get SharePoint access token.")
+                return False
+
+            # Use site_url from config, prioritizing sharepoint_url if available
+            site_url = self.config.sharepoint_url or self.config.sharepoint_site
+            if not site_url:
+                logger.error("SharePoint site URL is not configured.")
+                return False
+
+            url = f"{site_url}/_api/web"
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/json;odata=verbose",
+            }
+
+            response = self.session.get(url, headers=headers)
+            response.raise_for_status()  # Raises HTTPError for bad responses (4xx or 5xx)
+            logger.info("Successfully connected to SharePoint site.")
+            return True
+        except requests.exceptions.RequestException as e:
+            logger.error(f"SharePoint connection test failed: {e}", exc_info=True)
+            return False
+        except Exception as e:
+            logger.critical(
+                f"An unexpected error occurred during SharePoint connection test: {e}",
+                exc_info=True,
+            )
             return False
 
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/json;odata=verbose",
-        }
+    @handle_exceptions(ErrorCategory.DATA, ErrorSeverity.MEDIUM)
+    def read_list_items(
+        self, list_name: str, select_fields: List[str] = None
+    ) -> Optional[List[Dict[str, Any]]]:
+        """
+        Reads all items from a specified SharePoint list.
+        Optionally selects specific fields.
+        """
+        logger.info(f"Attempting to read items from SharePoint list: '{list_name}'")
+        try:
+            token = self.auth.get_access_token()
+            if not token:
+                logger.error(
+                    "Failed to get SharePoint access token for reading list items."
+                )
+                return None
 
-        # แก้: ใช้ field ที่ถูกต้อง
-        site_url = self.config.sharepoint_url or self.config.sharepoint_site
-        if not site_url:
-            logger.error("SharePoint URL not configured")
-            return False
+            site_url = self.config.sharepoint_url or self.config.sharepoint_site
+            if not site_url:
+                logger.error(
+                    "SharePoint site URL is not configured for reading list items."
+                )
+                return None
 
-        url = f"{site_url}/_api/web"
-        response = self.session.get(url, headers=headers)
-        return response.status_code == 200
+            # Construct URL for list items, with optional field selection
+            url = f"{site_url}/_api/web/lists/GetByTitle('{list_name}')/items"
+            if select_fields:
+                select_query = ",".join(select_fields)
+                url += f"?$select={select_query}"
 
-    @handle_exceptions(ErrorCategory.CONNECTION, ErrorSeverity.MEDIUM)
-    def get_sites(self) -> List[Dict]:
-        """ดึงรายการ SharePoint sites"""
-        token = self.auth.get_access_token()
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/json;odata=verbose",
-        }
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/json;odata=verbose",
+            }
 
-        site_url = self.config.sharepoint_url or self.config.sharepoint_site
-        if not site_url:
-            return []
+            all_items = []
+            while url:
+                response = self.session.get(url, headers=headers)
+                response.raise_for_status()
+                data = response.json().get("d", {})
+                items = data.get("results", [])
+                all_items.extend(items)
 
-        base_url = "/".join(site_url.split("/")[:3])
-        url = f"{base_url}/_api/web/webs"
+                # Check for next page (pagination)
+                url = data.get("__next")  # OData for next page URL
 
-        response = self.session.get(url, headers=headers)
-        response.raise_for_status()
-
-        data = response.json()
-        sites = data.get("d", {}).get("results", [])
-        logger.info(f"Retrieved {len(sites)} SharePoint sites")
-        return sites
-
-    @handle_exceptions(ErrorCategory.CONNECTION, ErrorSeverity.MEDIUM)
-    def get_lists(self, site_url: Optional[str] = None) -> List[Dict]:
-        """ดึงรายการ lists จาก SharePoint site"""
-        token = self.auth.get_access_token()
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/json;odata=verbose",
-        }
-
-        target_url = (
-            site_url or self.config.sharepoint_url or self.config.sharepoint_site
-        )
-        if not target_url:
-            return []
-
-        url = f"{target_url}/_api/web/lists"
-
-        response = self.session.get(url, headers=headers)
-        response.raise_for_status()
-
-        data = response.json()
-        lists = data.get("d", {}).get("results", [])
-
-        # Filter out hidden and system lists
-        filtered_lists = [
-            lst
-            for lst in lists
-            if not lst.get("Hidden", True) and lst.get("BaseType") != 1
-        ]
-
-        logger.info(f"Retrieved {len(filtered_lists)} SharePoint lists")
-        return filtered_lists
-
-    @handle_exceptions(ErrorCategory.CONNECTION, ErrorSeverity.MEDIUM)
-    def get_list_fields(self, list_name: str) -> List[Dict]:
-        """ดึง fields/columns จาก SharePoint list"""
-        token = self.auth.get_access_token()
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/json;odata=verbose",
-        }
-
-        site_url = self.config.sharepoint_url or self.config.sharepoint_site
-        url = f"{site_url}/_api/web/lists/GetByTitle('{list_name}')/fields"
-        response = self.session.get(url, headers=headers)
-        response.raise_for_status()
-
-        data = response.json()
-        fields = data.get("d", {}).get("results", [])
-
-        # Filter user fields
-        user_fields = [
-            field
-            for field in fields
-            if not field.get("Hidden", True)
-            and not field.get("ReadOnlyField", False)
-            and field.get("FieldTypeKind") not in [12, 13, 17, 18, 19]
-        ]
-
-        logger.info(f"Retrieved {len(user_fields)} fields from list '{list_name}'")
-        return user_fields
-
-    @handle_exceptions(ErrorCategory.DATA, ErrorSeverity.HIGH)
-    def fetch_data(self, batch_size: Optional[int] = None) -> Optional[pd.DataFrame]:
-        """ดึงข้อมูลจาก SharePoint list"""
-        token = self.auth.get_access_token()
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/json;odata=verbose",
-        }
-
-        site_url = self.config.sharepoint_url or self.config.sharepoint_site
-        list_name = self.config.sharepoint_list
-
-        if not site_url or not list_name:
-            logger.error("SharePoint URL or List name not configured")
+            logger.info(
+                f"Successfully retrieved {len(all_items)} items from SharePoint list '{list_name}'."
+            )
+            return all_items
+        except requests.exceptions.RequestException as e:
+            logger.error(
+                f"Failed to read SharePoint list '{list_name}': {e}", exc_info=True
+            )
+            return None
+        except Exception as e:
+            logger.critical(
+                f"An unexpected error occurred while reading SharePoint list '{list_name}': {e}",
+                exc_info=True,
+            )
             return None
 
-        base_url = f"{site_url}/_api/web/lists/GetByTitle('{list_name}')/items"
+    @handle_exceptions(ErrorCategory.DATA, ErrorSeverity.MEDIUM)
+    def add_list_item(self, list_name: str, item_data: Dict[str, Any]) -> bool:
+        """Adds a new item to a SharePoint list."""
+        logger.info(f"Attempting to add item to SharePoint list: '{list_name}'")
+        try:
+            token = self.auth.get_access_token()
+            if not token:
+                logger.error(
+                    "Failed to get SharePoint access token for adding list item."
+                )
+                return False
 
-        # Add query parameters
-        query_params = []
-        if batch_size:
-            query_params.append(f"$top={batch_size}")
+            site_url = self.config.sharepoint_url or self.config.sharepoint_site
+            if not site_url:
+                logger.error(
+                    "SharePoint site URL is not configured for adding list item."
+                )
+                return False
 
-        if query_params:
-            base_url += "?" + "&".join(query_params)
+            # Get the ListItemEntityTypeFullName which is required for adding items
+            entity_type = self._get_list_entity_type(list_name)
+            if not entity_type:
+                logger.error(
+                    f"Could not determine entity type for list '{list_name}'. Cannot add item."
+                )
+                return False
 
-        all_items = []
-        url = base_url
-        page_count = 0
+            # Add the required '__metadata' for the entity type
+            payload = {"__metadata": {"type": entity_type}}
+            payload.update(item_data)  # Merge item data with metadata
 
-        logger.info(f"Starting data fetch from list '{list_name}'")
+            url = f"{site_url}/_api/web/lists/GetByTitle('{list_name}')/items"
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/json;odata=verbose",
+                "Content-Type": "application/json;odata=verbose",
+                "X-RequestDigest": self._get_request_digest(
+                    site_url, token
+                ),  # Important for POST/PUT/DELETE
+            }
+            if not headers["X-RequestDigest"]:
+                logger.error("Failed to get X-RequestDigest. Cannot add item.")
+                return False
 
-        while url:
-            page_count += 1
-            logger.debug(f"Fetching page {page_count}")
+            response = self.session.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+            logger.info(f"Successfully added item to SharePoint list '{list_name}'.")
+            return True
+        except requests.exceptions.RequestException as e:
+            logger.error(
+                f"Failed to add item to SharePoint list '{list_name}': {e}",
+                exc_info=True,
+            )
+            return False
+        except Exception as e:
+            logger.critical(
+                f"An unexpected error occurred while adding item to SharePoint list '{list_name}': {e}",
+                exc_info=True,
+            )
+            return False
+
+    @handle_exceptions(ErrorCategory.DATA, ErrorSeverity.MEDIUM)
+    def update_list_item(
+        self, list_name: str, item_id: int, item_data: Dict[str, Any]
+    ) -> bool:
+        """Updates an existing item in a SharePoint list."""
+        logger.info(
+            f"Attempting to update item ID {item_id} in SharePoint list: '{list_name}'"
+        )
+        try:
+            token = self.auth.get_access_token()
+            if not token:
+                logger.error(
+                    "Failed to get SharePoint access token for updating list item."
+                )
+                return False
+
+            site_url = self.config.sharepoint_url or self.config.sharepoint_site
+            if not site_url:
+                logger.error(
+                    "SharePoint site URL is not configured for updating list item."
+                )
+                return False
+
+            # Get the ListItemEntityTypeFullName which is required for updating items
+            entity_type = self._get_list_entity_type(list_name)
+            if not entity_type:
+                logger.error(
+                    f"Could not determine entity type for list '{list_name}'. Cannot update item."
+                )
+                return False
+
+            # Add the required '__metadata' for the entity type
+            payload = {"__metadata": {"type": entity_type}}
+            payload.update(item_data)  # Merge item data with metadata
+
+            url = (
+                f"{site_url}/_api/web/lists/GetByTitle('{list_name}')/items({item_id})"
+            )
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/json;odata=verbose",
+                "Content-Type": "application/json;odata=verbose",
+                "X-HTTP-Method": "MERGE",  # Use MERGE for update
+                "If-Match": "*",  # Use '*' to indicate any version of the item
+                "X-RequestDigest": self._get_request_digest(site_url, token),
+            }
+            if not headers["X-RequestDigest"]:
+                logger.error("Failed to get X-RequestDigest. Cannot update item.")
+                return False
+
+            response = self.session.post(url, headers=headers, json=payload)
+            response.raise_for_status()  # 204 No Content for successful update
+            logger.info(
+                f"Successfully updated item ID {item_id} in SharePoint list '{list_name}'."
+            )
+            return True
+        except requests.exceptions.RequestException as e:
+            logger.error(
+                f"Failed to update item ID {item_id} in SharePoint list '{list_name}': {e}",
+                exc_info=True,
+            )
+            return False
+        except Exception as e:
+            logger.critical(
+                f"An unexpected error occurred while updating item ID {item_id} in SharePoint list '{list_name}': {e}",
+                exc_info=True,
+            )
+            return False
+
+    @handle_exceptions(ErrorCategory.CONNECTION, ErrorSeverity.LOW)
+    def _get_request_digest(self, site_url: str, token: str) -> Optional[str]:
+        """Gets the X-RequestDigest for write operations."""
+        logger.debug("Getting X-RequestDigest...")
+        try:
+            url = f"{site_url}/_api/contextinfo"
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/json;odata=verbose",
+            }
+            response = self.session.post(url, headers=headers)
+            response.raise_for_status()
+            data = response.json().get("d", {}).get("GetContextWebInformation", {})
+            request_digest = data.get("FormDigestValue")
+            if request_digest:
+                logger.debug("Successfully obtained X-RequestDigest.")
+            else:
+                logger.warning("FormDigestValue not found in contextinfo response.")
+            return request_digest
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to get X-RequestDigest: {e}", exc_info=True)
+            return None
+        except Exception as e:
+            logger.error(
+                f"An unexpected error occurred getting X-RequestDigest: {e}",
+                exc_info=True,
+            )
+            return None
+
+    @handle_exceptions(ErrorCategory.CONNECTION, ErrorSeverity.LOW)
+    def _get_list_entity_type(self, list_name: str) -> Optional[str]:
+        """Gets the ListItemEntityTypeFullName for a given list."""
+        logger.debug(f"Getting entity type for list: '{list_name}'")
+        try:
+            token = self.auth.get_access_token()
+            if not token:
+                logger.error(
+                    "Failed to get SharePoint access token for entity type lookup."
+                )
+                return None
+
+            site_url = self.config.sharepoint_url or self.config.sharepoint_site
+            url = f"{site_url}/_api/web/lists/GetByTitle('{list_name}')?$select=ListItemEntityTypeFullName"
+
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/json;odata=verbose",
+            }
 
             response = self.session.get(url, headers=headers)
             response.raise_for_status()
-
-            data = response.json()
-            items = data.get("d", {}).get("results", [])
-
-            if not items:
-                break
-
-            all_items.extend(items)
-            logger.info(
-                f"Page {page_count}: {len(items)} items (Total: {len(all_items)})"
+            data = response.json().get("d", {}).get("ListItemEntityTypeFullName")
+            if data:
+                logger.debug(f"Retrieved entity type for '{list_name}': {data}")
+            else:
+                logger.warning(
+                    f"ListItemEntityTypeFullName not found for list '{list_name}'. Ensure list name is correct and accessible."
+                )
+            return data
+        except requests.exceptions.RequestException as e:
+            logger.error(
+                f"Failed to get entity type for list '{list_name}': {e}", exc_info=True
             )
-
-            # Get next page URL
-            url = data.get("d", {}).get("__next")
-
-            # Rate limiting
-            if url:
-                time.sleep(0.1)
-
-        if not all_items:
-            logger.warning("No data found in SharePoint list")
+            return None
+        except Exception as e:
+            logger.error(
+                f"An unexpected error occurred getting entity type for '{list_name}': {e}",
+                exc_info=True,
+            )
             return None
 
-        # Convert to DataFrame
-        df = pd.json_normalize(all_items)
-
-        # Clean up metadata columns
-        metadata_columns = [col for col in df.columns if col.startswith("__")]
-        df = df.drop(columns=metadata_columns, errors="ignore")
-
-        # Clean column names
-        df.columns = [col.replace(".", "_") for col in df.columns]
-
-        logger.info(f"Successfully fetched {len(df)} records from SharePoint")
-        return df
-
-    @handle_exceptions(ErrorCategory.CONNECTION, ErrorSeverity.LOW)
-    def get_list_item_count(self, list_name: Optional[str] = None) -> int:
-        """ดึงจำนวน items ใน SharePoint list"""
-        token = self.auth.get_access_token()
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/json;odata=verbose",
-        }
-
-        target_list = list_name or self.config.sharepoint_list
-        site_url = self.config.sharepoint_url or self.config.sharepoint_site
-
-        url = f"{site_url}/_api/web/lists/GetByTitle('{target_list}')/ItemCount"
-
-        response = self.session.get(url, headers=headers)
-        response.raise_for_status()
-
-        data = response.json()
-        count = data.get("d", {}).get("ItemCount", 0)
-
-        logger.info(f"List '{target_list}' contains {count} items")
-        return count
-
-    @handle_exceptions(ErrorCategory.CONNECTION, ErrorSeverity.LOW)
-    def validate_list_access(self, list_name: Optional[str] = None) -> bool:
-        """ตรวจสอบสิทธิ์เข้าถึง list"""
-        token = self.auth.get_access_token()
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/json;odata=verbose",
-        }
-
-        target_list = list_name or self.config.sharepoint_list
-        site_url = self.config.sharepoint_url or self.config.sharepoint_site
-
-        url = f"{site_url}/_api/web/lists/GetByTitle('{target_list}')"
-
-        response = self.session.get(url, headers=headers)
-        return response.status_code == 200
-
-    @handle_exceptions(ErrorCategory.CONNECTION, ErrorSeverity.LOW)
-    def get_list_info(self, list_name: Optional[str] = None) -> Dict:
-        """ดึงข้อมูลรายละเอียดของ SharePoint list"""
-        token = self.auth.get_access_token()
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/json;odata=verbose",
-        }
-
-        target_list = list_name or self.config.sharepoint_list
-        site_url = self.config.sharepoint_url or self.config.sharepoint_site
-
-        url = f"{site_url}/_api/web/lists/GetByTitle('{target_list}')"
-
-        response = self.session.get(url, headers=headers)
-        response.raise_for_status()
-
-        data = response.json()
-        list_info = data.get("d", {})
-
-        return {
-            "title": list_info.get("Title", ""),
-            "description": list_info.get("Description", ""),
-            "item_count": list_info.get("ItemCount", 0),
-            "created": list_info.get("Created", ""),
-            "last_modified": list_info.get("LastItemModifiedDate", ""),
-            "base_type": list_info.get("BaseType", 0),
-            "template_type": list_info.get("BaseTemplate", 0),
-        }
+    def close(self):
+        """Closes the requests session."""
+        if self.session:
+            self.session.close()
+            logger.info("SharePoint requests session closed.")

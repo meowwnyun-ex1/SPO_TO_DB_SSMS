@@ -1,515 +1,382 @@
+# ui/main_window.py - Enhanced Main Application Window
 from PyQt6.QtWidgets import (
     QMainWindow,
     QWidget,
     QHBoxLayout,
     QSplitter,
     QMessageBox,
-    QStatusBar,
-    QLabel,
-    QApplication,
-    QVBoxLayout,
 )
-from PyQt6.QtCore import Qt, pyqtSlot
-from PyQt6.QtGui import QCloseEvent
-from .styles.theme import UltraModernColors
-from utils.logger import NeuraUILogHandler
-from utils.error_handling import (
-    handle_exceptions,
-    ErrorCategory,
-    ErrorSeverity,
-    get_error_handler,
-)
+from PyQt6.QtCore import Qt, pyqtSlot  # Corrected: QCloseEvent moved to QtGui
+from PyQt6.QtGui import QIcon, QCloseEvent  # Corrected: QCloseEvent moved here
+import sys
+import os
 import logging
+
+# Ensure project root is in path for absolute imports
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(current_dir)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+# Attempt to import components with fallbacks for robustness
+try:
+    from ui.styles.theme import (
+        UltraModernColors,
+        apply_ultra_modern_theme,
+        get_modern_button_style,
+        get_modern_input_style,
+    )
+    from ui.components.dashboard import Dashboard
+    from ui.components.config_panel import ConfigPanel
+    from utils.logger import NeuraUILogHandler
+    from utils.error_handling import (
+        handle_exceptions,
+        ErrorCategory,
+        ErrorSeverity,
+        get_error_handler,
+    )
+    from controller.app_controller import AppController  # For type hinting
+    from utils.config_manager import ConfigManager  # For config access
+except ImportError as e:
+    print(
+        f"CRITICAL IMPORT ERROR in main_window.py: {e}. Ensure dependencies are installed."
+    )
+    # Fallback/exit strategy if core UI components can't be loaded
+    sys.exit(1)
+
 
 logger = logging.getLogger(__name__)
 
 
-class CompactStatusBar(QStatusBar):
-    """Compact status bar สำหรับหน้าจอขนาด 900x500"""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.current_status = "ready"
-        self.setFixedHeight(25)
-
-        self.status_label = QLabel("DENSO Neural matrix online...")
-        self.status_label.setStyleSheet(
-            f"""
-            QLabel {{
-                color: {UltraModernColors.TEXT_PRIMARY};
-                font-weight: 600;
-                font-size: 10px;
-                padding: 2px 8px;
-                background: {UltraModernColors.GLASS_BG_DARK};
-                border: 1px solid {UltraModernColors.NEON_PURPLE};
-                border-radius: 3px;
-                margin: 1px;
-            }}
-            """
-        )
-        self.addPermanentWidget(self.status_label)
-
-        self.progress_label = QLabel("●")
-        self.progress_label.setStyleSheet(
-            f"""
-            QLabel {{
-                color: {UltraModernColors.NEON_BLUE};
-                font-weight: bold;
-                font-size: 10px;
-                padding: 2px 4px;
-            }}
-            """
-        )
-        self.addWidget(self.progress_label)
-
-    @pyqtSlot(str, str)
-    def set_status(self, message, status_type="info"):
-        """อัปเดตสถานะ - ข้อความสั้นๆ"""
-        self.current_status = status_type
-
-        icon_map = {
-            "info": "◉",
-            "warning": "◈",
-            "error": "◆",
-            "ready": "◎",
-            "syncing": "⟳",
-            "success": "✓",
-        }
-
-        status_icon = icon_map.get(status_type, "◉")
-        # ตัดข้อความให้สั้น
-        short_message = message[:30] + "..." if len(message) > 30 else message
-        self.status_label.setText(f"{status_icon} {short_message}")
-
-
 class MainWindow(QMainWindow):
-    """Enhanced Main Window - ขนาดคงที่ 900x500 พร้อม UX/UI ที่ดีขึ้น"""
+    """
+    Main application window for the DENSO Neural Matrix.
+    Integrates Dashboard and ConfigPanel, and handles global UI interactions.
+    """
 
-    def __init__(self, controller):
-        super().__init__(parent=None)
+    def __init__(self, controller: AppController, parent=None):
+        super().__init__(parent)
         self.controller = controller
-        self.ui_log_handler = None
-        self.is_closing = False
-        self.cleanup_done = False
+        self.config_manager = ConfigManager()
+        self.cleanup_done = False  # Flag to prevent multiple cleanups
 
-        # Initialize UI components as None first
-        self.dashboard = None
-        self.config_panel = None
-        self.status_bar = None
+        self.setWindowTitle(self.config_manager.get_setting("app_name"))
+        self.setGeometry(100, 100, 1200, 800)  # Initial window size
+        self.setMinimumSize(900, 600)  # Minimum size to maintain usability
 
-        # Error handler
-        self.error_handler = get_error_handler()
-        self.error_handler.error_occurred.connect(self._handle_application_error)
+        # Set window icon
+        icon_path = os.path.join(project_root, "assets/icons/denso_logo.png")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
+        else:
+            logger.warning(f"Application icon not found: {icon_path}")
 
-        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
-
-        self.setup_compact_ui()
+        self._setup_ui()
         self._connect_signals()
-        self._setup_logging()
+        logger.info("MainWindow initialized.")
 
-        if hasattr(self, "status_bar") and self.status_bar:
-            self.status_bar.set_status(
-                "© Thammaphon Chittasuwanna (SDM) | Innovation", "ready"
-            )
+    def _setup_ui(self):
+        """Sets up the main user interface layout."""
+        self.central_widget = QWidget()
+        self.setCentralWidget(self.central_widget)
 
-    def setup_compact_ui(self):
-        """Setup UI สำหรับขนาด 900x500"""
-        self.setWindowTitle("DENSO Neural Matrix | SPO ↔ SQL Sync")
+        main_layout = QHBoxLayout(self.central_widget)
+        main_layout.setContentsMargins(
+            0, 0, 0, 0
+        )  # Remove margins around the central widget
+        main_layout.setSpacing(0)  # Remove spacing between widgets in the main layout
 
-        # ขนาดคงที่
-        self.setFixedSize(900, 500)
-        self.setMinimumSize(900, 500)
-        self.setMaximumSize(900, 500)
+        # Create a splitter to allow resizing of panels
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        main_layout.addWidget(self.splitter)
 
-        # จัดหน้าต่างให้อยู่กลางจอ
-        self._center_window()
+        # Left Panel (Dashboard)
+        self.dashboard = Dashboard(self.controller)
+        self.dashboard.setMinimumWidth(500)  # Ensure dashboard has enough space
+        self.splitter.addWidget(self.dashboard)
 
-    def _create_fallback_ui(self):
-        """สร้าง fallback UI แบบง่ายๆ"""
-        try:
-            central_widget = self.centralWidget()
-            if not central_widget:
-                central_widget = QWidget()
-                self.setCentralWidget(central_widget)
+        # Right Panel (ConfigPanel)
+        self.config_panel = ConfigPanel(self.controller)
+        self.config_panel.setMinimumWidth(350)
+        self.splitter.addWidget(self.config_panel)
 
-            if central_widget.layout():
-                QWidget().setLayout(central_widget.layout())
+        # Set initial sizes for the splitter sections
+        self.splitter.setSizes([self.width() * 0.6, self.width() * 0.4])
 
-            layout = QVBoxLayout(central_widget)
-            layout.setContentsMargins(50, 50, 50, 50)
-
-            error_label = QLabel("⚠️ Main UI Failed to Load")
-            error_label.setStyleSheet(
-                "color: #FF6B6B; font-size: 18px; font-weight: bold;"
-            )
-            error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout.addWidget(error_label)
-
-            details_label = QLabel("Check console and restart")
-            details_label.setStyleSheet("color: #CCCCCC; font-size: 14px;")
-            details_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout.addWidget(details_label)
-
-            logger.info("Basic fallback UI created")
-        except Exception as e:
-            logger.error(f"Fallback UI failed: {e}")
-
-    def _rebuild_layout(self):
-        """Rebuild layout ตามที่มี components"""
-        try:
-            central_widget = self.centralWidget()
-            if not central_widget:
-                central_widget = QWidget()
-                self.setCentralWidget(central_widget)
-
-            if central_widget.layout():
-                QWidget().setLayout(central_widget.layout())
-
-            main_layout = QHBoxLayout(central_widget)
-            main_layout.setContentsMargins(5, 5, 5, 5)
-            main_layout.setSpacing(10)
-
-            if self.dashboard and self.config_panel:
-                self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
-                self.main_splitter.setChildrenCollapsible(False)
-                self.main_splitter.addWidget(self.dashboard)
-                self.main_splitter.addWidget(self.config_panel)
-                self.main_splitter.setSizes([540, 360])
-                main_layout.addWidget(self.main_splitter)
-            elif self.dashboard:
-                main_layout.addWidget(self.dashboard)
-            elif self.config_panel:
-                main_layout.addWidget(self.config_panel)
-
-            logger.info("Layout rebuilt")
-        except Exception as e:
-            logger.error(f"Layout rebuild failed: {e}")
-
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-
-        # Layout แบบ compact
-        main_layout = QHBoxLayout(central_widget)
-        main_layout.setContentsMargins(5, 5, 5, 5)
-        main_layout.setSpacing(10)
-
-        try:
-            # Import ที่นี่เพื่อตรวจสอบว่ามีหรือไม่
-            from .components.dashboard import ModernDashboard
-            from .components.config_panel import ModernConfigPanel
-
-            self.dashboard = ModernDashboard(self.controller)
-            self.config_panel = ModernConfigPanel(self.controller)
-
-            if not self.dashboard or not self.config_panel:
-                logger.error("Failed to initialize UI components")
-                self.dashboard = None
-                self.config_panel = None
-                return
-
-        except ImportError as e:
-            logger.error(f"Failed to import UI components: {e}")
-            self.dashboard = None
-            self.config_panel = None
-            self._create_fallback_ui()
-            return
-        except Exception as e:
-            logger.error(f"Failed to create UI components: {e}")
-            # Create minimal fallback UI
-            self.dashboard = None
-            self.config_panel = None
-            self._create_fallback_ui()
-            return
-
-        # Splitter แบบ compact
-        self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
-        self.main_splitter.setChildrenCollapsible(False)
-
-        if self.dashboard:
-            self.main_splitter.addWidget(self.dashboard)
-        if self.config_panel:
-            self.main_splitter.addWidget(self.config_panel)
-
-        # การแบ่งพื้นที่ 60:40
-        self.main_splitter.setSizes([540, 360])
-        self.main_splitter.setStretchFactor(0, 0)
-        self.main_splitter.setStretchFactor(1, 0)
-
-        main_layout.addWidget(self.main_splitter)
-
-        # Compact status bar
-        self.status_bar = CompactStatusBar(self)
-        self.setStatusBar(self.status_bar)
-
-        # Modern splitter styling
+        # Apply general main window styling (if not handled by main.py's background)
+        # This is for other QMainWindow elements like title bar, etc.
         self.setStyleSheet(
             f"""
             QMainWindow {{
-                background: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #0a0a0a,
-                    stop:0.5 #1a0a2a,
-                    stop:1 #0a0a0a
-                );
-                border: 2px solid {UltraModernColors.NEON_PURPLE};
-                border-radius: 12px;
+                background-color: transparent; /* Background image is handled by main.py */
+                color: {UltraModernColors.TEXT_PRIMARY};
             }}
             QSplitter::handle {{
-                background: {UltraModernColors.NEON_PURPLE};
-                width: 3px;
-                border-radius: 1px;
+                background-color: {UltraModernColors.NEON_PURPLE};
+                width: 2px;
             }}
             QSplitter::handle:hover {{
-                background: {UltraModernColors.NEON_PINK};
-                width: 4px;
+                background-color: {UltraModernColors.NEON_BLUE};
             }}
-            """
+        """
         )
 
-    def _center_window(self):
-        """จัดหน้าต่างให้อยู่กลางจอ"""
-        screen = QApplication.primaryScreen()
-        if screen:
-            screen_geometry = screen.availableGeometry()
-            window_geometry = self.frameGeometry()
-            center_point = screen_geometry.center()
-            window_geometry.moveCenter(center_point)
-            self.move(window_geometry.topLeft())
-
-    @handle_exceptions(ErrorCategory.UI, ErrorSeverity.MEDIUM)
     def _connect_signals(self):
-        """เชื่อมต่อ signals - ปลอดภัยขึ้น"""
-        if not self.controller:
-            logger.error("Cannot connect signals - missing controller")
-            return
-
-        # ตรวจสอบว่ามี config_panel หรือไม่
-        config_panel = getattr(self, "config_panel", None)
-        if not config_panel:
-            logger.warning("Config panel not available - skipping config signals")
-        else:
-            try:
-                # Config panel signals
-                config_panel.config_changed.connect(self.controller.update_config)
-                config_panel.test_sharepoint_requested.connect(
-                    self.controller.test_sharepoint_connection
-                )
-                config_panel.test_database_requested.connect(
-                    self.controller.test_database_connection
-                )
-
-                # Refresh signals
-                config_panel.refresh_sites_requested.connect(
-                    self.controller.refresh_sharepoint_sites
-                )
-                config_panel.refresh_lists_requested.connect(
-                    self.controller.refresh_sharepoint_lists
-                )
-                config_panel.refresh_databases_requested.connect(
-                    self.controller.refresh_database_names
-                )
-                config_panel.refresh_tables_requested.connect(
-                    self.controller.refresh_database_tables
-                )
-
-                config_panel.auto_sync_toggled.connect(self.controller.toggle_auto_sync)
-
-                # Excel import signal
-                if hasattr(config_panel, "excel_import_requested"):
-                    config_panel.excel_import_requested.connect(
-                        self.controller.run_excel_import
-                    )
-
-                logger.info("Config panel signals connected")
-            except Exception as e:
-                logger.error(f"Config panel signals failed: {e}")
-
-        # ตรวจสอบว่ามี dashboard หรือไม่
-        dashboard = getattr(self, "dashboard", None)
-        if not dashboard:
-            logger.warning("Dashboard not available - skipping dashboard signals")
-        else:
-            try:
-                # Controller to dashboard signals
-                self.controller.log_message.connect(dashboard.add_log_message)
-
-                # Connect to status bar if available
-                status_bar = getattr(self, "status_bar", None)
-                if status_bar:
-                    self.controller.log_message.connect(status_bar.set_status)
-
-                self.controller.progress_update.connect(
-                    dashboard.update_overall_progress
-                )
-                self.controller.current_task_update.connect(
-                    dashboard.update_current_task
-                )
-
-                # Status updates
-                self.controller.sharepoint_status_update.connect(
-                    dashboard.update_sharepoint_status
-                )
-                self.controller.database_status_update.connect(
-                    dashboard.update_database_status
-                )
-                self.controller.last_sync_status_update.connect(
-                    dashboard.update_last_sync_status
-                )
-                self.controller.auto_sync_status_update.connect(
-                    dashboard.set_auto_sync_enabled
-                )
-
-                # Sync direction signal
-                if hasattr(dashboard, "sync_direction_changed"):
-                    dashboard.sync_direction_changed.connect(
-                        self.controller.set_sync_direction
-                    )
-
-                logger.info("Dashboard signals connected")
-            except Exception as e:
-                logger.error(f"Dashboard signals failed: {e}")
-
-        # Cross-component signals - only if both exist
-        if config_panel and dashboard:
-            try:
-                # Data population
-                self.controller.sharepoint_sites_updated.connect(
-                    config_panel.populate_sharepoint_sites
-                )
-                self.controller.sharepoint_lists_updated.connect(
-                    config_panel.populate_sharepoint_lists
-                )
-                self.controller.database_names_updated.connect(
-                    config_panel.populate_database_names
-                )
-                self.controller.database_tables_updated.connect(
-                    config_panel.populate_database_tables
-                )
-
-                # UI control
-                self.controller.ui_enable_request.connect(config_panel.set_ui_enabled)
-
-                logger.info("Cross-component signals connected")
-            except Exception as e:
-                logger.error(f"Cross-component signals failed: {e}")
-
-        logger.info("Signal connections completed")
-
-    def _setup_logging(self):
-        """Setup logging handler"""
-        if self.dashboard and hasattr(self.dashboard, "add_log_message"):
-            try:
-                self.ui_log_handler = NeuraUILogHandler(self.dashboard.add_log_message)
-                logging.getLogger().addHandler(self.ui_log_handler)
-                logger.info("UI log handler initialized")
-            except Exception as e:
-                logger.error(f"Failed to setup UI logging: {e}")
-
-    @pyqtSlot(object)
-    def _handle_application_error(self, error_info):
-        """จัดการ application errors"""
-        error_msg = f"Application Error: {error_info.message}"
-        if hasattr(self, "status_bar"):
-            self.status_bar.set_status(error_msg, "error")
-        logger.error(error_msg)
-
-    def closeEvent(self, event: QCloseEvent):
-        """Enhanced close event"""
-        if self.is_closing:
-            event.accept()
-            return
-
-        self.is_closing = True
-
+        """Connects signals from controller to UI elements."""
         try:
-            reply = QMessageBox.question(
-                self,
-                "Neural Matrix Shutdown",
-                "ปิดระบบ Neural Matrix?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
+            self.controller.log_message.connect(
+                self.dashboard.log_console.add_log_message
+            )
+            self.controller.status_changed.connect(self.dashboard.update_status)
+            self.controller.progress_updated.connect(self.dashboard.update_progress)
+            self.controller.current_task_update.connect(
+                self.dashboard.update_current_task
+            )
+            self.controller.sync_completed.connect(self._handle_sync_completion)
+
+            # Connect signals for config panel updates
+            self.controller.sharepoint_sites_updated.connect(
+                self.config_panel.update_sharepoint_sites
+            )
+            self.controller.sharepoint_lists_updated.connect(
+                self.config_panel.update_sharepoint_lists
+            )
+            self.controller.database_names_updated.connect(
+                self.config_panel.update_database_names
+            )
+            self.controller.database_tables_updated.connect(
+                self.config_panel.update_database_tables
             )
 
-            if reply == QMessageBox.StandardButton.Yes:
-                # Safe status bar update
-                status_bar = getattr(self, "status_bar", None)
-                if status_bar:
-                    try:
-                        status_bar.set_status("Shutting down...", "warning")
-                    except Exception as e:
-                        logger.warning(f"Status bar update failed: {e}")
+            # Signals for connection statuses
+            self.controller.sharepoint_status_update.connect(
+                lambda s: self.dashboard.sp_status_card.set_status(s)
+            )
+            self.controller.database_status_update.connect(
+                lambda s: self.dashboard.db_status_card.set_status(s)
+            )
+            self.controller.last_sync_status_update.connect(
+                lambda s: self.dashboard.last_sync_status_card.set_status(s)
+            )
+            self.controller.auto_sync_status_update.connect(
+                lambda s: self.dashboard.auto_sync_status_card.set_status(s)
+            )
+            self.controller.ui_enable_request.connect(self.toggle_ui_interactivity)
 
-                QApplication.processEvents()
+            # Connect ConfigPanel signals to AppController slots
+            self.config_panel.request_auto_sync_toggle.connect(
+                self.controller.toggle_auto_sync
+            )
+            self.config_panel.request_update_config_setting.connect(
+                self.controller.update_setting
+            )
 
-                if not self.cleanup_done:
-                    self._safe_cleanup()
+            # Connect Dashboard signals to AppController slots
+            self.dashboard.run_sync_requested.connect(self.controller.run_full_sync)
+            self.dashboard.clear_cache_requested.connect(
+                self.controller.run_cache_cleanup
+            )
+            self.dashboard.test_connections_requested.connect(
+                self.controller.test_all_connections
+            )
+            self.dashboard.import_excel_requested.connect(
+                self.controller.import_excel_data
+            )
 
-                event.accept()
-                QApplication.quit()
-            else:
-                self.is_closing = False
-                event.ignore()
-
+            logger.info("MainWindow signals connected.")
         except Exception as e:
-            logger.error(f"Close event error: {e}")
-            if not self.cleanup_done:
-                self._safe_cleanup()
-            event.accept()
-            QApplication.quit()
+            logger.error(f"Error connecting signals in MainWindow: {e}", exc_info=True)
+            get_error_handler().handle_error(
+                ErrorCategory.UI,
+                ErrorSeverity.HIGH,
+                f"Failed to connect UI signals: {e}",
+            )
 
-    @handle_exceptions(ErrorCategory.SYSTEM, ErrorSeverity.LOW)
-    def _safe_cleanup(self):
-        """Safe cleanup"""
+    @pyqtSlot(bool, str, dict)
+    @handle_exceptions(ErrorCategory.UI, ErrorSeverity.MEDIUM)
+    def _handle_sync_completion(self, success: bool, message: str, stats: dict):
+        """Handles the completion of a synchronization process."""
+        icon = QMessageBox.Icon.Information if success else QMessageBox.Icon.Warning
+        title = "Sync Complete" if success else "Sync Failed"
+        detailed_message = message + "\n\n"
+        detailed_message += (
+            f"Total Records Processed: {stats.get('total_records', 0)}\n"
+        )
+        detailed_message += f"Records Added: {stats.get('records_added', 0)}\n"
+        detailed_message += f"Records Updated: {stats.get('records_updated', 0)}\n"
+        detailed_message += f"Errors: {stats.get('errors', 0)}\n"
+
+        QMessageBox.information(
+            self, title, detailed_message, QMessageBox.StandardButton.Ok, icon
+        )
+        logger.info(f"Sync completion handled. Success: {success}, Message: {message}")
+
+        # Update last sync status based on overall success
+        if success:
+            self.dashboard.last_sync_status_card.set_status("success")
+        else:
+            self.dashboard.last_sync_status_card.set_status(
+                "failed"
+            )  # Changed from "error" to "failed" for clarity
+
+    @pyqtSlot(bool)
+    def toggle_ui_interactivity(self, enable: bool):
+        """Enables/disables UI elements based on background process status."""
+        logger.info(f"UI interactivity {'enabled' if enable else 'disabled'}.")
+        # Disable main controls while sync is running
+        self.config_panel.setEnabled(enable)
+        self.dashboard.run_sync_button.setEnabled(enable)
+        self.dashboard.clear_logs_button.setEnabled(enable)
+        self.dashboard.clear_cache_button.setEnabled(enable)
+        self.dashboard.test_connection_button.setEnabled(
+            enable
+        )  # Also disable test connection
+        self.dashboard.import_excel_button.setEnabled(
+            enable
+        )  # Disable import excel button
+        # You might want to keep the log console enabled
+        self.dashboard.log_console.setReadOnly(not enable)
+
+    @handle_exceptions(ErrorCategory.UI, ErrorSeverity.HIGH)
+    def closeEvent(self, event: QCloseEvent):
+        """Overrides the close event to provide cleanup and confirmation."""
+        logger.info("MainWindow close event triggered.")
+        reply = QMessageBox.question(
+            self,
+            "Confirm Exit",
+            "Are you sure you want to exit the DENSO Neural Matrix application?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            self.cleanup()  # Perform explicit cleanup before accepting close
+            event.accept()
+        else:
+            event.ignore()
+
+    def cleanup(self):
+        """
+        Performs safe cleanup of child widgets and disconnects signals to prevent crashes.
+        """
         if self.cleanup_done:
+            logger.debug("MainWindow cleanup already performed, skipping.")
             return
 
+        logger.info("Initiating MainWindow safe cleanup...")
         try:
-            # Controller cleanup
-            controller = getattr(self, "controller", None)
-            if controller and hasattr(controller, "cleanup"):
-                controller.cleanup()
+            # Disconnect controller signals from UI elements
+            try:
+                self.controller.log_message.disconnect(
+                    self.dashboard.log_console.add_log_message
+                )
+                self.controller.status_changed.disconnect(self.dashboard.update_status)
+                self.controller.progress_updated.disconnect(
+                    self.dashboard.update_progress
+                )
+                self.controller.current_task_update.disconnect(
+                    self.dashboard.update_current_task
+                )
+                self.controller.sync_completed.disconnect(self._handle_sync_completion)
 
-            # UI log handler cleanup
-            if self.ui_log_handler:
-                try:
-                    logging.getLogger().removeHandler(self.ui_log_handler)
-                except:
-                    pass
-                self.ui_log_handler = None
+                self.controller.sharepoint_sites_updated.disconnect(
+                    self.config_panel.update_sharepoint_sites
+                )
+                self.controller.sharepoint_lists_updated.disconnect(
+                    self.config_panel.update_sharepoint_lists
+                )
+                self.controller.database_names_updated.disconnect(
+                    self.config_panel.update_database_names
+                )
+                self.controller.database_tables_updated.disconnect(
+                    self.config_panel.update_database_tables
+                )
 
-            # Status bar cleanup
-            status_bar = getattr(self, "status_bar", None)
-            if status_bar and hasattr(status_bar, "cleanup"):
-                try:
-                    status_bar.cleanup()
-                except Exception as e:
-                    logger.warning(f"Status bar cleanup failed: {e}")
+                # Disconnect connections made with lambdas or direct slots
+                self.controller.sharepoint_status_update.disconnect(
+                    self.dashboard.sp_status_card.set_status
+                )
+                self.controller.database_status_update.disconnect(
+                    self.dashboard.db_status_card.set_status
+                )
+                self.controller.last_sync_status_update.disconnect(
+                    self.dashboard.last_sync_status_card.set_status
+                )
+                self.controller.auto_sync_status_update.disconnect(
+                    self.dashboard.auto_sync_status_card.set_status
+                )
+                self.controller.ui_enable_request.disconnect(
+                    self.toggle_ui_interactivity
+                )
 
-            # Dashboard cleanup
-            dashboard = getattr(self, "dashboard", None)
-            if dashboard and hasattr(dashboard, "cleanup"):
-                try:
-                    dashboard.cleanup()
-                except Exception as e:
-                    logger.warning(f"Dashboard cleanup failed: {e}")
+                # Disconnect ConfigPanel signals from AppController slots
+                self.config_panel.request_auto_sync_toggle.disconnect(
+                    self.controller.toggle_auto_sync
+                )
+                self.config_panel.request_update_config_setting.disconnect(
+                    self.controller.update_setting
+                )
 
-            # Config panel cleanup
-            config_panel = getattr(self, "config_panel", None)
-            if config_panel and hasattr(config_panel, "cleanup"):
-                try:
-                    config_panel.cleanup()
-                except Exception as e:
-                    logger.warning(f"Config panel cleanup failed: {e}")
+                # Disconnect Dashboard signals from AppController slots
+                self.dashboard.run_sync_requested.disconnect(
+                    self.controller.run_full_sync
+                )
+                self.dashboard.clear_cache_requested.disconnect(
+                    self.controller.run_cache_cleanup
+                )
+                self.dashboard.test_connections_requested.disconnect(
+                    self.controller.test_all_connections
+                )
+                self.dashboard.import_excel_requested.disconnect(
+                    self.controller.import_excel_data
+                )
+
+                logger.info(
+                    "Disconnected MainWindow-specific signals from controller and UI components."
+                )
+            except TypeError as e:
+                logger.debug(
+                    f"Attempted to disconnect non-connected signal in MainWindow cleanup: {e}"
+                )
+            except Exception as e:
+                logger.warning(f"Error during MainWindow signal disconnection: {e}")
+
+            # Explicitly clean up child widgets to avoid segfaults
+            if self.dashboard:
+                self.dashboard.cleanup()
+                self.dashboard.deleteLater()
+                self.dashboard = None
+                logger.info("Dashboard cleaned up.")
+
+            if self.config_panel:
+                self.config_panel.cleanup()
+                self.config_panel.deleteLater()
+                self.config_panel = None
+                logger.info("ConfigPanel cleaned up.")
+
+            if self.splitter:
+                # The splitter takes ownership of its widgets, so deleting widgets inside is often enough
+                # But explicit deleteLater on splitter itself ensures it's removed from layout
+                self.splitter.deleteLater()
+                self.splitter = None
+                logger.info("Splitter cleaned up.")
+
+            if self.central_widget:
+                self.central_widget.deleteLater()
+                self.central_widget = None
+                logger.info("Central widget cleaned up.")
 
             self.cleanup_done = True
-            logger.info("Safe cleanup completed")
+            logger.info("MainWindow safe cleanup completed.")
 
         except Exception as e:
-            logger.error(f"Cleanup error: {e}")
+            logger.critical(
+                f"Critical error during MainWindow cleanup: {e}", exc_info=True
+            )
             self.cleanup_done = True
 
     def keyPressEvent(self, event):
-        """Key shortcuts"""
+        """Handles global keyboard shortcuts."""
         try:
             if event.key() == Qt.Key.Key_Escape:
                 self.close()
@@ -523,5 +390,7 @@ class MainWindow(QMainWindow):
             else:
                 super().keyPressEvent(event)
         except Exception as e:
-            logger.error(f"Key press error: {e}")
-            super().keyPressEvent(event)
+            logger.error(f"Error in keyPressEvent: {e}", exc_info=True)
+            get_error_handler().handle_error(
+                ErrorCategory.UI, ErrorSeverity.MEDIUM, f"Keyboard event error: {e}"
+            )
