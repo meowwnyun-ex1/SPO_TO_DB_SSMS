@@ -1,4 +1,4 @@
-# controller/app_controller.py - Debug App Controller
+# controller/app_controller.py - Fixed App Controller with Proper Signal Handling
 from PyQt6.QtCore import QObject, pyqtSignal, QTimer, pyqtSlot
 from typing import Any
 import logging
@@ -122,8 +122,15 @@ class AppController(QObject):
             print("AppController: CacheManager signals connected")
 
             print("AppController: Connecting ConfigManager signals...")
-            # ConfigManager signals
-            self.config_manager.config_updated.connect(self._handle_config_update)
+            # ConfigManager signals - now properly available
+            if hasattr(self.config_manager, "config_updated"):
+                self.config_manager.config_updated.connect(self._handle_config_update)
+                print("AppController: ConfigManager config_updated signal connected")
+            else:
+                print(
+                    "AppController: ConfigManager config_updated signal not available"
+                )
+                logger.warning("ConfigManager does not have config_updated signal")
             print("AppController: ConfigManager signals connected")
 
             print("AppController: Connecting ExcelImportHandler signals...")

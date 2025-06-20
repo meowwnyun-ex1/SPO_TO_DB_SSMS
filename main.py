@@ -24,6 +24,7 @@ controller_instance = None
 main_window_instance = None
 player = None
 audio_output = None
+ui_handler = None
 
 
 def setup_imports():
@@ -48,6 +49,7 @@ def setup_imports():
 
 def setup_logging():
     """Initialize logging system"""
+    global ui_handler
     try:
         log_dir = project_root / "logs"
         log_dir.mkdir(exist_ok=True)
@@ -126,32 +128,54 @@ def setup_background_audio():
 
 def cleanup_resources():
     """Perform graceful cleanup of application resources"""
-    global controller_instance, main_window_instance, player, audio_output
+    global controller_instance, main_window_instance, player, audio_output, ui_handler
 
+    print("Starting application cleanup...")
     logging.info("Starting application cleanup...")
 
     try:
         # Stop background audio
         if player and player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
             player.stop()
-            player.deleteLater()
+            if hasattr(player, "deleteLater"):
+                player.deleteLater()
 
-        if audio_output:
+        if audio_output and hasattr(audio_output, "deleteLater"):
             audio_output.deleteLater()
 
         # Cleanup main window
         if main_window_instance:
-            main_window_instance.cleanup()
-            main_window_instance.deleteLater()
+            try:
+                main_window_instance.cleanup()
+                if hasattr(main_window_instance, "deleteLater"):
+                    main_window_instance.deleteLater()
+            except Exception as e:
+                print(f"Error cleaning up main window: {e}")
 
         # Cleanup controller
         if controller_instance:
-            controller_instance.cleanup()
-            controller_instance.deleteLater()
+            try:
+                controller_instance.cleanup()
+                if hasattr(controller_instance, "deleteLater"):
+                    controller_instance.deleteLater()
+            except Exception as e:
+                print(f"Error cleaning up controller: {e}")
 
+        # Cleanup UI handler
+        if ui_handler:
+            try:
+                if hasattr(ui_handler, "log_record_emitted"):
+                    ui_handler.log_record_emitted.disconnect()
+                if hasattr(ui_handler, "deleteLater"):
+                    ui_handler.deleteLater()
+            except Exception as e:
+                print(f"Error cleaning up UI handler: {e}")
+
+        print("Application cleanup completed")
         logging.info("Application cleanup completed")
 
     except Exception as e:
+        print(f"Error during cleanup: {e}")
         logging.error(f"Error during cleanup: {e}")
 
 
@@ -167,18 +191,22 @@ def handle_exception(exc_type, exc_value, exc_traceback):
 
     # Show critical error dialog
     if app_instance:
-        QMessageBox.critical(
-            None,
-            "Critical Error",
-            f"An unhandled error occurred:\n{exc_value}\n\nThe application will close.",
-            QMessageBox.StandardButton.Ok,
-        )
+        try:
+            QMessageBox.critical(
+                None,
+                "Critical Error",
+                f"An unhandled error occurred:\n{exc_value}\n\nThe application will close.",
+                QMessageBox.StandardButton.Ok,
+            )
+        except:
+            pass
 
     cleanup_resources()
 
 
 def handle_signal(signum, frame):
     """Signal handler for graceful shutdown"""
+    print(f"Received signal {signum}, shutting down...")
     logging.info(f"Received signal {signum}, shutting down...")
     cleanup_resources()
     if app_instance:
@@ -286,15 +314,21 @@ def main():
         print(f"Critical error in main: {e}")
         logging.critical(f"Critical error in main: {e}", exc_info=True)
         if app_instance:
-            QMessageBox.critical(
-                None,
-                "Startup Error",
-                f"Failed to start application:\n{e}",
-                QMessageBox.StandardButton.Ok,
-            )
+            try:
+                QMessageBox.critical(
+                    None,
+                    "Startup Error",
+                    f"Failed to start application:\n{e}",
+                    QMessageBox.StandardButton.Ok,
+                )
+            except:
+                pass
     finally:
         cleanup_resources()
-        logging.info(f"Application finished with exit code: {exit_code}")
+        try:
+            logging.info(f"Application finished with exit code: {exit_code}")
+        except:
+            pass
 
     return exit_code
 

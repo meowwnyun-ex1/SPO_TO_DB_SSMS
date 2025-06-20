@@ -1,4 +1,4 @@
-# utils/config_manager.py - Fixed Configuration Management
+# utils/config_manager.py - Fixed Configuration Management with Proper Singleton
 import os
 import json
 from dataclasses import dataclass, field, asdict
@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from pathlib import Path
 from typing import Dict, Any, Optional
 import logging
+from PyQt6.QtCore import QObject, pyqtSignal
 
 logger = logging.getLogger(__name__)
 
@@ -112,25 +113,34 @@ class Config:
         return "SQL Server" if self.database_type == "sqlserver" else "SQLite"
 
 
-class ConfigManager:
+class ConfigManager(QObject):
     """
     Enhanced configuration manager with signal emission.
-    Simplified without QObject inheritance to avoid init issues.
+    Inherits from QObject to support PyQt signals.
     """
+
+    # Signals
+    config_updated = pyqtSignal()
 
     _instance = None
     _config: Config = None
     _initialized = False
-    _callbacks = []  # Store callbacks instead of signals
 
-    def __new__(cls):
+    def __new__(cls, *args, **kwargs):
         if cls._instance is None:
+            print("ConfigManager.__new__: Creating new instance...")
             cls._instance = super(ConfigManager, cls).__new__(cls)
+            # Initialize QObject here in __new__
+            super(ConfigManager, cls._instance).__init__()
+            cls._instance._qobject_initialized = True
+            print("ConfigManager.__new__: QObject initialized")
         return cls._instance
 
     def __init__(self):
         print("ConfigManager.__init__: Starting...")
-        # Only initialize once for singleton
+
+        # Skip QObject init since it's done in __new__
+        # Only initialize data once for singleton
         if not ConfigManager._initialized:
             print("ConfigManager.__init__: First initialization...")
             ConfigManager._initialized = True
@@ -146,19 +156,6 @@ class ConfigManager:
         else:
             print("ConfigManager.__init__: Already initialized, skipping")
             logger.debug("ConfigManager singleton already initialized.")
-
-    def add_config_callback(self, callback):
-        """Add callback for config updates instead of signal"""
-        if callback not in self._callbacks:
-            self._callbacks.append(callback)
-
-    def _notify_config_updated(self):
-        """Notify all callbacks of config update"""
-        for callback in self._callbacks:
-            try:
-                callback()
-            except Exception as e:
-                logger.error(f"Error in config callback: {e}")
 
     def _load_config(self) -> Config:
         """Load configuration from file and environment variables"""
@@ -304,7 +301,7 @@ class ConfigManager:
                     json.dump(existing_data, f, indent=2, ensure_ascii=False)
 
                 logger.info("Configuration saved successfully")
-                self._notify_config_updated()  # Use callback instead of signal
+                self.config_updated.emit()  # Emit signal
 
             except IOError as e:
                 logger.error(f"Failed to save configuration: {e}")
@@ -369,7 +366,7 @@ class ConfigManager:
     def reload_config(self):
         """Reload configuration from file"""
         ConfigManager._config = self._load_config()
-        self._notify_config_updated()  # Use callback instead of signal
+        self.config_updated.emit()  # Emit signal
         logger.info("Configuration reloaded")
 
 
