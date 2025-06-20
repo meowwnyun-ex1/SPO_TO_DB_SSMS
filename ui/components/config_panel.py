@@ -4,10 +4,14 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QTabWidget,
     QSizePolicy,
+    QLabel,
+    QFrame,
 )
-from PyQt6.QtCore import pyqtSignal, pyqtSlot
+from PyQt6.QtCore import pyqtSignal, pyqtSlot, Qt
+from PyQt6.QtGui import QFont
 from ..styles.theme import (
     get_modern_tab_style,
+    UltraModernColors,
 )
 from utils.config_validation import quick_validate_sharepoint, quick_validate_database
 from utils.error_handling import handle_exceptions, ErrorCategory, ErrorSeverity
@@ -20,7 +24,6 @@ from ..widgets.modern_input import (
     PasswordField,
 )
 from ..widgets.holographic_combobox import HolographicComboBox
-from ..widgets.neon_groupbox import NeonGroupBox
 import logging
 
 logger = logging.getLogger(__name__)
@@ -117,8 +120,59 @@ class ConfigDataManager:
         return True
 
 
+class SectionFrame(QFrame):
+    """แก้แล้ว: Frame สำหรับแต่ละ section ที่ดูดีขึ้น"""
+
+    def __init__(self, title, parent=None):
+        super().__init__(parent)
+        self.title = title
+        self.setup_ui()
+
+    def setup_ui(self):
+        """Setup frame with title"""
+        self.setStyleSheet(
+            f"""
+            QFrame {{
+                background: {UltraModernColors.GLASS_BG_DARK};
+                border: 2px solid {UltraModernColors.NEON_PURPLE};
+                border-radius: 16px;
+                margin: 8px;
+                padding: 16px;
+            }}
+            """
+        )
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(16)
+
+        # Title header
+        title_label = QLabel(self.title)
+        title_label.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        title_label.setStyleSheet(
+            f"""
+            QLabel {{
+                color: {UltraModernColors.TEXT_PRIMARY};
+                background: {UltraModernColors.GLASS_BG};
+                border: 1px solid {UltraModernColors.NEON_PURPLE};
+                border-radius: 8px;
+                padding: 8px 16px;
+                margin-bottom: 12px;
+            }}
+            """
+        )
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title_label)
+
+        # Content area
+        self.content_layout = QVBoxLayout()
+        self.content_layout.setSpacing(12)
+        layout.addWidget(QWidget())  # Spacer
+        layout.itemAt(1).widget().setLayout(self.content_layout)
+
+
 class ModernConfigPanel(QWidget):
-    """Modern Configuration Panel with enhanced UI"""
+    """แก้แล้ว: Config Panel ที่ดูดีขึ้น ไม่เบียดกัน"""
 
     # Signals
     config_changed = pyqtSignal(object)
@@ -141,224 +195,296 @@ class ModernConfigPanel(QWidget):
         self._load_config_to_ui()
 
     def setup_modern_ui(self):
-        """Setup modern UI with enhanced styling"""
+        """แก้แล้ว: Setup UI ที่ดูดีขึ้น"""
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(20)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(16)
 
-        # Modern tab widget
+        # แก้: Header ที่ดูดีขึ้น
+        header_frame = QFrame()
+        header_frame.setStyleSheet(
+            f"""
+            QFrame {{
+                background: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:0,
+                    stop:0 {UltraModernColors.NEON_PURPLE},
+                    stop:1 {UltraModernColors.NEON_PINK}
+                );
+                border-radius: 16px;
+                padding: 16px;
+                margin-bottom: 16px;
+            }}
+            """
+        )
+
+        header_layout = QHBoxLayout(header_frame)
+        header_layout.setContentsMargins(20, 16, 20, 16)
+
+        header_icon = QLabel("⚙️")
+        header_icon.setFont(QFont("Segoe UI Emoji", 24))
+        header_icon.setStyleSheet("color: white;")
+
+        header_text = QLabel("System Configuration")
+        header_text.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
+        header_text.setStyleSheet("color: white;")
+
+        header_layout.addWidget(header_icon)
+        header_layout.addWidget(header_text)
+        header_layout.addStretch()
+
+        layout.addWidget(header_frame)
+
+        # แก้: Tab widget ที่ดูดีขึ้น
         self.tab_widget = QTabWidget()
-        self.tab_widget.setStyleSheet(get_modern_tab_style())
+        self.tab_widget.setStyleSheet(
+            get_modern_tab_style()
+            + f"""
+            QTabWidget::pane {{
+                border: 2px solid {UltraModernColors.NEON_PURPLE};
+                border-radius: 16px;
+                background: {UltraModernColors.GLASS_BG_DARK};
+                margin-top: 10px;
+            }}
+            QTabBar::tab {{
+                background: {UltraModernColors.GLASS_BG};
+                border: 2px solid {UltraModernColors.GLASS_BORDER};
+                border-bottom: none;
+                border-top-left-radius: 12px;
+                border-top-right-radius: 12px;
+                padding: 12px 24px;
+                color: {UltraModernColors.TEXT_PRIMARY};
+                font-weight: bold;
+                font-size: 12px;
+                margin-right: 4px;
+                min-width: 120px;
+            }}
+            QTabBar::tab:selected {{
+                background: {UltraModernColors.NEON_PURPLE};
+                border: 2px solid {UltraModernColors.NEON_PINK};
+                color: white;
+            }}
+            QTabBar::tab:hover:!selected {{
+                background: {UltraModernColors.GLASS_BG_LIGHT};
+                border: 2px solid {UltraModernColors.NEON_BLUE};
+            }}
+            """
+        )
         self.tab_widget.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
 
-        # Create tabs with modern design
-        self._create_sharepoint_tab()
-        self._create_database_tab()
-        self._create_settings_tab()
+        # Create better tabs
+        self._create_better_sharepoint_tab()
+        self._create_better_database_tab()
+        self._create_better_settings_tab()
 
         layout.addWidget(self.tab_widget)
         self._connect_signals()
 
-    def _create_sharepoint_tab(self):
-        """สร้าง SharePoint tab แบบ modern"""
+    def _create_better_sharepoint_tab(self):
+        """แก้แล้ว: SharePoint tab ที่ดูดีขึ้น"""
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(24)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(20)
 
-        # Connection Settings Group
-        conn_group = NeonGroupBox("🔗 Connection Settings")
-        conn_layout = QVBoxLayout(conn_group)
-        conn_layout.setSpacing(16)
+        # Connection section
+        conn_section = SectionFrame("🔗 Connection Settings")
 
-        # SharePoint URL
+        # URL และ Tenant ID
+        url_layout = QHBoxLayout()
+        url_layout.setSpacing(16)
+
         url_field = FormField(
             "SharePoint URL",
             ModernLineEdit("https://company.sharepoint.com/sites/sitename"),
-            required=True,
-            help_text="Full URL to your SharePoint site",
         )
+        url_field.input_widget.setMinimumHeight(40)
         self.form_fields["sharepoint_url"] = url_field
-        conn_layout.addWidget(url_field)
 
-        # Tenant ID
         tenant_field = FormField(
-            "Tenant ID",
-            ModernLineEdit("12345678-1234-1234-1234-123456789012"),
-            required=True,
-            help_text="Azure AD Tenant identifier",
+            "Tenant ID", ModernLineEdit("12345678-1234-1234-1234-123456789012")
         )
+        tenant_field.input_widget.setMinimumHeight(40)
         self.form_fields["tenant_id"] = tenant_field
-        conn_layout.addWidget(tenant_field)
 
-        layout.addWidget(conn_group)
+        url_layout.addWidget(url_field)
+        url_layout.addWidget(tenant_field)
+        conn_section.content_layout.addLayout(url_layout)
 
-        # Authentication Group
-        auth_group = NeonGroupBox("🔐 Authentication")
-        auth_layout = QVBoxLayout(auth_group)
+        # Client credentials
+        auth_layout = QHBoxLayout()
         auth_layout.setSpacing(16)
 
-        # Client ID
         client_id_field = FormField(
-            "Client ID",
-            ModernLineEdit("87654321-4321-4321-4321-210987654321"),
-            required=True,
-            help_text="Application (client) ID from Azure AD",
+            "Client ID", ModernLineEdit("87654321-4321-4321-4321-210987654321")
         )
+        client_id_field.input_widget.setMinimumHeight(40)
         self.form_fields["sharepoint_client_id"] = client_id_field
-        auth_layout.addWidget(client_id_field)
 
-        # Client Secret
         client_secret_field = FormField(
-            "Client Secret",
-            PasswordField("Your-Client-Secret-Here"),
-            required=True,
-            help_text="Client secret from Azure AD app registration",
+            "Client Secret", PasswordField("Your-Client-Secret-Here")
         )
+        client_secret_field.input_widget.setMinimumHeight(40)
         self.form_fields["sharepoint_client_secret"] = client_secret_field
+
+        auth_layout.addWidget(client_id_field)
         auth_layout.addWidget(client_secret_field)
+        conn_section.content_layout.addLayout(auth_layout)
 
-        layout.addWidget(auth_group)
+        layout.addWidget(conn_section)
 
-        # Site & List Selection Group
-        selection_group = NeonGroupBox("📋 Site & List Selection")
-        selection_layout = QVBoxLayout(selection_group)
-        selection_layout.setSpacing(16)
+        # Site & List section
+        site_section = SectionFrame("📋 Site & List Selection")
 
-        # Site selection with refresh
+        # Site selection
         site_layout = QHBoxLayout()
+        site_layout.setSpacing(12)
         site_combo = HolographicComboBox()
+        site_combo.setMinimumHeight(40)
         self.form_fields["sharepoint_site"] = FormField("Site Name", site_combo)
-        self.refresh_sites_btn = ActionButton.ghost("🔄 Refresh", size="sm")
+        self.refresh_sites_btn = ActionButton.ghost("🔄 Refresh", size="md")
+        self.refresh_sites_btn.setMinimumWidth(120)
         self.refresh_sites_btn.clicked.connect(self.refresh_sites_requested)
 
         site_layout.addWidget(self.form_fields["sharepoint_site"], 3)
         site_layout.addWidget(self.refresh_sites_btn, 1)
-        selection_layout.addLayout(site_layout)
+        site_section.content_layout.addLayout(site_layout)
 
-        # List selection with refresh
+        # List selection
         list_layout = QHBoxLayout()
+        list_layout.setSpacing(12)
         list_combo = HolographicComboBox()
+        list_combo.setMinimumHeight(40)
         self.form_fields["sharepoint_list"] = FormField("List Name", list_combo)
-        self.refresh_lists_btn = ActionButton.ghost("🔄 Refresh", size="sm")
+        self.refresh_lists_btn = ActionButton.ghost("🔄 Refresh", size="md")
+        self.refresh_lists_btn.setMinimumWidth(120)
         self.refresh_lists_btn.clicked.connect(self.refresh_lists_requested)
 
         list_layout.addWidget(self.form_fields["sharepoint_list"], 3)
         list_layout.addWidget(self.refresh_lists_btn, 1)
-        selection_layout.addLayout(list_layout)
+        site_section.content_layout.addLayout(list_layout)
 
-        layout.addWidget(selection_group)
+        layout.addWidget(site_section)
 
         # Test button
-        test_btn = ActionButton.primary("🧪 Test SharePoint Connection", size="md")
+        test_btn_layout = QHBoxLayout()
+        test_btn_layout.addStretch()
+        test_btn = ActionButton.primary("🧪 Test SharePoint Connection", size="lg")
+        test_btn.setMinimumHeight(50)
         test_btn.clicked.connect(self.test_sharepoint_requested)
-        layout.addWidget(test_btn)
+        test_btn_layout.addWidget(test_btn)
+        test_btn_layout.addStretch()
+        layout.addLayout(test_btn_layout)
 
         layout.addStretch()
         self.tab_widget.addTab(tab, "SharePoint")
 
-    def _create_database_tab(self):
-        """สร้าง Database tab แบบ modern"""
+    def _create_better_database_tab(self):
+        """แก้แล้ว: Database tab ที่ดูดีขึ้น"""
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(24)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(20)
 
-        # Database Type Selection
-        type_group = NeonGroupBox("🗄️ Database Type")
-        type_layout = QVBoxLayout(type_group)
+        # Database Type section
+        type_section = SectionFrame("🗄️ Database Type")
 
-        db_type_field = FormField(
-            "Database Type",
-            HolographicComboBox(),
-            help_text="Choose your database platform",
-        )
+        db_type_field = FormField("Database Type", HolographicComboBox())
+        db_type_field.input_widget.setMinimumHeight(40)
         db_type_field.input_widget.addItems(["SQL Server", "SQLite"])
         self.form_fields["db_type"] = db_type_field
         db_type_field.input_widget.currentTextChanged.connect(self._on_db_type_changed)
-        type_layout.addWidget(db_type_field)
+        type_section.content_layout.addWidget(db_type_field)
 
-        layout.addWidget(type_group)
+        layout.addWidget(type_section)
 
-        # SQL Server Configuration
-        self.sql_group = NeonGroupBox("💾 SQL Server Configuration")
-        sql_layout = QVBoxLayout(self.sql_group)
-        sql_layout.setSpacing(16)
+        # SQL Server section
+        self.sql_section = SectionFrame("💾 SQL Server Configuration")
 
-        # Server and credentials
+        # Server และ Username
+        server_user_layout = QHBoxLayout()
+        server_user_layout.setSpacing(16)
+
         server_field = FormField(
-            "Server",
-            ModernLineEdit("localhost\\SQLEXPRESS"),
-            required=True,
-            help_text="SQL Server instance name",
+            "Server Instance", ModernLineEdit("localhost\\SQLEXPRESS")
         )
+        server_field.input_widget.setMinimumHeight(40)
         self.form_fields["db_host"] = server_field
-        sql_layout.addWidget(server_field)
 
-        username_field = FormField(
-            "Username", ModernLineEdit("username"), required=True
-        )
+        username_field = FormField("Username", ModernLineEdit("sa"))
+        username_field.input_widget.setMinimumHeight(40)
         self.form_fields["db_username"] = username_field
-        sql_layout.addWidget(username_field)
 
-        password_field = FormField("Password", PasswordField("password"), required=True)
+        server_user_layout.addWidget(server_field)
+        server_user_layout.addWidget(username_field)
+        self.sql_section.content_layout.addLayout(server_user_layout)
+
+        # Password
+        password_field = FormField("Password", PasswordField("password"))
+        password_field.input_widget.setMinimumHeight(40)
         self.form_fields["db_password"] = password_field
-        sql_layout.addWidget(password_field)
+        self.sql_section.content_layout.addWidget(password_field)
 
-        # Database and table selection
-        db_layout = QHBoxLayout()
+        # Database และ Table
+        db_table_layout = QHBoxLayout()
+        db_table_layout.setSpacing(12)
+
         db_combo = HolographicComboBox()
         db_combo.setEditable(True)
-        self.form_fields["db_name"] = FormField("Database", db_combo)
-        self.refresh_dbs_btn = ActionButton.ghost("🔄 Refresh", size="sm")
+        db_combo.setMinimumHeight(40)
+        self.form_fields["db_name"] = FormField("Database Name", db_combo)
+        self.refresh_dbs_btn = ActionButton.ghost("🔄", size="md")
+        self.refresh_dbs_btn.setMinimumWidth(80)
         self.refresh_dbs_btn.clicked.connect(self.refresh_databases_requested)
 
-        db_layout.addWidget(self.form_fields["db_name"], 3)
-        db_layout.addWidget(self.refresh_dbs_btn, 1)
-        sql_layout.addLayout(db_layout)
-
-        table_layout = QHBoxLayout()
         table_combo = HolographicComboBox()
         table_combo.setEditable(True)
-        self.form_fields["db_table"] = FormField("Table", table_combo)
-        self.refresh_tables_btn = ActionButton.ghost("🔄 Refresh", size="sm")
+        table_combo.setMinimumHeight(40)
+        self.form_fields["db_table"] = FormField("Table Name", table_combo)
+        self.refresh_tables_btn = ActionButton.ghost("🔄", size="md")
+        self.refresh_tables_btn.setMinimumWidth(80)
         self.refresh_tables_btn.clicked.connect(self.refresh_tables_requested)
 
-        table_layout.addWidget(self.form_fields["db_table"], 3)
-        table_layout.addWidget(self.refresh_tables_btn, 1)
-        sql_layout.addLayout(table_layout)
+        db_table_layout.addWidget(self.form_fields["db_name"], 2)
+        db_table_layout.addWidget(self.refresh_dbs_btn)
+        db_table_layout.addWidget(self.form_fields["db_table"], 2)
+        db_table_layout.addWidget(self.refresh_tables_btn)
+        self.sql_section.content_layout.addLayout(db_table_layout)
 
-        layout.addWidget(self.sql_group)
+        layout.addWidget(self.sql_section)
 
-        # SQLite Configuration
-        self.sqlite_group = NeonGroupBox("📄 SQLite Configuration")
-        sqlite_layout = QVBoxLayout(self.sqlite_group)
+        # SQLite section
+        self.sqlite_section = SectionFrame("📄 SQLite Configuration")
+
+        sqlite_layout = QHBoxLayout()
         sqlite_layout.setSpacing(16)
 
         sqlite_file_field = FormField(
-            "Database File",
-            ModernLineEdit("data/database.db"),
-            help_text="Path to SQLite database file",
+            "Database File Path", ModernLineEdit("data/database.db")
         )
+        sqlite_file_field.input_widget.setMinimumHeight(40)
         self.form_fields["sqlite_file"] = sqlite_file_field
-        sqlite_layout.addWidget(sqlite_file_field)
 
-        sqlite_table_field = FormField(
-            "Table Name",
-            ModernLineEdit("sharepoint_data"),
-            help_text="Name of the table to store data",
-        )
+        sqlite_table_field = FormField("Table Name", ModernLineEdit("sharepoint_data"))
+        sqlite_table_field.input_widget.setMinimumHeight(40)
         self.form_fields["sqlite_table_name"] = sqlite_table_field
-        sqlite_layout.addWidget(sqlite_table_field)
 
-        layout.addWidget(self.sqlite_group)
+        sqlite_layout.addWidget(sqlite_file_field)
+        sqlite_layout.addWidget(sqlite_table_field)
+        self.sqlite_section.content_layout.addLayout(sqlite_layout)
+
+        layout.addWidget(self.sqlite_section)
 
         # Test button
-        test_btn = ActionButton.primary("🧪 Test Database Connection", size="md")
+        test_btn_layout = QHBoxLayout()
+        test_btn_layout.addStretch()
+        test_btn = ActionButton.primary("🧪 Test Database Connection", size="lg")
+        test_btn.setMinimumHeight(50)
         test_btn.clicked.connect(self.test_database_requested)
-        layout.addWidget(test_btn)
+        test_btn_layout.addWidget(test_btn)
+        test_btn_layout.addStretch()
+        layout.addLayout(test_btn_layout)
 
         layout.addStretch()
         self.tab_widget.addTab(tab, "Database")
@@ -366,61 +492,55 @@ class ModernConfigPanel(QWidget):
         # Initially show SQL Server
         self._on_db_type_changed("SQL Server")
 
-    def _create_settings_tab(self):
-        """สร้าง Settings tab แบบ modern"""
+    def _create_better_settings_tab(self):
+        """แก้แล้ว: Settings tab ที่ดูดีขึ้น"""
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(24)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(20)
 
-        # Sync Settings
-        sync_group = NeonGroupBox("⏱️ Synchronization Settings")
-        sync_layout = QVBoxLayout(sync_group)
-        sync_layout.setSpacing(16)
+        # Performance section
+        perf_section = SectionFrame("⚡ Performance & Sync Settings")
 
-        interval_field = FormField(
-            "Sync Interval",
-            ModernSpinBox(1, 1440, 60, "minutes"),
-            help_text="How often to automatically sync data",
-        )
-        self.form_fields["sync_interval"] = interval_field
-        sync_layout.addWidget(interval_field)
-
-        layout.addWidget(sync_group)
-
-        # Performance Settings
-        perf_group = NeonGroupBox("⚡ Performance Settings")
-        perf_layout = QVBoxLayout(perf_group)
+        perf_layout = QHBoxLayout()
         perf_layout.setSpacing(16)
 
-        batch_field = FormField(
-            "Batch Size",
-            ModernSpinBox(100, 10000, 1000, "records"),
-            help_text="Number of records to process at once",
+        interval_field = FormField(
+            "Sync Interval (minutes)", ModernSpinBox(1, 1440, 60, "min")
         )
-        self.form_fields["batch_size"] = batch_field
-        perf_layout.addWidget(batch_field)
+        interval_field.input_widget.setMinimumHeight(40)
+        self.form_fields["sync_interval"] = interval_field
 
-        log_level_field = FormField(
-            "Log Level", HolographicComboBox(), help_text="Level of logging detail"
+        batch_field = FormField(
+            "Batch Size (records)", ModernSpinBox(100, 10000, 1000, "records")
         )
+        batch_field.input_widget.setMinimumHeight(40)
+        self.form_fields["batch_size"] = batch_field
+
+        perf_layout.addWidget(interval_field)
+        perf_layout.addWidget(batch_field)
+        perf_section.content_layout.addLayout(perf_layout)
+
+        # Log Level
+        log_level_field = FormField("Logging Level", HolographicComboBox())
+        log_level_field.input_widget.setMinimumHeight(40)
         log_level_field.input_widget.addItems(["DEBUG", "INFO", "WARNING", "ERROR"])
         self.form_fields["log_level"] = log_level_field
-        perf_layout.addWidget(log_level_field)
+        perf_section.content_layout.addWidget(log_level_field)
 
-        layout.addWidget(perf_group)
+        layout.addWidget(perf_section)
 
         layout.addStretch()
         self.tab_widget.addTab(tab, "Settings")
 
     def _on_db_type_changed(self, db_type):
-        """เปลี่ยน UI ตามประเภทฐานข้อมูล"""
+        """แก้แล้ว: เปลี่ยน UI ตามประเภทฐานข้อมูล"""
         if db_type == "SQL Server":
-            self.sql_group.setVisible(True)
-            self.sqlite_group.setVisible(False)
+            self.sql_section.setVisible(True)
+            self.sqlite_section.setVisible(False)
         else:  # SQLite
-            self.sql_group.setVisible(False)
-            self.sqlite_group.setVisible(True)
+            self.sql_section.setVisible(False)
+            self.sqlite_section.setVisible(True)
 
     def _connect_signals(self):
         """เชื่อมต่อ signals"""
@@ -438,8 +558,8 @@ class ModernConfigPanel(QWidget):
                 )
 
     @handle_exceptions(ErrorCategory.CONFIG, ErrorSeverity.LOW)
-    def _save_config_from_ui(self):
-        """บันทึก config จาก UI"""
+    def _save_config_from_ui(self, *args):
+        """แก้แล้ว: บันทึก config จาก UI รับ args ใดๆ"""
         ui_data = {}
         for field_name, field_widget in self.form_fields.items():
             ui_data[field_name] = field_widget.get_value()

@@ -39,7 +39,7 @@ class ModernFrame(QFrame):
 
 
 class ModernDashboard(QWidget):
-    """Modern Dashboard with enhanced UI"""
+    """แก้แล้ว: Modern Dashboard ที่ดูดีขึ้น"""
 
     clear_cache_requested = pyqtSignal()
 
@@ -54,10 +54,10 @@ class ModernDashboard(QWidget):
         self.setup_modern_ui()
 
     def setup_modern_ui(self):
-        """Setup modern dashboard UI"""
+        """แก้แล้ว: Setup modern dashboard UI"""
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(20, 20, 20, 20)
-        main_layout.setSpacing(24)
+        main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.setSpacing(15)
 
         # Create sections
         main_layout.addLayout(self._create_status_section())
@@ -68,9 +68,9 @@ class ModernDashboard(QWidget):
         self.add_log_message("🚀 Modern Dashboard initialized", "info")
 
     def _create_status_section(self) -> QHBoxLayout:
-        """Create status cards section"""
+        """แก้แล้ว: Status cards section"""
         layout = QHBoxLayout()
-        layout.setSpacing(16)
+        layout.setSpacing(12)
 
         # Create modern status cards
         self.status_cards["sharepoint"] = ModernStatusCard("SharePoint", "disconnected")
@@ -78,25 +78,27 @@ class ModernDashboard(QWidget):
         self.status_cards["last_sync"] = ModernStatusCard("Last Sync", "never")
 
         for card in self.status_cards.values():
+            card.setMaximumHeight(110)
             layout.addWidget(card)
 
         return layout
 
     def _create_control_section(self) -> QFrame:
-        """Create control panel section"""
+        """แก้แล้ว: Control panel section"""
         control_frame = ModernFrame(variant="highlight")
+        control_frame.setMaximumHeight(70)
         control_layout = QHBoxLayout(control_frame)
-        control_layout.setContentsMargins(24, 20, 24, 20)
-        control_layout.setSpacing(16)
+        control_layout.setContentsMargins(20, 15, 20, 15)
+        control_layout.setSpacing(15)
 
-        # Action buttons with modern styling
-        self.run_sync_btn = ActionButton.primary("🚀 Start Sync", size="md")
+        # Action buttons
+        self.run_sync_btn = ActionButton.primary("🚀 Start Sync", size="sm")
         self.run_sync_btn.clicked.connect(self.controller.run_full_sync)
 
-        self.clear_cache_btn = ActionButton.secondary("🧹 Clear Cache", size="md")
+        self.clear_cache_btn = ActionButton.secondary("🧹 Clear Cache", size="sm")
         self.clear_cache_btn.clicked.connect(self.clear_cache)
 
-        self.test_connections_btn = ActionButton.ghost("🔧 Test All", size="md")
+        self.test_connections_btn = ActionButton.ghost("🔧 Test All", size="sm")
         self.test_connections_btn.clicked.connect(self.controller.test_all_connections)
 
         control_layout.addWidget(self.run_sync_btn)
@@ -104,9 +106,9 @@ class ModernDashboard(QWidget):
         control_layout.addWidget(self.test_connections_btn)
         control_layout.addStretch(1)
 
-        # Auto sync toggle with modern styling
+        # Auto sync toggle
         self.auto_sync_check = QCheckBox("⚡ Auto Sync")
-        self.auto_sync_check.setFont(QFont("Segoe UI", 12, QFont.Weight.Medium))
+        self.auto_sync_check.setFont(QFont("Segoe UI", 11, QFont.Weight.Medium))
         self.auto_sync_check.setStyleSheet(get_modern_checkbox_style())
         self.auto_sync_check.stateChanged.connect(self.controller.toggle_auto_sync)
         control_layout.addWidget(self.auto_sync_check)
@@ -114,33 +116,34 @@ class ModernDashboard(QWidget):
         return control_frame
 
     def _create_progress_section(self) -> QGridLayout:
-        """Create progress monitoring section"""
+        """แก้แล้ว: Progress monitoring section"""
         grid_layout = QGridLayout()
-        grid_layout.setSpacing(16)
+        grid_layout.setSpacing(12)
 
         # Overall progress card
         progress_frame = ModernFrame()
+        progress_frame.setMaximumHeight(90)
         progress_layout = QVBoxLayout(progress_frame)
-        progress_layout.setContentsMargins(24, 20, 24, 20)
-        progress_layout.setSpacing(12)
+        progress_layout.setContentsMargins(20, 12, 20, 12)
+        progress_layout.setSpacing(8)
 
         # Progress header
         progress_header = QLabel("📊 Sync Progress")
-        progress_header.setFont(QFont("Segoe UI", 14, QFont.Weight.DemiBold))
+        progress_header.setFont(QFont("Segoe UI", 12, QFont.Weight.DemiBold))
         progress_header.setStyleSheet(f"color: {UltraModernColors.TEXT_PRIMARY};")
         progress_layout.addWidget(progress_header)
 
         # Progress bar
         self.overall_progress_bar = HolographicProgressBar()
         self.overall_progress_bar.setTextVisible(True)
-        self.overall_progress_bar.setFixedHeight(32)
+        self.overall_progress_bar.setFixedHeight(24)
         progress_layout.addWidget(self.overall_progress_bar)
 
         # Current task label
         self.current_task_label = QLabel("💤 System idle")
-        self.current_task_label.setFont(QFont("Segoe UI", 11))
+        self.current_task_label.setFont(QFont("Segoe UI", 10))
         self.current_task_label.setStyleSheet(
-            f"color: {UltraModernColors.TEXT_SECONDARY}; margin-top: 8px;"
+            f"color: {UltraModernColors.TEXT_SECONDARY}; margin-top: 4px;"
         )
         progress_layout.addWidget(self.current_task_label)
 
@@ -148,17 +151,18 @@ class ModernDashboard(QWidget):
 
         # Statistics card
         stats_frame = ModernFrame()
+        stats_frame.setMaximumHeight(70)
         stats_layout = QVBoxLayout(stats_frame)
-        stats_layout.setContentsMargins(24, 20, 24, 20)
-        stats_layout.setSpacing(12)
+        stats_layout.setContentsMargins(20, 12, 20, 12)
+        stats_layout.setSpacing(8)
 
         stats_header = QLabel("📈 Statistics")
-        stats_header.setFont(QFont("Segoe UI", 14, QFont.Weight.DemiBold))
+        stats_header.setFont(QFont("Segoe UI", 12, QFont.Weight.DemiBold))
         stats_header.setStyleSheet(f"color: {UltraModernColors.TEXT_PRIMARY};")
         stats_layout.addWidget(stats_header)
 
         self.stats_label = QLabel("Ready to sync")
-        self.stats_label.setFont(QFont("Segoe UI", 11))
+        self.stats_label.setFont(QFont("Segoe UI", 10))
         self.stats_label.setStyleSheet(f"color: {UltraModernColors.TEXT_SECONDARY};")
         self.stats_label.setWordWrap(True)
         stats_layout.addWidget(self.stats_label)
@@ -168,18 +172,38 @@ class ModernDashboard(QWidget):
         return grid_layout
 
     def _create_log_section(self) -> QFrame:
-        """Create log console section"""
-        log_frame = ModernFrame()
+        """แก้แล้ว: Log console section ที่ดูดีขึ้น"""
+        log_frame = QFrame()
+        # แก้: ใช้ style ที่ดูดีกว่า
+        log_frame.setStyleSheet(
+            f"""
+            QFrame {{
+                background: {UltraModernColors.GLASS_BG_DARK};
+                border: 2px solid {UltraModernColors.NEON_PURPLE};
+                border-radius: 16px;
+                margin: 5px;
+            }}
+            """
+        )
+
         log_layout = QVBoxLayout(log_frame)
-        log_layout.setContentsMargins(24, 20, 24, 20)
-        log_layout.setSpacing(12)
+        log_layout.setContentsMargins(20, 15, 20, 15)
+        log_layout.setSpacing(10)
 
         # Log header with controls
         header_layout = QHBoxLayout()
 
         log_header = QLabel("📋 System Log")
-        log_header.setFont(QFont("Segoe UI", 14, QFont.Weight.DemiBold))
-        log_header.setStyleSheet(f"color: {UltraModernColors.TEXT_PRIMARY};")
+        log_header.setFont(QFont("Segoe UI", 12, QFont.Weight.DemiBold))
+        log_header.setStyleSheet(
+            f"""
+            color: {UltraModernColors.TEXT_PRIMARY};
+            background: {UltraModernColors.GLASS_BG};
+            padding: 8px 16px;
+            border-radius: 8px;
+            border: 1px solid {UltraModernColors.NEON_PURPLE};
+            """
+        )
         header_layout.addWidget(log_header)
 
         header_layout.addStretch()
@@ -191,13 +215,65 @@ class ModernDashboard(QWidget):
 
         log_layout.addLayout(header_layout)
 
-        # Log console
-        self.log_console = CyberLogConsole()
-        self.log_console.setMinimumHeight(180)
-        self.log_console.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        # แก้: Log console ที่ดูดีขึ้น
+        log_container = QFrame()
+        log_container.setStyleSheet(
+            f"""
+            QFrame {{
+                background: rgba(0, 0, 0, 0.8);
+                border: 1px solid {UltraModernColors.NEON_BLUE};
+                border-radius: 12px;
+                margin: 5px;
+            }}
+            """
         )
-        log_layout.addWidget(self.log_console)
+
+        log_container_layout = QVBoxLayout(log_container)
+        log_container_layout.setContentsMargins(10, 10, 10, 10)
+
+        self.log_console = CyberLogConsole()
+        self.log_console.setMinimumHeight(140)
+        self.log_console.setMaximumHeight(200)
+        self.log_console.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+        )
+
+        # แก้: ปรับ style ของ log console
+        self.log_console.setStyleSheet(
+            f"""
+            QTextEdit {{
+                background: rgba(0, 0, 0, 0.9);
+                border: none;
+                border-radius: 8px;
+                color: {UltraModernColors.TEXT_PRIMARY};
+                padding: 12px;
+                font-family: 'Consolas', 'Monaco', monospace;
+                font-size: 10px;
+                selection-background-color: {UltraModernColors.NEON_PURPLE};
+            }}
+            QScrollBar:vertical {{
+                border: none;
+                background: rgba(0, 0, 0, 0.3);
+                width: 8px;
+                border-radius: 4px;
+            }}
+            QScrollBar::handle:vertical {{
+                background: {UltraModernColors.NEON_PURPLE};
+                border-radius: 4px;
+                min-height: 20px;
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background: {UltraModernColors.NEON_PINK};
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                background: none;
+                border: none;
+            }}
+            """
+        )
+
+        log_container_layout.addWidget(self.log_console)
+        log_layout.addWidget(log_container)
 
         return log_frame
 
@@ -229,7 +305,13 @@ class ModernDashboard(QWidget):
         task_type = task_description.split()[0] if task_description else "Idle"
         icon = icon_map.get(task_type, "⚙️")
 
-        self.current_task_label.setText(f"{icon} {task_description}")
+        # ตัดข้อความให้สั้นลง
+        short_task = (
+            task_description[:40] + "..."
+            if len(task_description) > 40
+            else task_description
+        )
+        self.current_task_label.setText(f"{icon} {short_task}")
 
     # Status update methods
     @pyqtSlot(str)

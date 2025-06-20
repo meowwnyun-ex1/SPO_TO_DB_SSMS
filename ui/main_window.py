@@ -31,6 +31,7 @@ class UltraModernStatusBar(QStatusBar):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.current_status = "ready"
+        self.setFixedHeight(30)
 
         self.status_label = QLabel("DENSO Neural matrix initializing...")
         self.status_label.setStyleSheet(
@@ -38,11 +39,11 @@ class UltraModernStatusBar(QStatusBar):
             QLabel {{
                 color: {UltraModernColors.TEXT_PRIMARY};
                 font-weight: bold;
-                font-size: 14px;
-                padding: 5px 10px;
+                font-size: 11px;
+                padding: 2px 6px;
                 background: {UltraModernColors.GLASS_BG_DARK};
                 border: 1px solid {UltraModernColors.NEON_PURPLE};
-                border-radius: 8px;
+                border-radius: 4px;
                 margin: 2px;
             }}
             """
@@ -55,8 +56,8 @@ class UltraModernStatusBar(QStatusBar):
             QLabel {{
                 color: {UltraModernColors.NEON_BLUE};
                 font-weight: bold;
-                font-size: 16px;
-                padding: 2px 8px;
+                font-size: 12px;
+                padding: 2px 4px;
             }}
             """
         )
@@ -92,21 +93,9 @@ class UltraModernStatusBar(QStatusBar):
         status_color = color_map.get(status_type, UltraModernColors.TEXT_PRIMARY)
         status_icon = icon_map.get(status_type, "◉")
 
-        self.status_label.setText(f"{status_icon} {message}")
-        self.status_label.setStyleSheet(
-            f"""
-            QLabel {{
-                color: {status_color};
-                font-weight: bold;
-                font-size: 14px;
-                padding: 5px 10px;
-                background: {UltraModernColors.GLASS_BG_DARK};
-                border: 1px solid {status_color};
-                border-radius: 8px;
-                margin: 2px;
-            }}
-            """
-        )
+        # ตัดข้อความให้สั้นลง
+        short_message = message[:50] + "..." if len(message) > 50 else message
+        self.status_label.setText(f"{status_icon} {short_message}")
 
         if status_type == "syncing":
             self.start_progress_animation()
@@ -130,7 +119,7 @@ class UltraModernStatusBar(QStatusBar):
 
 
 class MainWindow(QMainWindow):
-    """Main Window - แก้บัค cleanup และรองรับรูปพื้นหลัง"""
+    """แก้แล้ว: Main Window - ขนาดเล็กพอดีใช้งาน"""
 
     def __init__(self, controller):
         super().__init__(parent=None)
@@ -155,30 +144,23 @@ class MainWindow(QMainWindow):
             )
 
     def setup_modern_ui(self):
-        """Setup UI โดยปรับขนาดให้เหมาะสมกับรูปพื้นหลัง"""
+        """แก้แล้ว: Setup UI ขนาดเล็กกว่าจอ"""
         self.setWindowTitle("DENSO Neural matrix online by เฮียตอม😎")
 
-        # แก้: ปรับขนาดให้เหมาะกับหน้าจอ 1920x1080 และรูปพื้นหลัง
-        self.setMinimumSize(1100, 750)
+        # แก้: ขนาดเล็กกว่าจอ 1920x1080
+        self.setMinimumSize(1000, 650)
+        self.setMaximumSize(1600, 900)  # จำกัดขนาดสูงสุด
 
-        # ปรับขนาดตามขนาดหน้าจอ
-        screen = QApplication.primaryScreen()
-        if screen:
-            screen_size = screen.availableGeometry()
-            # ใช้ 80% ของหน้าจอ
-            width = min(1400, int(screen_size.width() * 0.8))
-            height = min(900, int(screen_size.height() * 0.8))
-            self.resize(width, height)
-        else:
-            self.resize(1300, 850)
+        # ตั้งขนาดเริ่มต้น
+        self.resize(1400, 800)
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
 
-        # แก้: ลด margin เพื่อให้เห็นรูปพื้นหลังมากขึ้น
+        # แก้: ลด margin และ spacing
         main_layout = QHBoxLayout(central_widget)
-        main_layout.setContentsMargins(15, 15, 15, 15)
-        main_layout.setSpacing(20)
+        main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.setSpacing(15)
 
         try:
             self.dashboard = ModernDashboard(self.controller)
@@ -197,27 +179,27 @@ class MainWindow(QMainWindow):
         if self.config_panel:
             self.main_splitter.addWidget(self.config_panel)
 
-        # แก้: ปรับสัดส่วน 70% : 30%
-        total_width = self.width() - 50  # หัก margin
-        self.main_splitter.setSizes([int(total_width * 0.7), int(total_width * 0.3)])
-        self.main_splitter.setStretchFactor(0, 7)
-        self.main_splitter.setStretchFactor(1, 3)
+        # แก้: คงขนาดไว้ ไม่ขยายตามจอ
+        self.main_splitter.setSizes([800, 600])  # Fixed sizes
+        self.main_splitter.setStretchFactor(0, 0)  # ไม่ขยาย
+        self.main_splitter.setStretchFactor(1, 0)  # ไม่ขยาย
 
         main_layout.addWidget(self.main_splitter)
 
         self.status_bar = UltraModernStatusBar(self)
         self.setStatusBar(self.status_bar)
 
-        # Window styling - เตรียมไว้สำหรับรูปพื้นหลัง
+        # แก้: ปรับ splitter handle
         self.setStyleSheet(
             f"""
             QSplitter::handle {{
                 background: {UltraModernColors.NEON_PURPLE};
-                width: 3px;
+                width: 2px;
                 border-radius: 1px;
             }}
             QSplitter::handle:hover {{
                 background: {UltraModernColors.NEON_PINK};
+                width: 3px;
             }}
             """
         )
@@ -385,7 +367,6 @@ class MainWindow(QMainWindow):
 
                 QApplication.processEvents()
 
-                # แก้: ทำ cleanup ครั้งเดียว
                 if not self.cleanup_done:
                     self._safe_cleanup()
 
@@ -409,11 +390,9 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            # 1. Stop controller first
             if self.controller and hasattr(self.controller, "cleanup"):
                 self.controller.cleanup()
 
-            # 2. Remove log handler safely
             if self.ui_log_handler:
                 try:
                     logging.getLogger().removeHandler(self.ui_log_handler)
@@ -421,15 +400,12 @@ class MainWindow(QMainWindow):
                     pass
                 self.ui_log_handler = None
 
-            # 3. Stop status bar animations
             if hasattr(self, "status_bar"):
                 self.status_bar.cleanup()
 
-            # 4. Cleanup dashboard
             if self.dashboard and hasattr(self.dashboard, "cleanup"):
                 self.dashboard.cleanup()
 
-            # 5. Mark cleanup as done
             self.cleanup_done = True
             logger.info("Safe cleanup completed")
 
