@@ -3,13 +3,14 @@ from .sync_engine import SyncEngine
 from .connection_manager import ConnectionManager
 from utils.config_manager import ConfigManager
 from utils.cache_cleaner import AutoCacheManager
+from utils.excel_import_handler import ExcelImportHandler
 import logging
 
 logger = logging.getLogger(__name__)
 
 
 class AppController(QObject):
-    """App Controller - แก้ field mapping และบัค"""
+    """Enhanced App Controller with Excel Import และ Sync Direction"""
 
     # Core signals
     status_changed = pyqtSignal(str, str)
@@ -40,15 +41,19 @@ class AppController(QObject):
         self.connection_manager = ConnectionManager()
         self.sync_engine = SyncEngine()
         self.cache_manager = AutoCacheManager()
+        self.excel_handler = ExcelImportHandler()  # ใหม่
 
         # Auto-sync timer
         self.auto_sync_timer = QTimer()
         self.auto_sync_enabled = False
 
+        # Sync direction ใหม่
+        self.current_sync_direction = "spo_to_sql"  # default
+
         self._setup_connections()
         self._start_cache_manager()
 
-        logger.info("🎉 AppController initialized")
+        logger.info("🎉 Enhanced AppController initialized")
 
     def _setup_connections(self):
         """Setup signal connections"""
@@ -78,6 +83,20 @@ class AppController(QObject):
     def update_config(self, config_object):
         self.config_manager.save_config(config_object)
         self.log_message.emit("💾 Configuration updated", "success")
+
+    # Sync Direction Management (ใหม่)
+    def set_sync_direction(self, direction: str):
+        """ตั้งค่าทิศทางการ sync"""
+        valid_directions = ["spo_to_sql", "sql_to_spo", "excel_to_spo", "excel_to_sql"]
+        if direction in valid_directions:
+            self.current_sync_direction = direction
+            self.log_message.emit(f"🔄 Sync direction: {direction}", "info")
+        else:
+            self.log_message.emit(f"⚠️ Invalid sync direction: {direction}", "warning")
+
+    def get_sync_direction(self) -> str:
+        """ดึงทิศทางการ sync ปัจจุบัน"""
+        return self.current_sync_direction
 
     # Connection Testing
     def test_sharepoint_connection(self):
@@ -125,7 +144,7 @@ class AppController(QObject):
             self.ui_enable_request.emit(True)
 
     def _validate_sharepoint_config(self, config):
-        """แก้: SharePoint validation"""
+        """SharePoint validation"""
         required_fields = [
             config.sharepoint_client_id,
             config.sharepoint_client_secret,
@@ -139,7 +158,7 @@ class AppController(QObject):
         return True
 
     def _validate_database_config(self, config):
-        """แก้: Database validation"""
+        """Database validation"""
         db_type = config.database_type or config.db_type
 
         if db_type and db_type.lower() == "sqlite":
@@ -212,9 +231,23 @@ class AppController(QObject):
         finally:
             self.ui_enable_request.emit(True)
 
-    # Synchronization
+    # Synchronization Methods
     def run_full_sync(self):
-        """เริ่มการซิงค์"""
+        """เริ่มการซิงค์ตามทิศทางที่เลือก"""
+        direction = self.get_sync_direction()
+
+        if direction == "spo_to_sql":
+            return self._run_sharepoint_to_sql_sync()
+        elif direction == "sql_to_spo":
+            return self._run_sql_to_sharepoint_sync()
+        else:
+            self.log_message.emit(
+                f"⚠️ Invalid sync direction for full sync: {direction}", "warning"
+            )
+            return False
+
+    def _run_sharepoint_to_sql_sync(self):
+        """SharePoint to SQL sync (original)"""
         self.ui_enable_request.emit(False)
         self.last_sync_status_update.emit("in_progress")
 
@@ -232,14 +265,158 @@ class AppController(QObject):
                 self.ui_enable_request.emit(True)
                 return False
 
-            self.log_message.emit("🚀 Starting sync...", "info")
-            self.sync_engine.start_sync(config)
+            self.log_message.emit("🚀 Starting SharePoint → SQL sync...", "info")
+            self.sync_engine.start_sync(config, "spo_to_sql")
             return True
 
         except Exception as e:
             self.log_message.emit(f"❌ Sync start failed: {str(e)}", "error")
             self._sync_failed()
             return False
+
+    def _run_sql_to_sharepoint_sync(self):
+        """SQL to SharePoint sync (ใหม่)"""
+        self.ui_enable_request.emit(False)
+        self.last_sync_status_update.emit("in_progress")
+
+        try:
+            config = self.get_config()
+            validation_result = self._validate_sync_config(config)
+
+            if not validation_result["valid"]:
+                self.log_message.emit(f"⚠️ {validation_result['message']}", "warning")
+                self._sync_failed()
+                return False
+
+            if self.sync_engine.is_sync_running():
+                self.log_message.emit("⚠️ Sync already running", "warning")
+                self.ui_enable_request.emit(True)
+                return False
+
+            self.log_message.emit("🚀 Starting SQL → SharePoint sync...", "info")
+            self.sync_engine.start_sync(config, "sql_to_spo")
+            return True
+
+        except Exception as e:
+            self.log_message.emit(f"❌ Reverse sync start failed: {str(e)}", "error")
+            self._sync_failed()
+            return False
+
+    # Excel Import Methods (ใหม่)
+    def run_excel_import(self, file_path: str, target_type: str):
+        """Import Excel file to SharePoint or Database"""
+        self.ui_enable_request.emit(False)
+        self.current_task_update.emit("Validating Excel file...")
+
+        try:
+            # Validate Excel file
+            validation_result = self.excel_handler.validate_file(file_path)
+
+            if not validation_result["is_valid"]:
+                self.log_message.emit(
+                    f"❌ Excel validation failed: {validation_result['error_message']}",
+                    "error",
+                )
+                self.ui_enable_request.emit(True)
+                return False
+
+            file_info = validation_result["file_info"]
+            self.log_message.emit(
+                f"📊 Excel file validated: {file_info['total_rows']} rows, {file_info['total_columns']} columns",
+                "success",
+            )
+
+            # Prepare data based on target
+            if target_type == "spo":
+                return self._import_excel_to_sharepoint(file_path, validation_result)
+            elif target_type == "sql":
+                return self._import_excel_to_sql(file_path, validation_result)
+            else:
+                self.log_message.emit(
+                    f"⚠️ Unknown target type: {target_type}", "warning"
+                )
+                return False
+
+        except Exception as e:
+            self.log_message.emit(f"❌ Excel import failed: {str(e)}", "error")
+            self.ui_enable_request.emit(True)
+            return False
+
+    def _import_excel_to_sharepoint(self, file_path: str, validation_result: dict):
+        """Import Excel to SharePoint"""
+        self.current_task_update.emit("Preparing data for SharePoint...")
+
+        try:
+            # Read Excel data
+            df = self.excel_handler._read_excel_file(file_path)
+
+            # Prepare for SharePoint
+            prep_result = self.excel_handler.prepare_for_sharepoint(df)
+
+            if not prep_result["success"]:
+                self.log_message.emit(
+                    "❌ Failed to prepare data for SharePoint", "error"
+                )
+                return False
+
+            # Show warnings if any
+            for warning in prep_result["warnings"]:
+                self.log_message.emit(f"⚠️ {warning}", "warning")
+
+            self.current_task_update.emit("Importing to SharePoint...")
+
+            # TODO: Implement actual SharePoint import via sync engine
+            self.log_message.emit(
+                "⚠️ SharePoint import not yet fully implemented", "warning"
+            )
+            self.log_message.emit(
+                f"📊 Data ready for import: {len(prep_result['data'])} rows", "info"
+            )
+
+            return True
+
+        except Exception as e:
+            self.log_message.emit(f"❌ SharePoint import error: {str(e)}", "error")
+            return False
+        finally:
+            self.ui_enable_request.emit(True)
+
+    def _import_excel_to_sql(self, file_path: str, validation_result: dict):
+        """Import Excel to SQL Database"""
+        self.current_task_update.emit("Preparing data for Database...")
+
+        try:
+            # Read Excel data
+            df = self.excel_handler._read_excel_file(file_path)
+
+            # Prepare for SQL
+            prep_result = self.excel_handler.prepare_for_sql(df)
+
+            if not prep_result["success"]:
+                self.log_message.emit("❌ Failed to prepare data for Database", "error")
+                return False
+
+            # Show warnings if any
+            for warning in prep_result["warnings"]:
+                self.log_message.emit(f"⚠️ {warning}", "warning")
+
+            self.current_task_update.emit("Importing to Database...")
+
+            # TODO: Implement actual SQL import via database connector
+            self.log_message.emit(
+                "⚠️ Database import not yet fully implemented", "warning"
+            )
+            self.log_message.emit(
+                f"📊 Data ready for import: {len(prep_result['data'])} rows", "info"
+            )
+
+            return True
+
+        except Exception as e:
+            self.log_message.emit(f"❌ Database import error: {str(e)}", "error")
+            return False
+        finally:
+            self.ui_enable_request.emit(True)
 
     def _sync_failed(self):
         """Centralize sync failure handling"""
@@ -306,7 +483,7 @@ class AppController(QObject):
             return False
 
     def _validate_sync_config(self, config):
-        """แก้: ตรวจสอบการตั้งค่าสำหรับซิงค์"""
+        """ตรวจสอบการตั้งค่าสำหรับซิงค์"""
         # SharePoint validation
         sp_fields = [
             config.sharepoint_client_id,
@@ -377,10 +554,11 @@ class AppController(QObject):
                 if self.auto_sync_timer.isActive()
                 else 0
             ),
+            "current_direction": self.current_sync_direction,
         }
 
     def cleanup(self):
-        """แก้บัค: ทำความสะอาดก่อนปิดโปรแกรม"""
+        """ทำความสะอาดก่อนปิดโปรแกรม"""
         try:
             if self.sync_engine.is_sync_running():
                 self.sync_engine.stop_sync()

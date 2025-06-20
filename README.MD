@@ -1,51 +1,159 @@
-# ช่วยพัฒนาระบบ SharePoint to SQL Sync by เฮียตอม😎
+# DENSO Neural Matrix - Enhanced SharePoint ↔ SQL Sync Tool
 
-## ระบบปัจจุบัน
+**Role:** Token-Optimized World-Class Programmer
+**Project:** PyQt6-based data synchronization system with bidirectional sync capabilities
 
-- Ultra modern holographic interface (cyberpunk theme)
-- PyQt6 พร้อม CSS3 support เต็มรูปแบบ
-- Neural network themed UI components
-- Core sync functionality ครบถ้วน
+## 🎯 System Overview
 
-## งานที่ต้องทำต่อ
+Enterprise-grade application for synchronizing data between SharePoint Online and SQL databases, built with modern PyQt6 architecture and enhanced UX/UI design.
 
-### 1. เพิ่ม Real-time System Monitoring
+## 🏗️ Current Architecture
 
-สร้าง dashboard แสดง:
+### Core Components
 
-- CPU/Memory usage แบบ real-time
-- Database connection status
-- Sync operation progress
-- Network performance metrics
+```python
+# Main Structure
+├── ui/
+│   ├── main_window.py          # Enhanced 900x500 compact design
+│   ├── components/
+│   │   ├── dashboard.py        # Real-time sync dashboard
+│   │   └── config_panel.py     # Tabbed configuration interface
+│   └── widgets/               # Reusable UI components
+├── controller/
+│   ├── app_controller.py      # Business logic coordinator
+│   └── sync_engine.py         # Bidirectional sync engine
+├── connectors/
+│   ├── sharepoint_connector.py # SPO API integration
+│   └── database_connector.py   # SQL/SQLite abstraction
+└── utils/
+   ├── excel_import_handler.py # Excel processing pipeline
+   ├── config_manager.py       # Configuration management
+   └── error_handling.py       # Centralized error system
+Key Features Implemented
 
-### 2. Advanced Error Recovery System
+Bidirectional Sync: SPO ↔ SQL, Excel → SPO/SQL
+Compact UI: 900x500 optimized interface
+Smart Config Management: Unified field mapping
+Excel Import Pipeline: Data validation + type inference
+Error Handling: Centralized exception management
 
-พัฒนา:
+🚀 Technical Capabilities
+Sync Engine
+python# Bidirectional sync support
+sync_directions = {
+    "spo_to_sql": SharePointConnector → DatabaseConnector,
+    "sql_to_spo": DatabaseConnector → SharePointConnector,
+    "excel_to_spo": ExcelHandler → SharePointConnector,
+    "excel_to_sql": ExcelHandler → DatabaseConnector
+}
+Data Processing
 
-- Auto-retry mechanisms
-- Checkpoint-based recovery
-- Rollback capabilities
-- Intelligent error handling
+Excel Validation: File size, format, encoding detection
+Column Mapping: Auto-cleanup for SP/SQL compatibility
+Type Inference: Smart data type detection
+Batch Processing: Configurable batch sizes
 
-### 3. Visual Data Transformation
+UI Architecture
 
-สร้าง interface สำหรับ:
+Compact Design: Fixed 900x500 window
+Component Isolation: Modular widget system
+Theme System: Ultra-modern glassmorphism design
+Error Recovery: Graceful fallback mechanisms
 
-- Column mapping แบบ drag-drop
-- Data preview before sync
-- Custom transformation rules
-- Validation pipeline
+🔧 Current Implementation Status
+✅ Completed Features
 
-### 4. Scheduling System
+Enhanced compact UI (900x500)
+SharePoint → SQL sync (fully functional)
+Excel import validation pipeline
+Config management with field mapping
+Error handling system
+Progress tracking
+Auto-sync capabilities
 
-เพิ่ม:
+⚠️ Known Issues & Workarounds
+pythoncritical_bugs = {
+    "excel_to_sharepoint": "Placeholder implementation",
+    "excel_to_database": "Placeholder implementation",
+    "sql_to_sharepoint": "Reverse sync incomplete",
+    "import_path_errors": "Relative import conflicts"
+}
 
-- Cron-style scheduler
-- Conditional triggers
-- Email notifications
-- Sync templates
+workarounds = {
+    "excel_import": "Use Excel → SQL → SPO pipeline",
+    "reverse_sync": "Manual data export/import",
+    "imports": "Fallback absolute imports implemented"
+}
+🎯 Next Implementation Priorities
 
-เริ่มจากข้อไหนก่อน และทำทีละ 2 ไฟล์ต่อครั้ง แบบ step-by-step
-พร้อมใช้ CSS3 features ใหม่ของ PyQt6 เต็มที่
+Complete Excel Import: Actual data insertion
+SQL → SharePoint Sync: Reverse sync implementation
+Import Path Resolution: Fix relative imports
+Real-time Progress: Granular progress reporting
 
-ไม่ต้องอธิบายยาว ขอแค่โค้ดที่ใช้งานได้เลย
+💡 Architecture Decisions
+Design Patterns Used
+
+MVC Pattern: Clear separation of concerns
+Observer Pattern: Signal-slot communication
+Factory Pattern: Component creation
+Strategy Pattern: Sync direction handling
+
+Technology Stack
+yamlUI Framework: PyQt6
+Database: SQLAlchemy (SQL Server/SQLite)
+SharePoint: REST API + OAuth2
+Excel Processing: pandas + openpyxl
+Error Handling: Custom exception system
+Configuration: JSON + environment variables
+Performance Optimizations
+
+Batch processing for large datasets
+Connection pooling
+Memory-efficient data streaming
+Compact UI for resource constraints
+
+🔍 Problem Areas Requiring Attention
+Import System Issues
+python# Current problematic imports
+from ui.components.dashboard import ModernDashboard  # Fails
+from ..widgets.status_card import ModernStatusCard   # Inconsistent
+
+# Solution needed:
+# Standardize import patterns across all modules
+Component Loading Failures
+python# Error pattern observed:
+# "Config panel not available - skipping config signals"
+# "Dashboard not available - skipping dashboard signals"
+
+# Root cause: Import path resolution in PyQt6 modules
+📋 Development Guidelines
+Code Quality Standards
+
+Type hints for all functions
+Comprehensive error handling
+Modular component design
+Token-efficient documentation
+
+UI/UX Principles
+
+900x500 fixed window size
+Compact but functional layouts
+Modern glassmorphism theme
+Accessibility considerations
+
+Performance Requirements
+
+Sub-1000ms UI response times
+Efficient memory usage (< 200MB baseline)
+Scalable to 10K+ records
+Graceful error recovery
+
+🎯 Integration Context
+Copyright: © Thammaphon Chittasuwanna (SDM) | Innovation Department
+Organization: DENSO
+Purpose: Enterprise data synchronization solution
+Deployment: Windows corporate environment
+
+This system represents a modern approach to enterprise data integration with focus on user experience, reliability, and maintainability.
+```

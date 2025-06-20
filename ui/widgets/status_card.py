@@ -12,21 +12,19 @@ from PyQt6.QtGui import QFont, QColor, QPainter
 from ..styles.theme import UltraModernColors
 
 
-class ModernStatusIndicator(QWidget):
-    """Modern status indicator with soft glow effect"""
+class CompactStatusIndicator(QWidget):
+    """Compact status indicator สำหรับขนาด 900x500"""
 
     def __init__(self, status="disconnected", parent=None):
         super().__init__(parent)
         self.status = status
-        self.setFixedSize(14, 14)
-        self.glow_radius = 0
+        self.setFixedSize(10, 10)  # ลดขนาด
 
     def paintEvent(self, event):
-        """วาดจุดสถานะแบบ modern พร้อม glow"""
+        """วาดจุดสถานะแบบ compact"""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # สีตามสถานะ
         colors = {
             "connected": UltraModernColors.SUCCESS_COLOR,
             "disconnected": UltraModernColors.ERROR_COLOR,
@@ -46,10 +44,10 @@ class ModernStatusIndicator(QWidget):
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawEllipse(self.rect())
 
-        # เพิ่ม highlight
-        highlight_color = QColor(255, 255, 255, 80)
+        # เพิ่ม highlight เล็กๆ
+        highlight_color = QColor(255, 255, 255, 60)
         painter.setBrush(highlight_color)
-        highlight_rect = QRect(2, 2, 6, 6)
+        highlight_rect = QRect(1, 1, 4, 4)
         painter.drawEllipse(highlight_rect)
 
     def set_status(self, new_status):
@@ -60,7 +58,7 @@ class ModernStatusIndicator(QWidget):
 
 
 class ModernStatusCard(QWidget):
-    """แก้แล้ว: Status card ที่แสดงหัวข้อชัดเจน ไม่โปร่งเวลา hover"""
+    """Compact Status Card สำหรับ 900x500"""
 
     def __init__(self, title, status="disconnected", parent=None):
         super().__init__(parent)
@@ -72,19 +70,19 @@ class ModernStatusCard(QWidget):
         self.pulse_opacity = 1.0
         self.pulse_direction = -1
 
-        self.setup_ui()
+        self.setup_compact_ui()
         self.update_status_display()
 
-    def setup_ui(self):
-        """แก้แล้ว: Setup UI ให้หัวข้อชัดเจน"""
+    def setup_compact_ui(self):
+        """Setup compact UI สำหรับพื้นที่จำกัด"""
         self.outer_frame = QFrame(self)
         self.outer_frame.setStyleSheet(
             f"""
             QFrame {{
                 background: {UltraModernColors.GLASS_BG_DARK};
-                border: 2px solid {UltraModernColors.NEON_PURPLE};
-                border-radius: 16px;
-                padding: 16px;
+                border: 1px solid {UltraModernColors.NEON_PURPLE};
+                border-radius: 8px;
+                padding: 8px;
                 color: {UltraModernColors.TEXT_PRIMARY};
             }}
             """
@@ -95,111 +93,109 @@ class ModernStatusCard(QWidget):
         main_layout.addWidget(self.outer_frame)
 
         card_layout = QVBoxLayout(self.outer_frame)
-        card_layout.setContentsMargins(20, 16, 20, 16)
-        card_layout.setSpacing(12)
+        card_layout.setContentsMargins(8, 6, 8, 6)
+        card_layout.setSpacing(4)
 
-        # Header with icon and title - ชัดเจนขึ้น
+        # Compact header
         header_layout = QHBoxLayout()
-        header_layout.setSpacing(12)
+        header_layout.setSpacing(6)
 
-        self.status_indicator = ModernStatusIndicator(self.status)
+        self.status_indicator = CompactStatusIndicator(self.status)
         header_layout.addWidget(self.status_indicator)
 
-        # แก้: ให้หัวข้อชัดเจนขึ้น ลบ text-shadow
+        # Compact title
         self.title_label = QLabel(self.title)
-        self.title_label.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
+        self.title_label.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
         self.title_label.setStyleSheet(
-            f"""
-            color: {UltraModernColors.TEXT_PRIMARY};
-            font-weight: bold;
-            """
+            f"color: {UltraModernColors.TEXT_PRIMARY}; font-weight: bold;"
         )
         header_layout.addWidget(self.title_label)
 
         header_layout.addStretch(1)
 
-        # Status icon - ใหญ่และชัดขึ้น
+        # Compact status icon
         self.status_icon = QLabel("")
-        self.status_icon.setFont(QFont("Segoe UI Emoji", 22))
+        self.status_icon.setFont(QFont("Segoe UI Emoji", 16))  # ลดขนาด
         self.status_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status_icon.setFixedSize(35, 35)
+        self.status_icon.setFixedSize(24, 24)  # ลดขนาด
         header_layout.addWidget(self.status_icon)
 
         card_layout.addLayout(header_layout)
 
-        # Description with better visibility
+        # Compact description
         self.description_label = QLabel("")
-        self.description_label.setFont(QFont("Segoe UI", 11, QFont.Weight.Medium))
+        self.description_label.setFont(
+            QFont("Segoe UI", 8, QFont.Weight.Medium)
+        )  # ลดขนาด
         self.description_label.setStyleSheet(
             f"""
             color: {UltraModernColors.TEXT_SECONDARY};
-            background: rgba(255, 255, 255, 0.05);
-            padding: 8px;
-            border-radius: 8px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.03);
+            padding: 4px 6px;
+            border-radius: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
             """
         )
         self.description_label.setWordWrap(True)
         card_layout.addWidget(self.description_label)
 
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.setFixedHeight(110)
 
     def update_status_display(self):
-        """Update status display with better visibility"""
+        """Update status display - compact version"""
         status_config = {
             "connected": {
                 "icon": "✨",
                 "color": UltraModernColors.SUCCESS_COLOR,
-                "description": "System Connected & Operational",
+                "description": "Connected & Ready",
                 "border_color": UltraModernColors.SUCCESS_COLOR,
             },
             "disconnected": {
                 "icon": "⚫",
                 "color": UltraModernColors.ERROR_COLOR,
-                "description": "Not Connected - Check Settings",
+                "description": "Not Connected",
                 "border_color": UltraModernColors.ERROR_COLOR,
             },
             "error": {
                 "icon": "⚠️",
                 "color": UltraModernColors.ERROR_COLOR,
-                "description": "Connection Error Detected",
+                "description": "Connection Error",
                 "border_color": UltraModernColors.ERROR_COLOR,
             },
             "success": {
                 "icon": "✅",
                 "color": UltraModernColors.SUCCESS_COLOR,
-                "description": "Operation Completed Successfully",
+                "description": "Operation Success",
                 "border_color": UltraModernColors.SUCCESS_COLOR,
             },
             "never": {
                 "icon": "⭕",
                 "color": "#999999",
-                "description": "No Operations Performed Yet",
+                "description": "No Operations Yet",
                 "border_color": "#666666",
             },
             "syncing": {
                 "icon": "🔄",
                 "color": UltraModernColors.NEON_BLUE,
-                "description": "Synchronizing Data in Progress",
+                "description": "Syncing Data...",
                 "border_color": UltraModernColors.NEON_BLUE,
             },
             "warning": {
                 "icon": "⚠️",
                 "color": UltraModernColors.WARNING_COLOR,
-                "description": "Warning - Attention Required",
+                "description": "Warning State",
                 "border_color": UltraModernColors.WARNING_COLOR,
             },
             "in_progress": {
                 "icon": "⏳",
                 "color": UltraModernColors.NEON_PURPLE,
-                "description": "Operation in Progress",
+                "description": "In Progress...",
                 "border_color": UltraModernColors.NEON_PURPLE,
             },
             "connecting": {
                 "icon": "🔗",
                 "color": UltraModernColors.NEON_YELLOW,
-                "description": "Establishing Connection",
+                "description": "Connecting...",
                 "border_color": UltraModernColors.NEON_YELLOW,
             },
         }
@@ -214,29 +210,29 @@ class ModernStatusCard(QWidget):
             f"""
             QFrame {{
                 background: {UltraModernColors.GLASS_BG_DARK};
-                border: 2px solid {config['border_color']};
-                border-radius: 16px;
-                padding: 16px;
+                border: 1px solid {config['border_color']};
+                border-radius: 8px;
+                padding: 8px;
                 color: {UltraModernColors.TEXT_PRIMARY};
             }}
             """
         )
 
-        # Update icon with better styling
+        # Update compact icon
         self.status_icon.setText(config["icon"])
         self.status_icon.setStyleSheet(
             f"""
             QLabel {{
                 color: {config['color']};
-                background: rgba(255, 255, 255, 0.1);
-                border: 2px solid {config['color']};
-                border-radius: 17px;
-                padding: 6px;
+                background: rgba(255, 255, 255, 0.08);
+                border: 1px solid {config['color']};
+                border-radius: 12px;
+                padding: 3px;
             }}
             """
         )
 
-        # Update description
+        # Update compact description
         self.description_label.setText(config["description"])
 
         # Start/stop animations for active states
@@ -244,7 +240,7 @@ class ModernStatusCard(QWidget):
             if not self.pulse_timer.isActive():
                 self.pulse_opacity = 1.0
                 self.pulse_direction = -1
-                self.pulse_timer.start(50)
+                self.pulse_timer.start(60)  # ช้าลงเล็กน้อย
         else:
             if self.pulse_timer.isActive():
                 self.pulse_timer.stop()
@@ -256,11 +252,11 @@ class ModernStatusCard(QWidget):
             self.update_status_display()
 
     def _animate_pulse(self):
-        """Animate pulsing effect for active states"""
-        self.pulse_opacity += self.pulse_direction * 0.03
+        """Animate pulsing effect - เบาลง"""
+        self.pulse_opacity += self.pulse_direction * 0.02  # ช้าลง
 
-        if self.pulse_opacity <= 0.4:
-            self.pulse_opacity = 0.4
+        if self.pulse_opacity <= 0.5:  # เปลี่ยนขอบเขต
+            self.pulse_opacity = 0.5
             self.pulse_direction = 1
         elif self.pulse_opacity >= 1.0:
             self.pulse_opacity = 1.0
@@ -279,18 +275,17 @@ class ModernStatusCard(QWidget):
             f"""
             QLabel {{
                 color: {color};
-                background: rgba(255, 255, 255, {self.pulse_opacity * 0.2});
-                border: 2px solid {color};
-                border-radius: 17px;
-                padding: 6px;
+                background: rgba(255, 255, 255, {self.pulse_opacity * 0.15});
+                border: 1px solid {color};
+                border-radius: 12px;
+                padding: 3px;
             }}
             """
         )
 
     def enterEvent(self, event):
-        """แก้แล้ว: Hover effect ไม่ให้โปร่ง"""
+        """Compact hover effect"""
         super().enterEvent(event)
-        # เพิ่มความสว่างแทนการทำให้โปร่ง
         current_config = {
             "connected": UltraModernColors.SUCCESS_COLOR,
             "disconnected": UltraModernColors.ERROR_COLOR,
@@ -309,18 +304,18 @@ class ModernStatusCard(QWidget):
             f"""
             QFrame {{
                 background: {UltraModernColors.GLASS_BG_LIGHT};
-                border: 3px solid {border_color};
-                border-radius: 16px;
-                padding: 16px;
+                border: 2px solid {border_color};
+                border-radius: 8px;
+                padding: 8px;
                 color: {UltraModernColors.TEXT_PRIMARY};
             }}
             """
         )
 
     def leaveEvent(self, event):
-        """แก้แล้ว: Reset hover effect"""
+        """Reset hover effect"""
         super().leaveEvent(event)
-        self.update_status_display()  # กลับไปสถานะเดิม
+        self.update_status_display()
 
     def cleanup_animations(self):
         """Cleanup animations"""

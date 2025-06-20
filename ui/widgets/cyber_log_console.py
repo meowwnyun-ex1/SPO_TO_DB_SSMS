@@ -5,45 +5,46 @@ from ..styles.theme import UltraModernColors
 
 
 class CyberLogConsole(QTextEdit):
-    """คอนโซล Log สไตล์ Cyber พร้อมเอฟเฟกต์การพิมพ์"""
+    """Compact Cyber Log Console สำหรับ 900x500"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setup_ui()
+        self.setup_compact_ui()
         self.typing_timer = QTimer(self)
         self.typing_timer.timeout.connect(self._add_next_char)
         self.full_message = ""
         self.current_index = 0
         self.message_level = "info"
+        self.max_lines = 200  # จำกัดจำนวนบรรทัด
 
-    def setup_ui(self):
-        """ตั้งค่า UI สำหรับคอนโซล"""
+    def setup_compact_ui(self):
+        """ตั้งค่า UI สำหรับคอนโซลแบบ compact"""
         self.setReadOnly(True)
-        self.setFont(QFont("Consolas", 10))
+        self.setFont(QFont("Consolas", 8))  # ลดขนาดฟอนต์
 
-        # แก้: ใช้ theme colors
+        # Compact styling
         self.setStyleSheet(
             f"""
             QTextEdit {{
                 background-color: {UltraModernColors.GLASS_BG_DARK};
                 border: 1px solid {UltraModernColors.NEON_PURPLE};
-                border-radius: 8px;
+                border-radius: 6px;
                 color: {UltraModernColors.TEXT_PRIMARY};
-                padding: 8px;
+                padding: 4px;
                 font-family: 'Consolas', 'Monaco', monospace;
-                font-size: 10px;
-                line-height: 1.4;
+                font-size: 8px;
+                line-height: 1.3;
             }}
             QScrollBar:vertical {{
                 border: none;
                 background: rgba(0, 0, 0, 0.2);
-                width: 8px;
-                border-radius: 4px;
+                width: 6px;
+                border-radius: 3px;
             }}
             QScrollBar::handle:vertical {{
                 background: {UltraModernColors.NEON_PURPLE};
-                border-radius: 4px;
-                min-height: 20px;
+                border-radius: 3px;
+                min-height: 15px;
             }}
             QScrollBar::handle:vertical:hover {{
                 background: {UltraModernColors.NEON_PINK};
@@ -56,35 +57,37 @@ class CyberLogConsole(QTextEdit):
         )
 
     def add_message_with_typing(self, message, level="info"):
-        """เพิ่มข้อความ Log พร้อมเอฟเฟกต์การพิมพ์"""
-        # แก้: เพิ่ม emoji และ timestamp
+        """เพิ่มข้อความ Log พร้อมเอฟเฟกต์การพิมพ์ - compact version"""
         from datetime import datetime
 
         timestamp = datetime.now().strftime("%H:%M:%S")
 
-        # เพิ่ม emoji ตาม level
+        # เพิ่ม emoji ตาม level - compact
         level_icons = {
-            "info": "ℹ️",
-            "success": "✅",
-            "warning": "⚠️",
-            "error": "❌",
-            "debug": "🔍",
+            "info": "ℹ",
+            "success": "✓",
+            "warning": "⚠",
+            "error": "✗",
+            "debug": "◦",
         }
 
-        icon = level_icons.get(level, "ℹ️")
-        self.full_message = f"[{timestamp}] {icon} {message}\n"
+        icon = level_icons.get(level, "ℹ")
+
+        # Compact message format - ตัดข้อความยาวๆ
+        short_message = message[:60] + "..." if len(message) > 60 else message
+        self.full_message = f"[{timestamp}] {icon} {short_message}\n"
         self.current_index = 0
         self.message_level = level
 
-        # Start typing effect
-        self.typing_timer.start(15)  # ความเร็วการพิมพ์
+        # Start typing effect - เร็วขึ้น
+        self.typing_timer.start(10)
 
     def _add_next_char(self):
-        """Add the next character of the message with color."""
+        """Add the next character - optimized for compact display"""
         if self.current_index < len(self.full_message):
             char_to_add = self.full_message[self.current_index]
 
-            # แก้: ใช้ colors จาก theme
+            # Compact colors
             colors = {
                 "info": UltraModernColors.NEON_BLUE,
                 "success": UltraModernColors.SUCCESS_COLOR,
@@ -116,11 +119,25 @@ class CyberLogConsole(QTextEdit):
             self.current_index += 1
         else:
             self.typing_timer.stop()
-            # Scroll to bottom
+            self._limit_lines()  # จำกัดจำนวนบรรทัด
             self.ensureCursorVisible()
 
+    def _limit_lines(self):
+        """จำกัดจำนวนบรรทัดเพื่อประสิทธิภาพ"""
+        document = self.document()
+        if document.lineCount() > self.max_lines:
+            cursor = QTextCursor(document)
+            cursor.movePosition(QTextCursor.MoveOperation.Start)
+
+            # ลบบรรทัดแรกๆ ออก
+            lines_to_remove = document.lineCount() - self.max_lines + 10
+            for _ in range(lines_to_remove):
+                cursor.select(QTextCursor.SelectionType.LineUnderCursor)
+                cursor.removeSelectedText()
+                cursor.deleteChar()  # ลบ newline
+
     def clear(self):
-        """Clear the text console and stop typing animation."""
+        """Clear the text console and stop typing animation"""
         super().clear()
         if self.typing_timer.isActive():
             self.typing_timer.stop()
@@ -129,7 +146,7 @@ class CyberLogConsole(QTextEdit):
         self.message_level = "info"
 
     def add_system_message(self, message):
-        """เพิ่มข้อความระบบโดยตรงไม่มี typing effect"""
+        """เพิ่มข้อความระบบโดยตรง - compact version"""
         cursor = self.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
 
@@ -140,7 +157,55 @@ class CyberLogConsole(QTextEdit):
         from datetime import datetime
 
         timestamp = datetime.now().strftime("%H:%M:%S")
-        cursor.insertText(f"[{timestamp}] 🖥️ {message}\n")
+        short_message = message[:50] + "..." if len(message) > 50 else message
+        cursor.insertText(f"[{timestamp}] ⚙ {short_message}\n")
 
         self.setTextCursor(cursor)
+        self._limit_lines()
         self.ensureCursorVisible()
+
+    def add_compact_message(self, message, level="info"):
+        """เพิ่มข้อความแบบไม่มี typing effect สำหรับประสิทธิภาพ"""
+        from datetime import datetime
+
+        timestamp = datetime.now().strftime("%H:%M:%S")
+
+        level_icons = {
+            "info": "ℹ",
+            "success": "✓",
+            "warning": "⚠",
+            "error": "✗",
+            "debug": "◦",
+        }
+
+        colors = {
+            "info": UltraModernColors.NEON_BLUE,
+            "success": UltraModernColors.SUCCESS_COLOR,
+            "warning": UltraModernColors.NEON_YELLOW,
+            "error": UltraModernColors.ERROR_COLOR,
+            "debug": UltraModernColors.TEXT_SECONDARY,
+        }
+
+        icon = level_icons.get(level, "ℹ")
+        color = colors.get(level, colors["info"])
+
+        # Compact message
+        short_message = message[:50] + "..." if len(message) > 50 else message
+
+        cursor = self.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+
+        char_format = cursor.charFormat()
+        char_format.setForeground(QColor(color))
+        cursor.setCharFormat(char_format)
+
+        cursor.insertText(f"[{timestamp}] {icon} {short_message}\n")
+
+        self.setTextCursor(cursor)
+        self._limit_lines()
+        self.ensureCursorVisible()
+
+    def cleanup(self):
+        """Cleanup สำหรับปิดโปรแกรม"""
+        if hasattr(self, "typing_timer") and self.typing_timer.isActive():
+            self.typing_timer.stop()
