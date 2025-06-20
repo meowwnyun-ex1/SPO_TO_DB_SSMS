@@ -1,23 +1,20 @@
-# ui/components/config_panel.py - Fixed Config Panel
+# ui/components/config_panel.py - Compact Configuration Panel
 from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
-    QLabel,
-    QTabWidget,
     QGridLayout,
     QScrollArea,
     QTableWidget,
     QTableWidgetItem,
     QHeaderView,
     QAbstractItemView,
-    QFileDialog,
     QMessageBox,
     QCheckBox,
+    QLabel,
 )
 from PyQt6.QtCore import Qt, pyqtSlot, QTimer, pyqtSignal
 import sys
-import json
 import logging
 from pathlib import Path
 
@@ -32,6 +29,7 @@ try:
         get_modern_tab_style,
         UltraModernColors,
         get_modern_checkbox_style,
+        CompactScaling,
     )
     from ui.widgets.modern_button import ModernButton
     from ui.widgets.modern_input import (
@@ -43,8 +41,9 @@ try:
     )
     from ui.widgets.holographic_combobox import HolographicComboBox
     from ui.widgets.neon_groupbox import NeonGroupBox
-    from utils.config_manager import get_config_manager
     from utils.error_handling import handle_exceptions, ErrorCategory, ErrorSeverity
+    from utils.config_manager import get_simple_config_manager
+
 except ImportError as e:
     print(f"Import error in config_panel.py: {e}")
     sys.exit(1)
@@ -52,472 +51,377 @@ except ImportError as e:
 logger = logging.getLogger(__name__)
 
 
+class CompactFormField(QWidget):
+    """Ultra-compact form field for 900x500 display"""
+
+    def __init__(self, input_widget, label_text="", parent=None):
+        super().__init__(parent)
+        self.input_widget = input_widget
+        self.label_text = label_text
+        self._setup_ui()
+
+    def _setup_ui(self):
+        """Setup compact form layout"""
+        layout = QHBoxLayout(self)  # Horizontal layout to save vertical space
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+
+        if self.label_text:
+            self.label = QLabel(self.label_text)
+            self.label.setFont(
+                QFont("Segoe UI", CompactScaling.FONT_SIZE_SMALL, QFont.Weight.Normal)
+            )
+            self.label.setStyleSheet(f"color: {UltraModernColors.TEXT_PRIMARY};")
+            self.label.setMinimumWidth(100)  # Fixed width for alignment
+            self.label.setMaximumWidth(100)
+            layout.addWidget(self.label)
+
+        # Handle checkbox specially
+        if isinstance(self.input_widget, QCheckBox):
+            # For checkboxes, no separate label needed
+            layout.addWidget(self.input_widget)
+            if hasattr(self, "label"):
+                self.label.hide()
+        else:
+            self.input_widget.setMaximumHeight(22)  # Compact height
+            layout.addWidget(self.input_widget)
+
+    def get_value(self):
+        """Get value from input widget"""
+        if isinstance(self.input_widget, QLineEdit):
+            return self.input_widget.text()
+        elif isinstance(self.input_widget, ModernTextEdit):
+            return self.input_widget.toPlainText()
+        elif isinstance(self.input_widget, HolographicComboBox):
+            return self.input_widget.currentText()
+        elif isinstance(self.input_widget, ModernSpinBox):
+            return self.input_widget.value()
+        elif isinstance(self.input_widget, QCheckBox):
+            return self.input_widget.isChecked()
+        return None
+
+    def set_value(self, value):
+        """Set value to input widget"""
+        if isinstance(self.input_widget, QLineEdit):
+            self.input_widget.setText(str(value))
+        elif isinstance(self.input_widget, ModernTextEdit):
+            self.input_widget.setText(str(value))
+        elif isinstance(self.input_widget, HolographicComboBox):
+            index = self.input_widget.findText(str(value))
+            if index >= 0:
+                self.input_widget.setCurrentIndex(index)
+        elif isinstance(self.input_widget, ModernSpinBox):
+            self.input_widget.setValue(
+                float(value) if self.input_widget.is_decimal else int(value)
+            )
+        elif isinstance(self.input_widget, QCheckBox):
+            self.input_widget.setChecked(bool(value))
+
+
+class CompactMappingTable(QWidget):
+    """Compact mapping table with minimal height"""
+
+    def __init__(self, title: str, parent=None):
+        super().__init__(parent)
+        self.title = title
+        self._setup_ui()
+
+    def _setup_ui(self):
+        """Setup compact table layout"""
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(2, 2, 2, 2)
+        layout.setSpacing(2)
+
+        # Title
+        title_label = QLabel(self.title)
+        title_label.setFont(
+            QFont("Segoe UI", CompactScaling.FONT_SIZE_SMALL, QFont.Weight.Bold)
+        )
+        title_label.setStyleSheet(f"color: {UltraModernColors.NEON_BLUE};")
+        layout.addWidget(title_label)
+
+        # Compact table
+        self.table = QTableWidget(3, 2)  # Start with 3 rows only
+        self.table.setHorizontalHeaderLabels(["Source", "Target"])
+        self.table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Stretch
+        )
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setMaximumHeight(120)  # Limit table height
+        self.table.setMinimumHeight(80)
+
+        # Style table for compact view
+        self.table.setStyleSheet(
+            f"""
+            QTableWidget {{
+                background: {UltraModernColors.GLASS_BG_DARK};
+                border: 1px solid {UltraModernColors.GLASS_BORDER};
+                border-radius: 3px;
+                gridline-color: {UltraModernColors.GLASS_BORDER};
+                font-size: {CompactScaling.FONT_SIZE_SMALL}px;
+            }}
+            QTableWidget::item {{
+                padding: 2px;
+                min-height: 18px;
+            }}
+            QHeaderView::section {{
+                background: {UltraModernColors.GLASS_BG_LIGHT};
+                border: 1px solid {UltraModernColors.GLASS_BORDER};
+                padding: 3px;
+                font-size: {CompactScaling.FONT_SIZE_TINY}px;
+                font-weight: bold;
+            }}
+        """
+        )
+        layout.addWidget(self.table)
+
+        # Compact button row
+        button_layout = QHBoxLayout()
+        button_layout.setSpacing(2)
+
+        self.add_button = ModernButton("+ Add", "ghost", "sm")
+        self.remove_button = ModernButton("- Remove", "danger", "sm")
+
+        button_layout.addWidget(self.add_button)
+        button_layout.addWidget(self.remove_button)
+        button_layout.addStretch(1)
+
+        layout.addLayout(button_layout)
+
+        # Connect signals
+        self.add_button.clicked.connect(self._add_row)
+        self.remove_button.clicked.connect(self._remove_row)
+
+    def _add_row(self):
+        """Add new row to table"""
+        row = self.table.rowCount()
+        self.table.insertRow(row)
+        self.table.setItem(row, 0, QTableWidgetItem(""))
+        self.table.setItem(row, 1, QTableWidgetItem(""))
+
+    def _remove_row(self):
+        """Remove selected rows"""
+        selected_rows = sorted(
+            set(index.row() for index in self.table.selectedIndexes()), reverse=True
+        )
+        if not selected_rows:
+            selected_rows = (
+                [self.table.rowCount() - 1] if self.table.rowCount() > 0 else []
+            )
+
+        for row in selected_rows:
+            self.table.removeRow(row)
+
+    def get_mapping(self) -> dict:
+        """Get mapping dictionary from table"""
+        mapping = {}
+        for row in range(self.table.rowCount()):
+            source_item = self.table.item(row, 0)
+            target_item = self.table.item(row, 1)
+            if source_item and target_item:
+                source = source_item.text().strip()
+                target = target_item.text().strip()
+                if source and target:
+                    mapping[source] = target
+        return mapping
+
+    def set_mapping(self, mapping: dict):
+        """Set mapping dictionary to table"""
+        self.table.clearContents()
+        self.table.setRowCount(max(len(mapping), 3))
+
+        for row, (source, target) in enumerate(mapping.items()):
+            self.table.setItem(row, 0, QTableWidgetItem(str(source)))
+            self.table.setItem(row, 1, QTableWidgetItem(str(target)))
+
+
 class ConfigPanel(QWidget):
     """
-    Configuration panel for managing SharePoint and Database settings,
-    synchronization options, and data mappings.
+    Compact configuration panel optimized for 900x500 display.
+    Uses accordion-style collapsible sections instead of tabs.
     """
 
     # Signals to communicate with AppController
     config_changed = pyqtSignal()
     request_auto_sync_toggle = pyqtSignal(bool)
-    request_update_config_setting = pyqtSignal(
-        str, object, str
-    )  # key_path, value, value_type
+    request_update_config_setting = pyqtSignal(str, object, str)
 
     def __init__(self, controller, parent=None):
         super().__init__(parent)
         self.controller = controller
-        self.config_manager = get_config_manager()
+        self.config_manager = get_simple_config_manager()
         self.cleanup_done = False
 
         # Timer for deferred saving
-        self._mapping_save_timer = QTimer(self)
-        self._mapping_save_timer.setSingleShot(True)
-        self._mapping_save_timer.setInterval(1000)
-        self._mapping_save_timer.timeout.connect(self._save_field_mappings)
+        self._save_timer = QTimer(self)
+        self._save_timer.setSingleShot(True)
+        self._save_timer.setInterval(500)  # Faster save for compact UI
+        self._save_timer.timeout.connect(self._save_all_settings)
 
         # Store form field widgets
         self.field_widgets = {}
+        self.mapping_tables = {}
 
         self._setup_ui()
         self._load_current_config()
         self._connect_signals()
 
-        logger.info("ConfigPanel initialized")
+        logger.info("Compact ConfigPanel initialized")
 
     @handle_exceptions(ErrorCategory.UI, ErrorSeverity.HIGH)
     def _setup_ui(self):
-        """Setup the layout and widgets for the configuration panel"""
+        """Setup compact configuration layout"""
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(10, 10, 10, 10)
-        main_layout.setSpacing(10)
+        main_layout.setContentsMargins(4, 4, 4, 4)
+        main_layout.setSpacing(4)
 
-        # Create tab widget
-        self.tab_widget = QTabWidget()
-        self.tab_widget.setStyleSheet(get_modern_tab_style())
-        main_layout.addWidget(self.tab_widget)
+        # Create scroll area for main content
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
 
-        # Add tabs
-        self._add_general_settings_tab()
-        self._add_sharepoint_tab()
-        self._add_database_tab()
-        self._add_sync_settings_tab()
-        self._add_data_mapping_tab()
-        self._add_advanced_settings_tab()
-
-        main_layout.addStretch(1)
-
-    def _add_general_settings_tab(self):
-        """Add general settings tab"""
-        general_tab = QScrollArea()
-        general_tab.setWidgetResizable(True)
         content_widget = QWidget()
-        general_tab.setWidget(content_widget)
-        layout = QVBoxLayout(content_widget)
-        layout.setContentsMargins(15, 15, 15, 15)
-        layout.setSpacing(15)
+        scroll_area.setWidget(content_widget)
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setContentsMargins(4, 4, 4, 4)
+        content_layout.setSpacing(6)
 
-        # App Info Group
-        app_info_group = NeonGroupBox("Application Information")
-        app_info_layout = QGridLayout()
+        # Add configuration sections
+        self._add_connection_section(content_layout)
+        self._add_sync_section(content_layout)
+        self._add_mapping_section(content_layout)
 
-        config = self.config_manager.get_config()
+        content_layout.addStretch(1)
+        main_layout.addWidget(scroll_area)
 
-        app_name_label = QLabel(f"App Name: {config.app_name}")
-        app_name_label.setStyleSheet(
-            f"color: {UltraModernColors.TEXT_PRIMARY}; font-weight: bold;"
-        )
-        app_info_layout.addWidget(app_name_label, 0, 0)
+        # Add action buttons at bottom
+        self._add_action_buttons(main_layout)
 
-        app_version_label = QLabel(f"Version: {config.app_version}")
-        app_version_label.setStyleSheet(f"color: {UltraModernColors.TEXT_SECONDARY};")
-        app_info_layout.addWidget(app_version_label, 1, 0)
+    def _add_connection_section(self, layout):
+        """Add connection configuration section"""
+        connection_group = NeonGroupBox("Connection Settings")
+        connection_layout = QVBoxLayout()
+        connection_layout.setSpacing(3)
 
-        app_info_group.setLayout(app_info_layout)
-        layout.addWidget(app_info_group)
+        # SharePoint settings - most essential only
+        sp_fields = [
+            ("sharepoint_site", "SharePoint Site URL:"),
+            ("sharepoint_list", "List Name:"),
+            ("sharepoint_client_id", "Client ID:"),
+            ("sharepoint_client_secret", "Client Secret:"),
+            ("tenant_id", "Tenant ID:"),
+        ]
 
-        # UI Settings Group
-        ui_group = NeonGroupBox("UI Settings")
-        ui_layout = QGridLayout()
+        for field_name, label in sp_fields:
+            if field_name == "sharepoint_client_secret":
+                widget = PasswordField()
+            else:
+                widget = ModernLineEdit()
 
-        self.field_widgets["background_image_path"] = FormField(
-            ModernLineEdit(), "Background Image Path:"
-        )
-        ui_layout.addWidget(self.field_widgets["background_image_path"], 0, 0, 1, 2)
+            field = CompactFormField(widget, label)
+            self.field_widgets[field_name] = field
+            connection_layout.addWidget(field)
 
-        self.field_widgets["enable_background_audio"] = FormField(
-            QCheckBox("Enable Background Audio"), ""
-        )
-        self.field_widgets["enable_background_audio"].input_widget.setStyleSheet(
-            get_modern_checkbox_style()
-        )
-        ui_layout.addWidget(self.field_widgets["enable_background_audio"], 1, 0, 1, 2)
+        # Database settings
+        db_layout = QHBoxLayout()
+        db_layout.setSpacing(4)
 
-        self.field_widgets["background_audio_path"] = FormField(
-            ModernLineEdit(), "Background Audio Path:"
-        )
-        ui_layout.addWidget(self.field_widgets["background_audio_path"], 2, 0, 1, 2)
+        # Database type selector
+        db_type_field = CompactFormField(HolographicComboBox(), "DB Type:")
+        db_type_field.input_widget.addItems(["SQL Server", "SQLite"])
+        self.database_type_selector = db_type_field.input_widget
+        self.field_widgets["database_type"] = db_type_field
+        db_layout.addWidget(db_type_field)
 
-        self.field_widgets["background_audio_volume"] = FormField(
-            ModernSpinBox(decimal=True, min_val=0.0, max_val=1.0, step=0.05),
-            "Audio Volume:",
-        )
-        ui_layout.addWidget(self.field_widgets["background_audio_volume"], 3, 0, 1, 2)
+        connection_layout.addLayout(db_layout)
 
-        ui_group.setLayout(ui_layout)
-        layout.addWidget(ui_group)
+        # SQL Server fields in compact grid
+        sql_grid = QGridLayout()
+        sql_grid.setSpacing(2)
 
-        layout.addStretch(1)
-        self.tab_widget.addTab(general_tab, "General")
+        sql_fields = [
+            ("sql_server", "Server:", 0, 0),
+            ("sql_database", "Database:", 0, 1),
+            ("sql_username", "Username:", 1, 0),
+            ("sql_password", "Password:", 1, 1),
+        ]
 
-    def _add_sharepoint_tab(self):
-        """Add SharePoint configuration tab"""
-        sharepoint_tab = QScrollArea()
-        sharepoint_tab.setWidgetResizable(True)
-        content_widget = QWidget()
-        sharepoint_tab.setWidget(content_widget)
-        layout = QVBoxLayout(content_widget)
-        layout.setContentsMargins(15, 15, 15, 15)
-        layout.setSpacing(15)
+        for field_name, label, row, col in sql_fields:
+            widget = PasswordField() if "password" in field_name else ModernLineEdit()
+            field = CompactFormField(widget, label)
+            self.field_widgets[field_name] = field
+            sql_grid.addWidget(field, row, col)
 
-        sp_group = NeonGroupBox("SharePoint Connection")
-        sp_layout = QGridLayout()
+        connection_layout.addLayout(sql_grid)
 
-        self.field_widgets["sharepoint_site"] = FormField(
-            ModernLineEdit(), "SharePoint Site URL:"
-        )
-        sp_layout.addWidget(self.field_widgets["sharepoint_site"], 0, 0, 1, 2)
+        connection_group.setLayout(connection_layout)
+        layout.addWidget(connection_group)
 
-        self.field_widgets["sharepoint_list"] = FormField(
-            ModernLineEdit(), "SharePoint List Name:"
-        )
-        sp_layout.addWidget(self.field_widgets["sharepoint_list"], 1, 0, 1, 2)
+    def _add_sync_section(self, layout):
+        """Add sync configuration section"""
+        sync_group = NeonGroupBox("Sync Settings")
+        sync_layout = QVBoxLayout()
+        sync_layout.setSpacing(3)
 
-        self.field_widgets["sharepoint_client_id"] = FormField(
-            ModernLineEdit(), "Client ID:"
-        )
-        sp_layout.addWidget(self.field_widgets["sharepoint_client_id"], 2, 0, 1, 2)
+        # Sync settings in compact rows
+        sync_fields = [
+            (
+                "sync_interval",
+                "Interval (sec):",
+                ModernSpinBox(min_val=30, max_val=3600),
+            ),
+            ("batch_size", "Batch Size:", ModernSpinBox(min_val=100, max_val=10000)),
+        ]
 
-        self.field_widgets["sharepoint_client_secret"] = FormField(
-            PasswordField(), "Client Secret:"
-        )
-        sp_layout.addWidget(self.field_widgets["sharepoint_client_secret"], 3, 0, 1, 2)
+        for field_name, label, widget in sync_fields:
+            field = CompactFormField(widget, label)
+            self.field_widgets[field_name] = field
+            sync_layout.addWidget(field)
 
-        self.field_widgets["tenant_id"] = FormField(ModernLineEdit(), "Tenant ID:")
-        sp_layout.addWidget(self.field_widgets["tenant_id"], 4, 0, 1, 2)
-
-        self.field_widgets["use_graph_api"] = FormField(
-            QCheckBox("Use Graph API (Advanced)"), ""
-        )
-        self.field_widgets["use_graph_api"].input_widget.setStyleSheet(
-            get_modern_checkbox_style()
-        )
-        sp_layout.addWidget(self.field_widgets["use_graph_api"], 5, 0, 1, 2)
-
-        sp_group.setLayout(sp_layout)
-        layout.addWidget(sp_group)
-        layout.addStretch(1)
-        self.tab_widget.addTab(sharepoint_tab, "SharePoint")
-
-    def _add_database_tab(self):
-        """Add database configuration tab"""
-        database_tab = QScrollArea()
-        database_tab.setWidgetResizable(True)
-        content_widget = QWidget()
-        database_tab.setWidget(content_widget)
-        layout = QVBoxLayout(content_widget)
-        layout.setContentsMargins(15, 15, 15, 15)
-        layout.setSpacing(15)
-
-        # Database Type Selection
-        db_type_group = NeonGroupBox("Database Type")
-        db_type_layout = QVBoxLayout()
-        self.database_type_selector = HolographicComboBox()
-        self.database_type_selector.addItems(["SQL Server", "SQLite"])
-        db_type_layout.addWidget(self.database_type_selector)
-        db_type_group.setLayout(db_type_layout)
-        layout.addWidget(db_type_group)
-
-        # Database Settings Group
-        db_settings_group = NeonGroupBox("Database Connection Settings")
-        db_settings_layout = QGridLayout()
-
-        # SQL Server fields
-        self.field_widgets["sql_server"] = FormField(
-            ModernLineEdit(), "Server Address:"
-        )
-        db_settings_layout.addWidget(self.field_widgets["sql_server"], 0, 0, 1, 2)
-
-        self.field_widgets["sql_database"] = FormField(
-            ModernLineEdit(), "Database Name:"
-        )
-        db_settings_layout.addWidget(self.field_widgets["sql_database"], 1, 0, 1, 2)
-
-        self.field_widgets["sql_username"] = FormField(ModernLineEdit(), "Username:")
-        db_settings_layout.addWidget(self.field_widgets["sql_username"], 2, 0, 1, 2)
-
-        self.field_widgets["sql_password"] = FormField(PasswordField(), "Password:")
-        db_settings_layout.addWidget(self.field_widgets["sql_password"], 3, 0, 1, 2)
-
-        self.field_widgets["sql_table_name"] = FormField(
-            ModernLineEdit(), "Target Table Name:"
-        )
-        db_settings_layout.addWidget(self.field_widgets["sql_table_name"], 4, 0, 1, 2)
-
-        # SQLite fields
-        self.field_widgets["sqlite_file"] = FormField(
-            ModernLineEdit(), "SQLite File Path:"
-        )
-        db_settings_layout.addWidget(self.field_widgets["sqlite_file"], 5, 0)
-
-        self.browse_sqlite_button = ModernButton("Browse...", "secondary", "sm")
-        db_settings_layout.addWidget(self.browse_sqlite_button, 5, 1)
-
-        self.field_widgets["sqlite_table_name"] = FormField(
-            ModernLineEdit(), "SQLite Table Name:"
-        )
-        db_settings_layout.addWidget(
-            self.field_widgets["sqlite_table_name"], 6, 0, 1, 2
-        )
-
-        # Options
-        self.field_widgets["sql_create_table"] = FormField(
-            QCheckBox("Create Table if Not Exists"), ""
-        )
-        self.field_widgets["sql_create_table"].input_widget.setStyleSheet(
-            get_modern_checkbox_style()
-        )
-        db_settings_layout.addWidget(self.field_widgets["sql_create_table"], 7, 0, 1, 2)
-
-        self.field_widgets["sql_truncate_before"] = FormField(
-            QCheckBox("Truncate Table Before Sync"), ""
-        )
-        self.field_widgets["sql_truncate_before"].input_widget.setStyleSheet(
-            get_modern_checkbox_style()
-        )
-        db_settings_layout.addWidget(
-            self.field_widgets["sql_truncate_before"], 8, 0, 1, 2
-        )
-
-        db_settings_group.setLayout(db_settings_layout)
-        layout.addWidget(db_settings_group)
-
-        layout.addStretch(1)
-        self.tab_widget.addTab(database_tab, "Database")
-
-    def _add_sync_settings_tab(self):
-        """Add synchronization settings tab"""
-        sync_tab = QScrollArea()
-        sync_tab.setWidgetResizable(True)
-        content_widget = QWidget()
-        sync_tab.setWidget(content_widget)
-        layout = QVBoxLayout(content_widget)
-        layout.setContentsMargins(15, 15, 15, 15)
-        layout.setSpacing(15)
-
-        # Sync Settings Group
-        sync_group = NeonGroupBox("Synchronization Settings")
-        sync_layout = QGridLayout()
-
-        self.field_widgets["sync_interval"] = FormField(
-            ModernSpinBox(min_val=1, max_val=86400), "Sync Interval (seconds):"
-        )
-        sync_layout.addWidget(self.field_widgets["sync_interval"], 0, 0, 1, 2)
-
-        self.field_widgets["sync_mode"] = FormField(HolographicComboBox(), "Sync Mode:")
-        self.field_widgets["sync_mode"].input_widget.addItems(["full", "incremental"])
-        sync_layout.addWidget(self.field_widgets["sync_mode"], 1, 0, 1, 2)
-
-        # Auto-sync checkbox (not a FormField, handled separately)
-        self.auto_sync_enabled_checkbox = QCheckBox("Enable Auto Synchronization")
-        self.auto_sync_enabled_checkbox.setStyleSheet(get_modern_checkbox_style())
-        sync_layout.addWidget(self.auto_sync_enabled_checkbox, 2, 0, 1, 2)
-
-        self.field_widgets["auto_sync_direction"] = FormField(
-            HolographicComboBox(), "Auto-Sync Direction:"
-        )
-        self.field_widgets["auto_sync_direction"].input_widget.addItems(
-            ["spo_to_sql", "sql_to_spo"]
-        )
-        sync_layout.addWidget(self.field_widgets["auto_sync_direction"], 3, 0, 1, 2)
+        # Auto-sync checkbox
+        auto_sync_checkbox = QCheckBox("Enable Auto Synchronization")
+        auto_sync_checkbox.setStyleSheet(get_modern_checkbox_style())
+        self.auto_sync_enabled_checkbox = auto_sync_checkbox
+        sync_layout.addWidget(auto_sync_checkbox)
 
         sync_group.setLayout(sync_layout)
         layout.addWidget(sync_group)
 
-        # Excel Import Group
-        excel_group = NeonGroupBox("Excel Import Settings")
-        excel_layout = QVBoxLayout()
+    def _add_mapping_section(self, layout):
+        """Add data mapping section with horizontal split"""
+        mapping_group = NeonGroupBox("Data Mapping")
+        mapping_layout = QHBoxLayout()  # Horizontal split for better space usage
+        mapping_layout.setSpacing(4)
 
-        self.field_widgets["excel_import_mapping"] = FormField(
-            ModernTextEdit(), "Excel to DB Column Mapping (JSON):"
-        )
-        self.field_widgets["excel_import_mapping"].input_widget.setPlaceholderText(
-            '{"Excel Column": "DB Column", "Name": "full_name", "Age": "age"}'
-        )
-        excel_layout.addWidget(self.field_widgets["excel_import_mapping"])
+        # SharePoint to SQL mapping
+        self.sp_to_sql_table = CompactMappingTable("SPO → SQL")
+        self.mapping_tables["sharepoint_to_sql_mapping"] = self.sp_to_sql_table
+        mapping_layout.addWidget(self.sp_to_sql_table)
 
-        excel_group.setLayout(excel_layout)
-        layout.addWidget(excel_group)
+        # SQL to SharePoint mapping
+        self.sql_to_sp_table = CompactMappingTable("SQL → SPO")
+        self.mapping_tables["sql_to_sharepoint_mapping"] = self.sql_to_sp_table
+        mapping_layout.addWidget(self.sql_to_sp_table)
 
-        layout.addStretch(1)
-        self.tab_widget.addTab(sync_tab, "Sync & Import")
+        mapping_group.setLayout(mapping_layout)
+        layout.addWidget(mapping_group)
 
-    def _add_data_mapping_tab(self):
-        """Add data mapping configuration tab"""
-        mapping_tab = QWidget()
-        layout = QVBoxLayout(mapping_tab)
-        layout.setContentsMargins(15, 15, 15, 15)
-        layout.setSpacing(15)
+    def _add_action_buttons(self, layout):
+        """Add action buttons at bottom"""
+        button_layout = QHBoxLayout()
+        button_layout.setSpacing(4)
 
-        # SharePoint to SQL Mapping
-        sp_to_sql_group = NeonGroupBox("SharePoint to SQL Mapping")
-        sp_to_sql_layout = QVBoxLayout()
+        self.test_button = ModernButton("🌐 Test Connections", "secondary", "sm")
+        self.save_button = ModernButton("💾 Save Config", "primary", "sm")
+        self.reset_button = ModernButton("🔄 Reset", "ghost", "sm")
 
-        self.sp_to_sql_table = QTableWidget(5, 2)  # Start with 5 rows
-        self.sp_to_sql_table.setHorizontalHeaderLabels(
-            ["SharePoint Field", "SQL Column"]
-        )
-        self.sp_to_sql_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Stretch
-        )
-        self.sp_to_sql_table.setSelectionBehavior(
-            QAbstractItemView.SelectionBehavior.SelectRows
-        )
-        sp_to_sql_layout.addWidget(self.sp_to_sql_table)
+        button_layout.addWidget(self.test_button)
+        button_layout.addWidget(self.save_button)
+        button_layout.addWidget(self.reset_button)
+        button_layout.addStretch(1)
 
-        # Buttons for SP to SQL table
-        sp_to_sql_buttons = QHBoxLayout()
-        self.add_sp_to_sql_row_btn = ModernButton("Add Row", "ghost", "sm", icon="➕")
-        self.remove_sp_to_sql_row_btn = ModernButton(
-            "Remove Row", "danger", "sm", icon="➖"
-        )
-        sp_to_sql_buttons.addWidget(self.add_sp_to_sql_row_btn)
-        sp_to_sql_buttons.addWidget(self.remove_sp_to_sql_row_btn)
-        sp_to_sql_buttons.addStretch()
-        sp_to_sql_layout.addLayout(sp_to_sql_buttons)
-
-        sp_to_sql_group.setLayout(sp_to_sql_layout)
-        layout.addWidget(sp_to_sql_group)
-
-        # SQL to SharePoint Mapping
-        sql_to_sp_group = NeonGroupBox("SQL to SharePoint Mapping")
-        sql_to_sp_layout = QVBoxLayout()
-
-        self.sql_to_sp_table = QTableWidget(5, 2)  # Start with 5 rows
-        self.sql_to_sp_table.setHorizontalHeaderLabels(
-            ["SQL Column", "SharePoint Field"]
-        )
-        self.sql_to_sp_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Stretch
-        )
-        self.sql_to_sp_table.setSelectionBehavior(
-            QAbstractItemView.SelectionBehavior.SelectRows
-        )
-        sql_to_sp_layout.addWidget(self.sql_to_sp_table)
-
-        # Buttons for SQL to SP table
-        sql_to_sp_buttons = QHBoxLayout()
-        self.add_sql_to_sp_row_btn = ModernButton("Add Row", "ghost", "sm", icon="➕")
-        self.remove_sql_to_sp_row_btn = ModernButton(
-            "Remove Row", "danger", "sm", icon="➖"
-        )
-        sql_to_sp_buttons.addWidget(self.add_sql_to_sp_row_btn)
-        sql_to_sp_buttons.addWidget(self.remove_sql_to_sp_row_btn)
-        sql_to_sp_buttons.addStretch()
-        sql_to_sp_layout.addLayout(sql_to_sp_buttons)
-
-        sql_to_sp_group.setLayout(sql_to_sp_layout)
-        layout.addWidget(sql_to_sp_group)
-
-        layout.addStretch(1)
-        self.tab_widget.addTab(mapping_tab, "Data Mapping")
-
-    def _add_advanced_settings_tab(self):
-        """Add advanced settings tab"""
-        advanced_tab = QScrollArea()
-        advanced_tab.setWidgetResizable(True)
-        content_widget = QWidget()
-        advanced_tab.setWidget(content_widget)
-        layout = QVBoxLayout(content_widget)
-        layout.setContentsMargins(15, 15, 15, 15)
-        layout.setSpacing(15)
-
-        # Performance Group
-        perf_group = NeonGroupBox("Performance & Connection")
-        perf_layout = QGridLayout()
-
-        self.field_widgets["connection_timeout"] = FormField(
-            ModernSpinBox(min_val=1, max_val=300), "Connection Timeout (seconds):"
-        )
-        perf_layout.addWidget(self.field_widgets["connection_timeout"], 0, 0, 1, 2)
-
-        self.field_widgets["max_retries"] = FormField(
-            ModernSpinBox(min_val=0, max_val=10), "Max Retries:"
-        )
-        perf_layout.addWidget(self.field_widgets["max_retries"], 1, 0, 1, 2)
-
-        self.field_widgets["batch_size"] = FormField(
-            ModernSpinBox(min_val=1, max_val=10000), "Batch Size:"
-        )
-        perf_layout.addWidget(self.field_widgets["batch_size"], 2, 0, 1, 2)
-
-        perf_group.setLayout(perf_layout)
-        layout.addWidget(perf_group)
-
-        # Notifications Group
-        notif_group = NeonGroupBox("Notifications")
-        notif_layout = QGridLayout()
-
-        self.field_widgets["enable_success_notifications"] = FormField(
-            QCheckBox("Enable Success Notifications"), ""
-        )
-        self.field_widgets["enable_success_notifications"].input_widget.setStyleSheet(
-            get_modern_checkbox_style()
-        )
-        notif_layout.addWidget(
-            self.field_widgets["enable_success_notifications"], 0, 0, 1, 2
-        )
-
-        self.field_widgets["enable_error_notifications"] = FormField(
-            QCheckBox("Enable Error Notifications"), ""
-        )
-        self.field_widgets["enable_error_notifications"].input_widget.setStyleSheet(
-            get_modern_checkbox_style()
-        )
-        notif_layout.addWidget(
-            self.field_widgets["enable_error_notifications"], 1, 0, 1, 2
-        )
-
-        notif_group.setLayout(notif_layout)
-        layout.addWidget(notif_group)
-
-        # Cache Management Group
-        cache_group = NeonGroupBox("Cache Management")
-        cache_layout = QGridLayout()
-
-        self.field_widgets["auto_cache_cleanup_enabled"] = FormField(
-            QCheckBox("Enable Auto Cache Cleanup"), ""
-        )
-        self.field_widgets["auto_cache_cleanup_enabled"].input_widget.setStyleSheet(
-            get_modern_checkbox_style()
-        )
-        cache_layout.addWidget(
-            self.field_widgets["auto_cache_cleanup_enabled"], 0, 0, 1, 2
-        )
-
-        self.field_widgets["cache_cleanup_interval_hours"] = FormField(
-            ModernSpinBox(min_val=1, max_val=168), "Cleanup Interval (hours):"
-        )
-        cache_layout.addWidget(
-            self.field_widgets["cache_cleanup_interval_hours"], 1, 0, 1, 2
-        )
-
-        cache_group.setLayout(cache_layout)
-        layout.addWidget(cache_group)
-
-        layout.addStretch(1)
-        self.tab_widget.addTab(advanced_tab, "Advanced")
+        layout.addLayout(button_layout)
 
     @handle_exceptions(ErrorCategory.UI, ErrorSeverity.MEDIUM)
     def _load_current_config(self):
@@ -544,39 +448,14 @@ class ConfigPanel(QWidget):
                 self.database_type_selector.setCurrentText("SQLite")
 
             # Load mapping tables
-            self._load_mapping_to_table(
-                config.sharepoint_to_sql_mapping, self.sp_to_sql_table
-            )
-            self._load_mapping_to_table(
-                config.sql_to_sharepoint_mapping, self.sql_to_sp_table
-            )
+            for mapping_key, table_widget in self.mapping_tables.items():
+                mapping_data = getattr(config, mapping_key, {})
+                table_widget.set_mapping(mapping_data)
 
-            # Load Excel import mapping as JSON
-            if config.excel_import_mapping:
-                try:
-                    json_str = json.dumps(config.excel_import_mapping, indent=2)
-                    self.field_widgets["excel_import_mapping"].set_value(json_str)
-                except Exception as e:
-                    logger.error(f"Error loading Excel import mapping: {e}")
-
-            logger.info("Configuration loaded into UI successfully")
+            logger.info("Configuration loaded into compact UI successfully")
 
         except Exception as e:
             logger.error(f"Error loading configuration: {e}")
-
-    def _load_mapping_to_table(self, mapping: dict, table_widget: QTableWidget):
-        """Load dictionary mapping into table widget"""
-        try:
-            table_widget.clearContents()
-            row_count = max(len(mapping), 5)  # Minimum 5 rows
-            table_widget.setRowCount(row_count)
-
-            for row, (key, value) in enumerate(mapping.items()):
-                table_widget.setItem(row, 0, QTableWidgetItem(str(key)))
-                table_widget.setItem(row, 1, QTableWidgetItem(str(value)))
-
-        except Exception as e:
-            logger.error(f"Error loading mapping to table: {e}")
 
     @handle_exceptions(ErrorCategory.UI, ErrorSeverity.HIGH)
     def _connect_signals(self):
@@ -587,36 +466,24 @@ class ConfigPanel(QWidget):
                 self._on_db_type_changed
             )
 
-            # Browse button
-            self.browse_sqlite_button.clicked.connect(self._browse_sqlite_file)
-
             # Auto-sync checkbox
             self.auto_sync_enabled_checkbox.stateChanged.connect(
                 self._on_auto_sync_checkbox_changed
             )
 
-            # Mapping table buttons
-            self.add_sp_to_sql_row_btn.clicked.connect(
-                lambda: self._add_mapping_row(self.sp_to_sql_table)
-            )
-            self.remove_sp_to_sql_row_btn.clicked.connect(
-                lambda: self._remove_mapping_row(self.sp_to_sql_table)
-            )
-            self.add_sql_to_sp_row_btn.clicked.connect(
-                lambda: self._add_mapping_row(self.sql_to_sp_table)
-            )
-            self.remove_sql_to_sp_row_btn.clicked.connect(
-                lambda: self._remove_mapping_row(self.sql_to_sp_table)
-            )
+            # Action buttons
+            self.test_button.clicked.connect(self._test_connections)
+            self.save_button.clicked.connect(self._save_all_settings)
+            self.reset_button.clicked.connect(self._reset_config)
 
-            # Table item changes
-            self.sp_to_sql_table.itemChanged.connect(self._defer_save_mapping)
-            self.sql_to_sp_table.itemChanged.connect(self._defer_save_mapping)
-
-            # Form field changes
+            # Form field changes - connect to deferred save
             self._connect_form_field_signals()
 
-            logger.debug("ConfigPanel signals connected successfully")
+            # Mapping table changes
+            for table in self.mapping_tables.values():
+                table.table.itemChanged.connect(self._defer_save)
+
+            logger.debug("Compact ConfigPanel signals connected successfully")
 
         except Exception as e:
             logger.error(f"Error connecting ConfigPanel signals: {e}")
@@ -628,45 +495,66 @@ class ConfigPanel(QWidget):
                 input_widget = field_widget.input_widget
 
                 if isinstance(input_widget, ModernLineEdit):
-                    input_widget.textChanged.connect(
-                        lambda text, k=key: self._defer_save_config_setting(
-                            k, text, "str"
-                        )
-                    )
-                elif isinstance(input_widget, ModernTextEdit):
-                    input_widget.textChanged.connect(
-                        lambda k=key: self._defer_save_config_setting(
-                            k, self.field_widgets[k].get_value(), "json_str"
-                        )
-                    )
+                    input_widget.textChanged.connect(self._defer_save)
                 elif isinstance(input_widget, HolographicComboBox):
-                    input_widget.currentTextChanged.connect(
-                        lambda text, k=key: self._defer_save_config_setting(
-                            k, text, "str"
-                        )
-                    )
+                    input_widget.currentTextChanged.connect(self._defer_save)
                 elif isinstance(input_widget, ModernSpinBox):
-                    if input_widget.is_decimal:
-                        input_widget.valueChanged.connect(
-                            lambda value, k=key: self._defer_save_config_setting(
-                                k, value, "float"
-                            )
-                        )
-                    else:
-                        input_widget.valueChanged.connect(
-                            lambda value, k=key: self._defer_save_config_setting(
-                                k, value, "int"
-                            )
-                        )
+                    input_widget.valueChanged.connect(self._defer_save)
                 elif isinstance(input_widget, QCheckBox):
-                    input_widget.stateChanged.connect(
-                        lambda state, k=key: self._defer_save_config_setting(
-                            k, input_widget.isChecked(), "bool"
-                        )
-                    )
+                    input_widget.stateChanged.connect(self._defer_save)
 
             except Exception as e:
                 logger.debug(f"Error connecting signal for field '{key}': {e}")
+
+    @pyqtSlot()
+    def _defer_save(self):
+        """Start timer to defer saving changes"""
+        if not self._save_timer.isActive():
+            self._save_timer.start()
+
+    @pyqtSlot()
+    def _save_all_settings(self):
+        """Save all configuration settings"""
+        try:
+            logger.info("Saving all configuration settings...")
+
+            # Save form fields
+            for key, field_widget in self.field_widgets.items():
+                try:
+                    value = field_widget.get_value()
+                    if value is not None:
+                        # Determine value type for proper conversion
+                        if key in ["sync_interval", "batch_size"]:
+                            value_type = "int"
+                        elif "password" in key or "secret" in key:
+                            value_type = "str"
+                        else:
+                            value_type = "str"
+
+                        self.request_update_config_setting.emit(key, value, value_type)
+                except Exception as e:
+                    logger.error(f"Error saving field '{key}': {e}")
+
+            # Save mapping tables
+            for mapping_key, table_widget in self.mapping_tables.items():
+                try:
+                    mapping_data = table_widget.get_mapping()
+                    self.request_update_config_setting.emit(
+                        mapping_key, mapping_data, "dict"
+                    )
+                except Exception as e:
+                    logger.error(f"Error saving mapping '{mapping_key}': {e}")
+
+            # Save auto-sync setting
+            self.request_update_config_setting.emit(
+                "auto_sync_enabled", self.auto_sync_enabled_checkbox.isChecked(), "bool"
+            )
+
+            self.config_changed.emit()
+            logger.info("All configuration settings saved successfully")
+
+        except Exception as e:
+            logger.error(f"Error saving configuration settings: {e}")
 
     @pyqtSlot(int)
     def _on_db_type_changed(self, index: int):
@@ -680,23 +568,6 @@ class ConfigPanel(QWidget):
         except Exception as e:
             logger.error(f"Error handling database type change: {e}")
 
-    @pyqtSlot()
-    def _browse_sqlite_file(self):
-        """Browse for SQLite file"""
-        try:
-            file_name, _ = QFileDialog.getSaveFileName(
-                self,
-                "Select SQLite Database File",
-                "",
-                "SQLite Database Files (*.db);;All Files (*)",
-            )
-            if file_name:
-                self.field_widgets["sqlite_file"].set_value(file_name)
-                self.request_update_config_setting.emit("sqlite_file", file_name, "str")
-                logger.info(f"SQLite file selected: {file_name}")
-        except Exception as e:
-            logger.error(f"Error browsing SQLite file: {e}")
-
     @pyqtSlot(int)
     def _on_auto_sync_checkbox_changed(self, state: int):
         """Handle auto-sync checkbox change"""
@@ -707,112 +578,38 @@ class ConfigPanel(QWidget):
         except Exception as e:
             logger.error(f"Error handling auto-sync toggle: {e}")
 
-    def _defer_save_config_setting(self, key_path: str, value, value_type: str):
-        """Defer saving configuration setting"""
+    @pyqtSlot()
+    def _test_connections(self):
+        """Test connections with current settings"""
         try:
-            self.request_update_config_setting.emit(key_path, value, value_type)
-            logger.debug(f"Config setting queued for save: {key_path} = {value}")
+            # Save current settings first
+            self._save_all_settings()
+            # Request connection test from controller
+            if hasattr(self.controller, "test_all_connections"):
+                self.controller.test_all_connections()
         except Exception as e:
-            logger.debug(f"Error deferring config save for '{key_path}': {e}")
-
-    def _add_mapping_row(self, table_widget: QTableWidget):
-        """Add new row to mapping table"""
-        try:
-            row_position = table_widget.rowCount()
-            table_widget.insertRow(row_position)
-            table_widget.setItem(row_position, 0, QTableWidgetItem(""))
-            table_widget.setItem(row_position, 1, QTableWidgetItem(""))
-            logger.debug(f"Added row to mapping table at position {row_position}")
-        except Exception as e:
-            logger.error(f"Error adding mapping row: {e}")
-
-    def _remove_mapping_row(self, table_widget: QTableWidget):
-        """Remove selected rows from mapping table"""
-        try:
-            selected_rows = sorted(
-                set(index.row() for index in table_widget.selectedIndexes()),
-                reverse=True,
-            )
-
-            if not selected_rows:
-                QMessageBox.information(
-                    self, "No Selection", "Please select row(s) to remove."
-                )
-                return
-
-            for row in selected_rows:
-                table_widget.removeRow(row)
-
-            self._defer_save_mapping()
-            logger.debug(f"Removed {len(selected_rows)} rows from mapping table")
-
-        except Exception as e:
-            logger.error(f"Error removing mapping rows: {e}")
+            logger.error(f"Error testing connections: {e}")
 
     @pyqtSlot()
-    def _defer_save_mapping(self):
-        """Start timer to defer saving mapping changes"""
-        if self._mapping_save_timer.isActive():
-            self._mapping_save_timer.stop()
-        self._mapping_save_timer.start()
-
-    @handle_exceptions(ErrorCategory.CONFIG, ErrorSeverity.MEDIUM)
-    def _save_field_mappings(self):
-        """Save field mappings from tables to configuration"""
+    def _reset_config(self):
+        """Reset configuration to defaults"""
         try:
-            logger.info("Saving field mappings...")
-
-            # Get mappings from tables
-            sp_to_sql_map = self._get_mapping_from_table(self.sp_to_sql_table)
-            sql_to_sp_map = self._get_mapping_from_table(self.sql_to_sp_table)
-
-            # Save mappings
-            self.request_update_config_setting.emit(
-                "sharepoint_to_sql_mapping", sp_to_sql_map, "dict"
-            )
-            self.request_update_config_setting.emit(
-                "sql_to_sharepoint_mapping", sql_to_sp_map, "dict"
+            reply = QMessageBox.question(
+                self,
+                "Reset Configuration",
+                "Reset all settings to default values?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
             )
 
-            # Save Excel import mapping if valid JSON
-            try:
-                excel_import_str = self.field_widgets[
-                    "excel_import_mapping"
-                ].get_value()
-                if excel_import_str.strip():
-                    excel_import_dict = json.loads(excel_import_str)
-                    self.request_update_config_setting.emit(
-                        "excel_import_mapping", excel_import_dict, "dict"
-                    )
-            except json.JSONDecodeError as e:
-                logger.warning(f"Invalid JSON in Excel import mapping: {e}")
-            except Exception as e:
-                logger.error(f"Error processing Excel import mapping: {e}")
-
-            self.config_changed.emit()
-            logger.info("Field mappings saved successfully")
+            if reply == QMessageBox.StandardButton.Yes:
+                # Reload config from file
+                self.config_manager.reload_config()
+                self._load_current_config()
+                logger.info("Configuration reset to defaults")
 
         except Exception as e:
-            logger.error(f"Error saving field mappings: {e}")
-
-    def _get_mapping_from_table(self, table_widget: QTableWidget) -> dict:
-        """Extract dictionary mapping from table widget"""
-        mapping = {}
-        try:
-            for row in range(table_widget.rowCount()):
-                key_item = table_widget.item(row, 0)
-                value_item = table_widget.item(row, 1)
-
-                if key_item and value_item:
-                    key = key_item.text().strip()
-                    value = value_item.text().strip()
-                    if key and value:  # Only add non-empty pairs
-                        mapping[key] = value
-
-        except Exception as e:
-            logger.error(f"Error extracting mapping from table: {e}")
-
-        return mapping
+            logger.error(f"Error resetting configuration: {e}")
 
     # Methods for external updates (called by MainWindow)
     def update_sharepoint_sites(self, sites: list):
@@ -840,36 +637,26 @@ class ConfigPanel(QWidget):
         logger.info("Initiating ConfigPanel cleanup...")
 
         try:
-            # Stop mapping save timer
-            if self._mapping_save_timer and self._mapping_save_timer.isActive():
-                self._mapping_save_timer.stop()
-                self._mapping_save_timer.deleteLater()
-                self._mapping_save_timer = None
+            # Stop save timer
+            if self._save_timer and self._save_timer.isActive():
+                self._save_timer.stop()
+                self._save_timer.deleteLater()
+                self._save_timer = None
 
             # Disconnect signals
             try:
                 self.database_type_selector.currentIndexChanged.disconnect()
-                self.browse_sqlite_button.clicked.disconnect()
                 self.auto_sync_enabled_checkbox.stateChanged.disconnect()
-
-                # Disconnect table signals
-                self.sp_to_sql_table.itemChanged.disconnect()
-                self.sql_to_sp_table.itemChanged.disconnect()
-
-                # Disconnect button signals
-                self.add_sp_to_sql_row_btn.clicked.disconnect()
-                self.remove_sp_to_sql_row_btn.clicked.disconnect()
-                self.add_sql_to_sp_row_btn.clicked.disconnect()
-                self.remove_sql_to_sp_row_btn.clicked.disconnect()
-
+                self.test_button.clicked.disconnect()
+                self.save_button.clicked.disconnect()
+                self.reset_button.clicked.disconnect()
             except (TypeError, RuntimeError):
-                pass  # Signals already disconnected
+                pass
 
             # Clean up form field widgets
-            for key, field_widget in self.field_widgets.items():
+            for field_widget in self.field_widgets.values():
                 try:
                     input_widget = field_widget.input_widget
-                    # Disconnect based on widget type
                     if hasattr(input_widget, "textChanged"):
                         input_widget.textChanged.disconnect()
                     elif hasattr(input_widget, "currentTextChanged"):
@@ -880,37 +667,21 @@ class ConfigPanel(QWidget):
                         input_widget.stateChanged.disconnect()
                 except (TypeError, RuntimeError):
                     pass
-
                 field_widget.deleteLater()
 
             self.field_widgets.clear()
 
-            # Clean up table widgets
-            if hasattr(self, "sp_to_sql_table"):
-                self.sp_to_sql_table.deleteLater()
-            if hasattr(self, "sql_to_sp_table"):
-                self.sql_to_sp_table.deleteLater()
+            # Clean up mapping tables
+            for table_widget in self.mapping_tables.values():
+                try:
+                    table_widget.table.itemChanged.disconnect()
+                    table_widget.deleteLater()
+                except (TypeError, RuntimeError):
+                    pass
+
+            self.mapping_tables.clear()
 
             # Clean up remaining widgets
-            widgets_to_cleanup = [
-                "tab_widget",
-                "database_type_selector",
-                "browse_sqlite_button",
-                "auto_sync_enabled_checkbox",
-                "add_sp_to_sql_row_btn",
-                "remove_sp_to_sql_row_btn",
-                "add_sql_to_sp_row_btn",
-                "remove_sql_to_sp_row_btn",
-            ]
-
-            for widget_name in widgets_to_cleanup:
-                if hasattr(self, widget_name):
-                    widget = getattr(self, widget_name)
-                    if widget:
-                        widget.deleteLater()
-                        setattr(self, widget_name, None)
-
-            # Clean up any remaining child widgets
             for child in self.findChildren(QWidget):
                 if child and child != self:
                     child.deleteLater()
@@ -920,4 +691,4 @@ class ConfigPanel(QWidget):
 
         except Exception as e:
             logger.error(f"Error during ConfigPanel cleanup: {e}")
-            self.cleanup_done = True  # Mark as done to prevent retry loops
+            self.cleanup_done = True

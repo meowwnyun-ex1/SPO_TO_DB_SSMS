@@ -6,7 +6,6 @@ from dotenv import load_dotenv
 from pathlib import Path
 from typing import Dict, Any, Optional
 import logging
-from PyQt6.QtCore import QObject, pyqtSignal
 
 logger = logging.getLogger(__name__)
 
@@ -113,55 +112,91 @@ class Config:
         return "SQL Server" if self.database_type == "sqlserver" else "SQLite"
 
 
-class ConfigManager(QObject):
+class ConfigManager:
     """
     Enhanced configuration manager with signal emission.
+    Simplified without QObject inheritance to avoid init issues.
     """
-
-    config_updated = pyqtSignal()  # Emitted when config changes
 
     _instance = None
     _config: Config = None
+    _initialized = False
+    _callbacks = []  # Store callbacks instead of signals
 
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
+            cls._instance = super(ConfigManager, cls).__new__(cls)
         return cls._instance
 
     def __init__(self):
-        if not hasattr(self, "initialized"):
-            super().__init__()
-            self.initialized = True
+        print("ConfigManager.__init__: Starting...")
+        # Only initialize once for singleton
+        if not ConfigManager._initialized:
+            print("ConfigManager.__init__: First initialization...")
+            ConfigManager._initialized = True
+            print("ConfigManager.__init__: Set _initialized = True")
+
             if ConfigManager._config is None:
+                print("ConfigManager.__init__: Loading config...")
                 ConfigManager._config = self._load_config()
+                print("ConfigManager.__init__: Config loaded")
+
             logger.debug("ConfigManager initialized as singleton.")
+            print("ConfigManager.__init__: Initialization complete")
+        else:
+            print("ConfigManager.__init__: Already initialized, skipping")
+            logger.debug("ConfigManager singleton already initialized.")
+
+    def add_config_callback(self, callback):
+        """Add callback for config updates instead of signal"""
+        if callback not in self._callbacks:
+            self._callbacks.append(callback)
+
+    def _notify_config_updated(self):
+        """Notify all callbacks of config update"""
+        for callback in self._callbacks:
+            try:
+                callback()
+            except Exception as e:
+                logger.error(f"Error in config callback: {e}")
 
     def _load_config(self) -> Config:
         """Load configuration from file and environment variables"""
+        print("_load_config: Starting...")
         config_data = {}
 
         # Ensure config directory exists
+        print("_load_config: Creating config directory...")
         DEFAULT_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        print("_load_config: Config directory ready")
 
         # Load from config.json if exists
         if DEFAULT_CONFIG_PATH.exists():
+            print(f"_load_config: Loading from {DEFAULT_CONFIG_PATH}")
             try:
                 with open(DEFAULT_CONFIG_PATH, "r", encoding="utf-8") as f:
                     config_data = json.load(f)
                 logger.info(f"Loaded configuration from {DEFAULT_CONFIG_PATH}")
+                print("_load_config: JSON loaded successfully")
             except (json.JSONDecodeError, IOError) as e:
                 logger.error(f"Error loading config.json: {e}. Using defaults.")
+                print(f"_load_config: JSON load error: {e}")
                 config_data = {}
         else:
+            print("_load_config: Config file not found, creating default")
             logger.warning(
                 f"Config file not found. Creating default at {DEFAULT_CONFIG_PATH}"
             )
             self._save_default_config()
+            print("_load_config: Default config saved")
 
         # Create Config instance with defaults
+        print("_load_config: Creating Config instance...")
         config = Config()
+        print("_load_config: Config instance created")
 
         # Apply config.json values
+        print("_load_config: Applying config values...")
         for key, value in config_data.items():
             if hasattr(config, key):
                 current_value = getattr(config, key)
@@ -174,15 +209,26 @@ class ConfigManager(QObject):
                         )
                     elif value is not None:
                         setattr(config, key, type(current_value)(value))
+                except AttributeError as e:
+                    if "has no setter" in str(e):
+                        print(f"_load_config: Skipping read-only property: {key}")
+                        logger.debug(f"Skipping read-only property: {key}")
+                    else:
+                        raise
                 except (ValueError, TypeError) as e:
                     logger.warning(f"Failed to convert config key '{key}': {e}")
+                    print(f"_load_config: Failed to convert {key}: {e}")
             else:
                 logger.warning(f"Unknown config key '{key}' in config.json")
+                print(f"_load_config: Unknown key: {key}")
 
         # Environment variables override file settings
+        print("_load_config: Applying environment overrides...")
         self._apply_env_overrides(config)
+        print("_load_config: Environment overrides applied")
 
         logger.info("Configuration loaded successfully")
+        print("_load_config: Complete")
         return config
 
     def _apply_env_overrides(self, config: Config):
@@ -258,7 +304,7 @@ class ConfigManager(QObject):
                     json.dump(existing_data, f, indent=2, ensure_ascii=False)
 
                 logger.info("Configuration saved successfully")
-                self.config_updated.emit()
+                self._notify_config_updated()  # Use callback instead of signal
 
             except IOError as e:
                 logger.error(f"Failed to save configuration: {e}")
@@ -323,17 +369,60 @@ class ConfigManager(QObject):
     def reload_config(self):
         """Reload configuration from file"""
         ConfigManager._config = self._load_config()
-        self.config_updated.emit()
+        self._notify_config_updated()  # Use callback instead of signal
         logger.info("Configuration reloaded")
 
 
-# Create singleton instance
+# Create singleton instance function
 _config_manager_instance = None
 
 
 def get_config_manager() -> ConfigManager:
     """Get singleton ConfigManager instance"""
     global _config_manager_instance
+    print("get_config_manager: Starting...")
     if _config_manager_instance is None:
+        print("get_config_manager: Creating new ConfigManager instance...")
         _config_manager_instance = ConfigManager()
+        print("get_config_manager: ConfigManager instance created")
+    else:
+        print("get_config_manager: Returning existing instance")
     return _config_manager_instance
+
+
+def get_simple_config():
+    """Simple config access without manager dependency"""
+    try:
+        if ConfigManager._config:
+            return ConfigManager._config
+    except:
+        pass
+    # Return default config if manager not available
+    return Config()
+
+
+def get_simple_config_manager():
+    """Simple config manager access"""
+    try:
+        if ConfigManager._instance:
+            return ConfigManager._instance
+        return ConfigManager()
+    except:
+
+        class DummyManager:
+            def get_config(self):
+                return Config()
+
+            def update_setting(self, key, value):
+                pass
+
+            def save_config(self):
+                pass
+
+            def reload_config(self):
+                pass
+
+            def add_config_callback(self, callback):
+                pass
+
+        return DummyManager()

@@ -29,10 +29,10 @@ audio_output = None
 def setup_imports():
     """Setup imports with proper error handling"""
     try:
-        global MainWindow, AppController, setup_neural_logging
+        global OptimizedMainWindow, AppController, setup_neural_logging
         global apply_ultra_modern_theme, get_config_manager
 
-        from ui.main_window import MainWindow
+        from ui.main_window import OptimizedMainWindow
         from controller.app_controller import AppController
         from utils.logger import setup_neural_logging
         from ui.styles.theme import apply_ultra_modern_theme
@@ -216,41 +216,59 @@ def main():
     exit_code = 1
 
     try:
+        print("Starting DENSO Neural Matrix...")
+
         # Check imports
         if not setup_imports():
             return exit_code
+
+        print("Imports successful...")
 
         # Create required directories
         create_missing_directories()
 
         # Setup logging
         ui_handler = setup_logging()
+        print("Logging setup complete...")
 
         # Create QApplication
         app_instance = QApplication(sys.argv)
         app_instance.setApplicationName("DENSO Neural Matrix")
         app_instance.setApplicationVersion("1.0.0")
+        print("QApplication created...")
 
         # Apply theme
         apply_ultra_modern_theme(app_instance)
         logging.info("Ultra Modern Theme applied")
+        print("Theme applied...")
 
         # Initialize core components
+        print("Creating AppController...")
         controller_instance = AppController()
-        main_window_instance = MainWindow(controller_instance)
+        print("AppController created successfully")
+
+        print("Creating MainWindow...")
+        main_window_instance = OptimizedMainWindow(controller_instance)
+        print("MainWindow created successfully")
 
         # Connect UI logging if available
-        if ui_handler and hasattr(main_window_instance, "dashboard"):
-            ui_handler.log_record_emitted.connect(
-                main_window_instance.dashboard.log_console.add_log_message
-            )
+        if ui_handler and hasattr(main_window_instance, "log_panel"):
+            try:
+                ui_handler.log_record_emitted.connect(
+                    main_window_instance.log_panel.log_console.add_log_message
+                )
+                print("UI logging connected...")
+            except Exception as e:
+                print(f"UI logging connection failed: {e}")
 
         # Setup UI enhancements
         setup_background_image(main_window_instance)
         setup_background_audio()
 
         # Show main window
+        print("Showing main window...")
         main_window_instance.show()
+        print("Main window should be visible now")
 
         # Create timer for Qt event processing
         timer = QTimer()
@@ -258,11 +276,14 @@ def main():
         timer.start(100)
 
         logging.info("DENSO Neural Matrix started successfully")
+        print("Application started successfully - entering event loop...")
 
         # Run application
         exit_code = app_instance.exec()
+        print(f"Application exited with code: {exit_code}")
 
     except Exception as e:
+        print(f"Critical error in main: {e}")
         logging.critical(f"Critical error in main: {e}", exc_info=True)
         if app_instance:
             QMessageBox.critical(
