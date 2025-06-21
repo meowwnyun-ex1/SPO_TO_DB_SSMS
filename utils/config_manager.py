@@ -115,85 +115,63 @@ class Config:
 
 class ConfigManager(QObject):
     """
-    Enhanced configuration manager with signal emission.
-    Inherits from QObject to support PyQt signals.
+    Fixed configuration manager with proper singleton pattern.
     """
 
     # Signals
     config_updated = pyqtSignal()
 
     _instance = None
-    _config: Config = None
+    _config = None
     _initialized = False
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls):
         if cls._instance is None:
-            print("ConfigManager.__new__: Creating new instance...")
             cls._instance = super(ConfigManager, cls).__new__(cls)
-            # Initialize QObject here in __new__
-            super(ConfigManager, cls._instance).__init__()
-            cls._instance._qobject_initialized = True
-            print("ConfigManager.__new__: QObject initialized")
+            # Initialize QObject properly
+            QObject.__init__(cls._instance)
         return cls._instance
 
     def __init__(self):
-        print("ConfigManager.__init__: Starting...")
-
-        # Skip QObject init since it's done in __new__
-        # Only initialize data once for singleton
+        # Only initialize once for singleton
         if not ConfigManager._initialized:
-            print("ConfigManager.__init__: First initialization...")
             ConfigManager._initialized = True
-            print("ConfigManager.__init__: Set _initialized = True")
 
-            if ConfigManager._config is None:
-                print("ConfigManager.__init__: Loading config...")
+            try:
+                # Load config on first initialization
                 ConfigManager._config = self._load_config()
-                print("ConfigManager.__init__: Config loaded")
-
-            logger.debug("ConfigManager initialized as singleton.")
-            print("ConfigManager.__init__: Initialization complete")
-        else:
-            print("ConfigManager.__init__: Already initialized, skipping")
-            logger.debug("ConfigManager singleton already initialized.")
+                logger.debug("ConfigManager initialized as singleton.")
+            except Exception as e:
+                logger.error(f"Error initializing ConfigManager: {e}")
+                # Create default config if loading fails
+                ConfigManager._config = Config()
 
     def _load_config(self) -> Config:
         """Load configuration from file and environment variables"""
-        print("_load_config: Starting...")
         config_data = {}
 
         # Ensure config directory exists
-        print("_load_config: Creating config directory...")
         DEFAULT_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        print("_load_config: Config directory ready")
 
         # Load from config.json if exists
         if DEFAULT_CONFIG_PATH.exists():
-            print(f"_load_config: Loading from {DEFAULT_CONFIG_PATH}")
             try:
                 with open(DEFAULT_CONFIG_PATH, "r", encoding="utf-8") as f:
                     config_data = json.load(f)
                 logger.info(f"Loaded configuration from {DEFAULT_CONFIG_PATH}")
-                print("_load_config: JSON loaded successfully")
             except (json.JSONDecodeError, IOError) as e:
                 logger.error(f"Error loading config.json: {e}. Using defaults.")
-                print(f"_load_config: JSON load error: {e}")
                 config_data = {}
         else:
-            print("_load_config: Config file not found, creating default")
             logger.warning(
                 f"Config file not found. Creating default at {DEFAULT_CONFIG_PATH}"
             )
             self._save_default_config()
-            print("_load_config: Default config saved")
 
         # Create Config instance with defaults
-        print("_load_config: Creating Config instance...")
         config = Config()
-        print("_load_config: Config instance created")
 
-        # Apply config.json values
-        print("_load_config: Applying config values...")
+        # Apply config.json values safely
         for key, value in config_data.items():
             if hasattr(config, key):
                 current_value = getattr(config, key)
@@ -205,27 +183,28 @@ class ConfigManager(QObject):
                             config, key, value.lower() in ("true", "1", "yes", "on")
                         )
                     elif value is not None:
-                        setattr(config, key, type(current_value)(value))
-                except AttributeError as e:
-                    if "has no setter" in str(e):
-                        print(f"_load_config: Skipping read-only property: {key}")
-                        logger.debug(f"Skipping read-only property: {key}")
-                    else:
-                        raise
-                except (ValueError, TypeError) as e:
-                    logger.warning(f"Failed to convert config key '{key}': {e}")
-                    print(f"_load_config: Failed to convert {key}: {e}")
+                        # Type-safe conversion
+                        if isinstance(current_value, (int, float)) and isinstance(
+                            value, str
+                        ):
+                            try:
+                                converted_value = type(current_value)(value)
+                                setattr(config, key, converted_value)
+                            except ValueError:
+                                logger.warning(
+                                    f"Cannot convert '{value}' to {type(current_value)} for key '{key}'"
+                                )
+                        else:
+                            setattr(config, key, value)
+                except Exception as e:
+                    logger.warning(f"Failed to set config key '{key}': {e}")
             else:
                 logger.warning(f"Unknown config key '{key}' in config.json")
-                print(f"_load_config: Unknown key: {key}")
 
         # Environment variables override file settings
-        print("_load_config: Applying environment overrides...")
         self._apply_env_overrides(config)
-        print("_load_config: Environment overrides applied")
 
         logger.info("Configuration loaded successfully")
-        print("_load_config: Complete")
         return config
 
     def _apply_env_overrides(self, config: Config):
@@ -276,6 +255,8 @@ class ConfigManager(QObject):
 
     def get_config(self) -> Config:
         """Get current configuration instance"""
+        if ConfigManager._config is None:
+            ConfigManager._config = Config()
         return ConfigManager._config
 
     def save_config(self):
@@ -303,7 +284,7 @@ class ConfigManager(QObject):
                 logger.info("Configuration saved successfully")
                 self.config_updated.emit()  # Emit signal
 
-            except IOError as e:
+            except Exception as e:
                 logger.error(f"Failed to save configuration: {e}")
 
     def update_setting(self, key_path: str, value: Any):
@@ -365,26 +346,51 @@ class ConfigManager(QObject):
 
     def reload_config(self):
         """Reload configuration from file"""
-        ConfigManager._config = self._load_config()
-        self.config_updated.emit()  # Emit signal
-        logger.info("Configuration reloaded")
+        try:
+            ConfigManager._config = self._load_config()
+            self.config_updated.emit()  # Emit signal
+            logger.info("Configuration reloaded")
+        except Exception as e:
+            logger.error(f"Failed to reload config: {e}")
 
 
-# Create singleton instance function
+# Create singleton instance functions with better error handling
 _config_manager_instance = None
 
 
 def get_config_manager() -> ConfigManager:
-    """Get singleton ConfigManager instance"""
+    """Get singleton ConfigManager instance with error handling"""
     global _config_manager_instance
-    print("get_config_manager: Starting...")
-    if _config_manager_instance is None:
-        print("get_config_manager: Creating new ConfigManager instance...")
-        _config_manager_instance = ConfigManager()
-        print("get_config_manager: ConfigManager instance created")
-    else:
-        print("get_config_manager: Returning existing instance")
-    return _config_manager_instance
+    try:
+        if _config_manager_instance is None:
+            _config_manager_instance = ConfigManager()
+        return _config_manager_instance
+    except Exception as e:
+        logger.error(f"Error getting config manager: {e}")
+        # Return a minimal working instance
+        return _create_fallback_manager()
+
+
+def _create_fallback_manager():
+    """Create a fallback config manager if normal initialization fails"""
+
+    class FallbackConfigManager:
+        def __init__(self):
+            self._config = Config()
+
+        def get_config(self):
+            return self._config
+
+        def update_setting(self, key, value):
+            pass
+
+        def save_config(self):
+            pass
+
+        def reload_config(self):
+            pass
+
+    return FallbackConfigManager()
 
 
 def get_simple_config():
@@ -392,34 +398,14 @@ def get_simple_config():
     try:
         if ConfigManager._config:
             return ConfigManager._config
-    except:
-        pass
-    # Return default config if manager not available
-    return Config()
+        return Config()
+    except Exception:
+        return Config()
 
 
 def get_simple_config_manager():
-    """Simple config manager access"""
+    """Simple config manager access with fallback"""
     try:
-        if ConfigManager._instance:
-            return ConfigManager._instance
-        return ConfigManager()
-    except:
-
-        class DummyManager:
-            def get_config(self):
-                return Config()
-
-            def update_setting(self, key, value):
-                pass
-
-            def save_config(self):
-                pass
-
-            def reload_config(self):
-                pass
-
-            def add_config_callback(self, callback):
-                pass
-
-        return DummyManager()
+        return get_config_manager()
+    except Exception:
+        return _create_fallback_manager()

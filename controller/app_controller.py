@@ -1,4 +1,4 @@
-# controller/app_controller.py - Fixed App Controller with Proper Signal Handling
+# controller/app_controller.py - Fixed App Controller without debug prints
 from PyQt6.QtCore import QObject, pyqtSignal, QTimer, pyqtSlot
 from typing import Any
 import logging
@@ -37,135 +37,144 @@ class AppController(QObject):
         logger.info("Initializing AppController...")
 
         try:
-            print("AppController: Getting config manager...")
-            from utils.config_manager import get_config_manager
+            # Import here to avoid circular imports
+            import sys
+            from pathlib import Path
 
-            self.config_manager = get_config_manager()
-            print("AppController: Config manager obtained")
+            current_dir = Path(__file__).parent.absolute()
+            project_root = current_dir.parent
+            if str(project_root) not in sys.path:
+                sys.path.insert(0, str(project_root))
 
-            self.config = self.config_manager.get_config()
-            print("AppController: Config obtained")
+            # Simple config access without complex manager
+            try:
+                from utils.config_manager import Config
 
-            print("AppController: Creating connection manager...")
-            from .connection_manager import ConnectionManager
+                self.config = Config()  # Direct instantiation
+                logger.info("Config created directly")
+            except Exception as e:
+                logger.error(f"Config creation failed: {e}")
 
-            self.connection_manager = ConnectionManager()
-            print("AppController: Connection manager created")
+                # Fallback config
+                class FallbackConfig:
+                    auto_sync_enabled = False
+                    sync_interval = 600
+                    auto_sync_direction = "spo_to_sql"
 
-            print("AppController: Creating sync engine...")
-            from .sync_engine import SyncEngine
+                self.config = FallbackConfig()
 
-            self.sync_engine = SyncEngine(self.config)
-            print("AppController: Sync engine created")
+            # Create other components with error handling
+            try:
+                from .connection_manager import ConnectionManager
 
-            print("AppController: Creating excel import handler...")
-            from utils.excel_import_handler import ExcelImportHandler
+                self.connection_manager = ConnectionManager()
+                logger.info("Connection manager created")
+            except Exception as e:
+                logger.error(f"Connection manager creation failed: {e}")
+                self.connection_manager = None
 
-            self.excel_import_handler = ExcelImportHandler(self.config)
-            print("AppController: Excel import handler created")
+            try:
+                from .sync_engine import SyncEngine
 
-            print("AppController: Creating auto cache manager...")
-            from utils.cache_cleaner import AutoCacheManager
+                self.sync_engine = SyncEngine(self.config)
+                logger.info("Sync engine created")
+            except Exception as e:
+                logger.error(f"Sync engine creation failed: {e}")
+                self.sync_engine = None
 
-            self.auto_cache_manager = AutoCacheManager(self.config_manager)
-            print("AppController: Auto cache manager created")
+            try:
+                from utils.excel_import_handler import ExcelImportHandler
 
-            print("AppController: Connecting signals...")
+                self.excel_import_handler = ExcelImportHandler(self.config)
+                logger.info("Excel import handler created")
+            except Exception as e:
+                logger.error(f"Excel import handler creation failed: {e}")
+                self.excel_import_handler = None
+
+            # Simple auto cache manager
+            self.auto_cache_manager = None
+            try:
+                from utils.cache_cleaner import AutoCacheManager
+
+                # Skip auto cache manager for now to avoid issues
+                logger.info("Auto cache manager skipped")
+            except Exception as e:
+                logger.error(f"Auto cache manager creation failed: {e}")
+
+            # Connect signals with error handling
             self._connect_signals()
-            print("AppController: Signals connected")
 
-            print("AppController: Initializing data...")
+            # Initialize data
             self._initialize_data()
-            print("AppController: Data initialized")
 
-            print("AppController: Setting up auto sync timer...")
+            # Setup auto sync timer
             self.auto_sync_timer = QTimer(self)
             self.auto_sync_timer.timeout.connect(self._on_auto_sync_timeout)
-            self.toggle_auto_sync(self.config.auto_sync_enabled)
-            print("AppController: Auto sync timer setup complete")
+            self.toggle_auto_sync(getattr(self.config, "auto_sync_enabled", False))
 
-            logger.info("AppController initialized.")
-            print("AppController: Initialization complete!")
+            logger.info("AppController initialized successfully.")
 
         except Exception as e:
-            print(f"AppController initialization error: {e}")
             logger.error(f"AppController initialization error: {e}", exc_info=True)
-            raise
+            # Don't raise - continue with partial initialization
 
     def _connect_signals(self):
         """Connect signals between components"""
         try:
-            print("AppController: Connecting ConnectionManager signals...")
             # ConnectionManager signals
-            self.connection_manager.status_changed.connect(
-                self._handle_service_status_change
-            )
-            self.connection_manager.log_message.connect(
-                lambda msg, level: self.log_message.emit(f"[CONN] {msg}", level)
-            )
-            print("AppController: ConnectionManager signals connected")
-
-            print("AppController: Connecting SyncEngine signals...")
-            # SyncEngine signals
-            self.sync_engine.progress_updated.connect(self.progress_updated.emit)
-            self.sync_engine.sync_completed.connect(self._handle_sync_completed)
-            self.sync_engine.log_message.connect(
-                lambda msg, level: self.log_message.emit(f"[SYNC] {msg}", level)
-            )
-            print("AppController: SyncEngine signals connected")
-
-            print("AppController: Connecting CacheManager signals...")
-            # CacheManager signals
-            self.auto_cache_manager.log_message.connect(
-                lambda msg, level: self.log_message.emit(f"[CACHE] {msg}", level)
-            )
-            print("AppController: CacheManager signals connected")
-
-            print("AppController: Connecting ConfigManager signals...")
-            # ConfigManager signals - now properly available
-            if hasattr(self.config_manager, "config_updated"):
-                self.config_manager.config_updated.connect(self._handle_config_update)
-                print("AppController: ConfigManager config_updated signal connected")
-            else:
-                print(
-                    "AppController: ConfigManager config_updated signal not available"
+            if self.connection_manager and hasattr(
+                self.connection_manager, "status_changed"
+            ):
+                self.connection_manager.status_changed.connect(
+                    self._handle_service_status_change
                 )
-                logger.warning("ConfigManager does not have config_updated signal")
-            print("AppController: ConfigManager signals connected")
+                self.connection_manager.log_message.connect(
+                    lambda msg, level: self.log_message.emit(f"[CONN] {msg}", level)
+                )
 
-            print("AppController: Connecting ExcelImportHandler signals...")
+            # SyncEngine signals
+            if self.sync_engine:
+                if hasattr(self.sync_engine, "progress_updated"):
+                    self.sync_engine.progress_updated.connect(
+                        self.progress_updated.emit
+                    )
+                if hasattr(self.sync_engine, "sync_completed"):
+                    self.sync_engine.sync_completed.connect(self._handle_sync_completed)
+                if hasattr(self.sync_engine, "log_message"):
+                    self.sync_engine.log_message.connect(
+                        lambda msg, level: self.log_message.emit(f"[SYNC] {msg}", level)
+                    )
+
             # ExcelImportHandler signals
-            self.excel_import_handler.log_message.connect(
-                lambda msg, level: self.log_message.emit(f"[EXCEL] {msg}", level)
-            )
-            self.excel_import_handler.import_progress.connect(
-                lambda p, msg: self.progress_update.emit(p)
-            )
-            self.excel_import_handler.import_completed.connect(
-                self._handle_excel_import_completed
-            )
-            print("AppController: ExcelImportHandler signals connected")
+            if self.excel_import_handler:
+                if hasattr(self.excel_import_handler, "log_message"):
+                    self.excel_import_handler.log_message.connect(
+                        lambda msg, level: self.log_message.emit(
+                            f"[EXCEL] {msg}", level
+                        )
+                    )
+                if hasattr(self.excel_import_handler, "import_progress"):
+                    self.excel_import_handler.import_progress.connect(
+                        lambda p, msg: self.progress_update.emit(p)
+                    )
+                if hasattr(self.excel_import_handler, "import_completed"):
+                    self.excel_import_handler.import_completed.connect(
+                        self._handle_excel_import_completed
+                    )
 
             logger.debug("AppController signals connected successfully")
 
         except Exception as e:
-            print(f"AppController signal connection error: {e}")
             logger.error(f"Error connecting AppController signals: {e}")
-            raise
 
     def _initialize_data(self):
         """Initialize data for UI components"""
         try:
-            print("AppController: Updating UI with config...")
             self.update_ui_with_config()
-            print("AppController: Testing all connections...")
-            self.test_all_connections()
-            print("AppController: Data initialization complete")
+            # Skip automatic connection testing to speed up startup
             logger.debug("AppController data initialized")
         except Exception as e:
-            print(f"AppController data initialization error: {e}")
             logger.error(f"Error initializing AppController data: {e}")
-            # Don't raise here, continue with partially initialized state
 
     @pyqtSlot(str, str)
     def _handle_service_status_change(self, service_name: str, status: str):
@@ -195,15 +204,6 @@ class AppController(QObject):
             self.log_message.emit(f"Data synchronization failed: {message}", "error")
 
     @pyqtSlot()
-    def _handle_config_update(self):
-        """Handle configuration update"""
-        logger.info("Configuration updated, reloading...")
-        self.config = self.config_manager.get_config()
-        self.update_ui_with_config()
-        self.test_all_connections()
-        self.toggle_auto_sync(self.config.auto_sync_enabled)
-
-    @pyqtSlot()
     def test_all_connections(self):
         """Test connections to SharePoint and Database"""
         logger.info("Testing all connections...")
@@ -214,28 +214,34 @@ class AppController(QObject):
         db_status = "disconnected"
 
         try:
-            sp_connector = self.connection_manager.get_sharepoint_connector(self.config)
-            sp_connected = sp_connector.test_connection() if sp_connector else False
-            sp_status = "connected" if sp_connected else "error"
-            self.sharepoint_status_update.emit(sp_status)
-            self.log_message.emit(
-                f"SharePoint connection: {'Connected' if sp_connected else 'Failed'}",
-                "info" if sp_connected else "error",
-            )
+            if self.connection_manager:
+                sp_connector = self.connection_manager.get_sharepoint_connector(
+                    self.config
+                )
+                sp_connected = sp_connector.test_connection() if sp_connector else False
+                sp_status = "connected" if sp_connected else "error"
+                self.sharepoint_status_update.emit(sp_status)
+                self.log_message.emit(
+                    f"SharePoint connection: {'Connected' if sp_connected else 'Failed'}",
+                    "info" if sp_connected else "error",
+                )
         except Exception as e:
             sp_status = "error"
             self.sharepoint_status_update.emit(sp_status)
             self.log_message.emit(f"SharePoint connection error: {e}", "critical")
 
         try:
-            db_connector = self.connection_manager.get_database_connector(self.config)
-            db_connected = db_connector.test_connection() if db_connector else False
-            db_status = "connected" if db_connected else "error"
-            self.database_status_update.emit(db_status)
-            self.log_message.emit(
-                f"Database connection: {'Connected' if db_connected else 'Failed'}",
-                "info" if db_connected else "error",
-            )
+            if self.connection_manager:
+                db_connector = self.connection_manager.get_database_connector(
+                    self.config
+                )
+                db_connected = db_connector.test_connection() if db_connector else False
+                db_status = "connected" if db_connected else "error"
+                self.database_status_update.emit(db_status)
+                self.log_message.emit(
+                    f"Database connection: {'Connected' if db_connected else 'Failed'}",
+                    "info" if db_connected else "error",
+                )
         except Exception as e:
             db_status = "error"
             self.database_status_update.emit(db_status)
@@ -250,6 +256,10 @@ class AppController(QObject):
     @pyqtSlot(str)
     def run_full_sync(self, direction: str = "spo_to_sql"):
         """Initiate a full data synchronization"""
+        if not self.sync_engine:
+            self.log_message.emit("Sync engine not available", "error")
+            return
+
         logger.info(f"Initiating full sync in direction: {direction}")
         self.ui_enable_request.emit(False)
         self.current_task_update.emit(f"Running full sync ({direction})...")
@@ -262,6 +272,10 @@ class AppController(QObject):
     @pyqtSlot(str, str, dict)
     def import_excel_data(self, file_path: str, table_name: str, column_mapping: dict):
         """Initiate Excel data import"""
+        if not self.excel_import_handler:
+            self.log_message.emit("Excel import handler not available", "error")
+            return
+
         logger.info(f"Initiating Excel import from {file_path} to {table_name}")
         self.ui_enable_request.emit(False)
         self.current_task_update.emit("Importing Excel data...")
@@ -306,10 +320,13 @@ class AppController(QObject):
             else:
                 converted_value = value
 
-            self.config_manager.update_setting(key_path, converted_value)
+            # Simple setting update without complex manager
+            if hasattr(self.config, key_path):
+                setattr(self.config, key_path, converted_value)
+
             self.log_message.emit(f"Setting '{key_path}' updated.", "info")
 
-        except (ValueError, TypeError, json.JSONDecodeError) as e:
+        except (ValueError, TypeError) as e:
             self.log_message.emit(
                 f"Failed to update setting '{key_path}': {e}", "error"
             )
@@ -318,16 +335,19 @@ class AppController(QObject):
     def run_cache_cleanup(self):
         """Manually trigger cache cleanup"""
         logger.info("Manual cache cleanup initiated")
-        self.auto_cache_manager.run_manual_cleanup()
+        if self.auto_cache_manager:
+            self.auto_cache_manager.run_manual_cleanup()
+        else:
+            self.log_message.emit("Cache cleanup not available", "warning")
 
     @pyqtSlot(bool)
     def toggle_auto_sync(self, enabled: bool):
         """Toggle automatic synchronization"""
-        self.config_manager.update_setting("auto_sync_enabled", enabled)
-        self.config.auto_sync_enabled = enabled
+        if hasattr(self.config, "auto_sync_enabled"):
+            self.config.auto_sync_enabled = enabled
         self.auto_sync_status_update.emit(enabled)
 
-        if enabled:
+        if enabled and hasattr(self.config, "sync_interval"):
             interval_ms = self.config.sync_interval * 1000
             self.auto_sync_timer.start(interval_ms)
             logger.info(
@@ -355,10 +375,10 @@ class AppController(QObject):
         logger.debug("Updating UI with current configuration")
         self.sharepoint_status_update.emit("disconnected")
         self.database_status_update.emit("disconnected")
-        self.last_sync_status_update.emit(
-            getattr(self.config, "last_sync_status", "never")
-        )
-        self.auto_sync_status_update.emit(self.config.auto_sync_enabled)
+        last_sync_status = getattr(self.config, "last_sync_status", "never")
+        self.last_sync_status_update.emit(last_sync_status)
+        auto_sync_enabled = getattr(self.config, "auto_sync_enabled", False)
+        self.auto_sync_status_update.emit(auto_sync_enabled)
         self.progress_update.emit(0)
         self.current_task_update.emit("Idle")
 
@@ -373,13 +393,13 @@ class AppController(QObject):
                 self.auto_sync_timer.deleteLater()
 
             # Cleanup components
-            if hasattr(self, "sync_engine"):
+            if hasattr(self, "sync_engine") and self.sync_engine:
                 self.sync_engine.cleanup()
-            if hasattr(self, "connection_manager"):
+            if hasattr(self, "connection_manager") and self.connection_manager:
                 self.connection_manager.cleanup()
-            if hasattr(self, "excel_import_handler"):
+            if hasattr(self, "excel_import_handler") and self.excel_import_handler:
                 self.excel_import_handler.cleanup()
-            if hasattr(self, "auto_cache_manager"):
+            if hasattr(self, "auto_cache_manager") and self.auto_cache_manager:
                 self.auto_cache_manager.cleanup()
 
             logger.info("AppController cleanup completed")

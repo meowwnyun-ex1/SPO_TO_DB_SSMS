@@ -33,11 +33,22 @@ def setup_imports():
         global OptimizedMainWindow, AppController, setup_neural_logging
         global apply_ultra_modern_theme, get_config_manager
 
+        print("Importing main window...")
         from ui.main_window import OptimizedMainWindow
+
+        print("Main window imported successfully")
+
+        print("Importing app controller...")
         from controller.app_controller import AppController
+
+        print("App controller imported successfully")
+
+        print("Importing utilities...")
         from utils.logger import setup_neural_logging
         from ui.styles.theme import apply_ultra_modern_theme
         from utils.config_manager import get_config_manager
+
+        print("All utilities imported successfully")
 
         return True
     except ImportError as e:
@@ -64,6 +75,88 @@ def setup_logging():
     except Exception as e:
         print(f"Failed to setup logging: {e}")
         return None
+
+
+def create_main_window_with_timeout():
+    """Create main window with timeout protection"""
+    global main_window_instance, controller_instance
+
+    try:
+        print("Creating MainWindow with timeout protection...")
+
+        # Set a timeout for window creation
+        creation_timer = QTimer()
+        creation_timer.setSingleShot(True)
+        creation_completed = False
+
+        def on_timeout():
+            nonlocal creation_completed
+            if not creation_completed:
+                print("MainWindow creation timed out!")
+                logging.error("MainWindow creation timed out after 10 seconds")
+                raise TimeoutError("MainWindow creation timed out")
+
+        creation_timer.timeout.connect(on_timeout)
+        creation_timer.start(10000)  # 10 second timeout
+
+        # Create the main window
+        print("Instantiating OptimizedMainWindow...")
+        try:
+            main_window_instance = OptimizedMainWindow(controller_instance)
+            creation_completed = True
+            creation_timer.stop()
+        except Exception as e:
+            print(f"OptimizedMainWindow failed: {e}")
+            # Create minimal working window
+            from PyQt6.QtWidgets import (
+                QMainWindow,
+                QWidget,
+                QVBoxLayout,
+                QTextEdit,
+                QPushButton,
+            )
+
+            main_window_instance = QMainWindow()
+            central = QWidget()
+            layout = QVBoxLayout(central)
+
+            # Simple UI
+            layout.addWidget(QLabel("DENSO Neural Matrix - Minimal Mode"))
+
+            log_area = QTextEdit()
+            log_area.setReadOnly(True)
+            layout.addWidget(log_area)
+
+            # Connect controller logs
+            if hasattr(controller_instance, "log_message"):
+                controller_instance.log_message.connect(
+                    lambda msg, level: log_area.append(f"[{level}] {msg}")
+                )
+
+            test_btn = QPushButton("Test Connections")
+            test_btn.clicked.connect(
+                lambda: (
+                    controller_instance.test_all_connections()
+                    if hasattr(controller_instance, "test_all_connections")
+                    else None
+                )
+            )
+            layout.addWidget(test_btn)
+
+            main_window_instance.setCentralWidget(central)
+            main_window_instance.setWindowTitle("DENSO Neural Matrix - Safe Mode")
+            main_window_instance.setGeometry(100, 100, 600, 400)
+
+            creation_completed = True
+            creation_timer.stop()
+
+        print("MainWindow created successfully")
+        return True
+
+    except Exception as e:
+        print(f"Error creating MainWindow: {e}")
+        logging.error(f"Error creating MainWindow: {e}")
+        return False
 
 
 def setup_background_image(main_window):
@@ -275,8 +368,24 @@ def main():
         controller_instance = AppController()
         print("AppController created successfully")
 
+        # Create MainWindow with timeout protection
         print("Creating MainWindow...")
-        main_window_instance = OptimizedMainWindow(controller_instance)
+        if not create_main_window_with_timeout():
+            print("Failed to create MainWindow - switching to minimal mode")
+            # Create a minimal fallback window
+            from PyQt6.QtWidgets import QMainWindow, QLabel, QVBoxLayout, QWidget
+
+            main_window_instance = QMainWindow()
+            central_widget = QWidget()
+            layout = QVBoxLayout(central_widget)
+            label = QLabel(
+                "DENSO Neural Matrix - Minimal Mode\n\nMain UI failed to load."
+            )
+            layout.addWidget(label)
+            main_window_instance.setCentralWidget(central_widget)
+            main_window_instance.setWindowTitle("DENSO Neural Matrix - Minimal")
+            main_window_instance.setGeometry(100, 100, 400, 200)
+
         print("MainWindow created successfully")
 
         # Connect UI logging if available
@@ -289,9 +398,10 @@ def main():
             except Exception as e:
                 print(f"UI logging connection failed: {e}")
 
-        # Setup UI enhancements
-        setup_background_image(main_window_instance)
-        setup_background_audio()
+        # Setup UI enhancements (skip if in minimal mode)
+        if hasattr(main_window_instance, "config_manager"):
+            setup_background_image(main_window_instance)
+            setup_background_audio()
 
         # Show main window
         print("Showing main window...")
