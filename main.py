@@ -1,445 +1,491 @@
 #!/usr/bin/env python3
 """
-DENSO Neural Matrix - SharePoint to SQL Sync System
+DENSO Neural Matrix 2025 - Modern SharePoint to SQL Sync System
 © Thammaphon Chittasuwanna (SDM) | Innovation Department
 """
 
 import sys
-import atexit
 import signal
-import logging
+import atexit
 from pathlib import Path
-from PyQt6.QtWidgets import QApplication, QMessageBox
-from PyQt6.QtCore import QTimer, QUrl
-from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
+from PyQt6.QtWidgets import QApplication, QMessageBox, QSplashScreen
+from PyQt6.QtCore import QTimer, Qt
+from PyQt6.QtGui import QPixmap, QFont
 
 # Add project root to path
-project_root = Path(__file__).parent.absolute()
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
+PROJECT_ROOT = Path(__file__).parent.absolute()
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-# Global variables for cleanup
+# Global instances
 app_instance = None
 controller_instance = None
 main_window_instance = None
-player = None
-audio_output = None
-ui_handler = None
+logger_ui_handler = None
 
 
-def setup_imports():
-    """Setup imports with proper error handling"""
+def setup_environment():
+    """Setup application environment"""
     try:
-        global OptimizedMainWindow, AppController, setup_neural_logging
-        global apply_ultra_modern_theme, get_config_manager
+        # Create required directories
+        directories = [
+            "logs",
+            "config",
+            "data",
+            "reports",
+            "resources/images",
+            "resources/audio",
+            "assets/icons",
+            "assets/images",
+        ]
 
-        print("Importing main window...")
-        from ui.main_window import OptimizedMainWindow
-
-        print("Main window imported successfully")
-
-        print("Importing app controller...")
-        from controller.app_controller import AppController
-
-        print("App controller imported successfully")
-
-        print("Importing utilities...")
-        from utils.logger import setup_neural_logging
-        from ui.styles.theme import apply_ultra_modern_theme
-        from utils.config_manager import get_config_manager
-
-        print("All utilities imported successfully")
+        for dir_path in directories:
+            (PROJECT_ROOT / dir_path).mkdir(parents=True, exist_ok=True)
 
         return True
-    except ImportError as e:
-        print(f"CRITICAL IMPORT ERROR: {e}")
-        print("Please ensure all dependencies are installed:")
-        print("pip install -r requirements.txt")
+    except Exception as e:
+        print(f"Environment setup failed: {e}")
         return False
 
 
 def setup_logging():
-    """Initialize logging system"""
-    global ui_handler
-    try:
-        log_dir = project_root / "logs"
-        log_dir.mkdir(exist_ok=True)
+    """Initialize modern logging system"""
+    global logger_ui_handler
 
-        ui_handler = setup_neural_logging(
-            log_file=str(log_dir / "app.log"), log_level="INFO"
+    try:
+        from utils.logger import LoggerManager
+
+        log_file = str(PROJECT_ROOT / "logs" / "app.log")
+        logger_ui_handler = LoggerManager.setup_logging(
+            log_file=log_file, log_level="INFO"
         )
 
-        logger = logging.getLogger(__name__)
-        logger.info("Logging system initialized")
-        return ui_handler
-    except Exception as e:
-        print(f"Failed to setup logging: {e}")
-        return None
-
-
-def create_main_window_with_timeout():
-    """Create main window with timeout protection"""
-    global main_window_instance, controller_instance
-
-    try:
-        print("Creating MainWindow with timeout protection...")
-
-        # Set a timeout for window creation
-        creation_timer = QTimer()
-        creation_timer.setSingleShot(True)
-        creation_completed = False
-
-        def on_timeout():
-            nonlocal creation_completed
-            if not creation_completed:
-                print("MainWindow creation timed out!")
-                logging.error("MainWindow creation timed out after 10 seconds")
-                raise TimeoutError("MainWindow creation timed out")
-
-        creation_timer.timeout.connect(on_timeout)
-        creation_timer.start(10000)  # 10 second timeout
-
-        # Create the main window
-        print("Instantiating OptimizedMainWindow...")
-        try:
-            main_window_instance = OptimizedMainWindow(controller_instance)
-            creation_completed = True
-            creation_timer.stop()
-        except Exception as e:
-            print(f"OptimizedMainWindow failed: {e}")
-            # Create minimal working window
-            from PyQt6.QtWidgets import (
-                QMainWindow,
-                QWidget,
-                QVBoxLayout,
-                QTextEdit,
-                QPushButton,
-            )
-
-            main_window_instance = QMainWindow()
-            central = QWidget()
-            layout = QVBoxLayout(central)
-
-            # Simple UI
-            layout.addWidget(QLabel("DENSO Neural Matrix - Minimal Mode"))
-
-            log_area = QTextEdit()
-            log_area.setReadOnly(True)
-            layout.addWidget(log_area)
-
-            # Connect controller logs
-            if hasattr(controller_instance, "log_message"):
-                controller_instance.log_message.connect(
-                    lambda msg, level: log_area.append(f"[{level}] {msg}")
-                )
-
-            test_btn = QPushButton("Test Connections")
-            test_btn.clicked.connect(
-                lambda: (
-                    controller_instance.test_all_connections()
-                    if hasattr(controller_instance, "test_all_connections")
-                    else None
-                )
-            )
-            layout.addWidget(test_btn)
-
-            main_window_instance.setCentralWidget(central)
-            main_window_instance.setWindowTitle("DENSO Neural Matrix - Safe Mode")
-            main_window_instance.setGeometry(100, 100, 600, 400)
-
-            creation_completed = True
-            creation_timer.stop()
-
-        print("MainWindow created successfully")
-        return True
+        if logger_ui_handler:
+            print("✅ Modern logging system initialized")
+            return True
+        else:
+            print("⚠️ Logging system initialized with fallback")
+            return True
 
     except Exception as e:
-        print(f"Error creating MainWindow: {e}")
-        logging.error(f"Error creating MainWindow: {e}")
+        print(f"❌ Logging setup failed: {e}")
         return False
 
 
-def setup_background_image(main_window):
-    """Setup background image for main window"""
+def create_splash_screen():
+    """Create modern splash screen"""
     try:
-        config_manager = get_config_manager()
-        background_path = config_manager.get_setting("background_image_path")
+        # Create splash pixmap
+        splash_pixmap = QPixmap(400, 200)
+        splash_pixmap.fill(Qt.GlobalColor.transparent)
 
-        if background_path:
-            full_path = project_root / background_path
-            if full_path.exists():
-                qt_path = QUrl.fromLocalFile(str(full_path)).toString()
-                main_window.setStyleSheet(
-                    f"""
-                    QMainWindow {{
-                        background-image: url("{qt_path}");
-                        background-repeat: no-repeat;
-                        background-position: center;
-                        background-attachment: fixed;
-                    }}
-                """
-                )
-                logging.info(f"Background image applied: {full_path}")
-            else:
-                logging.warning(f"Background image not found: {full_path}")
+        splash = QSplashScreen(splash_pixmap)
+        splash.setStyleSheet(
+            """
+            QSplashScreen {
+                background: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #0F172A,
+                    stop:1 #1E293B
+                );
+                border: 2px solid #6366F1;
+                border-radius: 12px;
+                color: #F8FAFC;
+                font-family: "Inter", sans-serif;
+                font-size: 14px;
+                font-weight: 600;
+            }
+        """
+        )
+
+        splash.showMessage(
+            "🚀 DENSO Neural Matrix\nInitializing Modern System...",
+            Qt.AlignmentFlag.AlignCenter,
+            Qt.GlobalColor.white,
+        )
+
+        splash.show()
+        return splash
+
+    except Exception:
+        return None
+
+
+def import_components():
+    """Import all required components with error handling"""
+    components = {}
+
+    try:
+        # Core imports
+        from ui.styles.theme import apply_modern_theme
+        from controller.app_controller import AppController
+        from ui.main_window import OptimizedMainWindow
+
+        components.update(
+            {
+                "theme": apply_modern_theme,
+                "controller": AppController,
+                "main_window": OptimizedMainWindow,
+            }
+        )
+
+        print("✅ Core components imported")
+        return components
+
+    except ImportError as e:
+        print(f"❌ Component import failed: {e}")
+        return None
+
+
+def create_application():
+    """Create and configure QApplication"""
+    global app_instance
+
+    try:
+        app_instance = QApplication(sys.argv)
+        app_instance.setApplicationName("DENSO Neural Matrix")
+        app_instance.setApplicationVersion("2025.1.0")
+        app_instance.setOrganizationName("DENSO Corporation")
+
+        # Set modern font
+        font = QFont("Inter", 10)
+        font.setStyleHint(QFont.StyleHint.SansSerif)
+        app_instance.setFont(font)
+
+        print("✅ QApplication created")
+        return True
+
     except Exception as e:
-        logging.error(f"Failed to setup background image: {e}")
+        print(f"❌ QApplication creation failed: {e}")
+        return False
 
 
-def setup_background_audio():
-    """Setup background audio if enabled"""
-    global player, audio_output
+def create_controller():
+    """Create application controller"""
+    global controller_instance
 
     try:
-        config_manager = get_config_manager()
+        from controller.app_controller import AppController
 
-        if not config_manager.get_setting("enable_background_audio"):
-            return
+        controller_instance = AppController()
+        print("✅ Controller created")
+        return True
 
-        audio_path = config_manager.get_setting("background_audio_path")
-        volume = config_manager.get_setting("background_audio_volume")
-
-        if audio_path:
-            full_path = project_root / audio_path
-            if full_path.exists():
-                player = QMediaPlayer()
-                audio_output = QAudioOutput()
-
-                player.setAudioOutput(audio_output)
-                player.setSource(QUrl.fromLocalFile(str(full_path)))
-
-                audio_output.setVolume(volume)
-                player.setLoops(QMediaPlayer.Loops.Infinite)
-                player.play()
-
-                logging.info(f"Background audio started: {full_path}")
-            else:
-                logging.warning(f"Audio file not found: {full_path}")
     except Exception as e:
-        logging.error(f"Failed to setup background audio: {e}")
+        print(f"❌ Controller creation failed: {e}")
+        return False
 
 
-def cleanup_resources():
-    """Perform graceful cleanup of application resources"""
-    global controller_instance, main_window_instance, player, audio_output, ui_handler
-
-    print("Starting application cleanup...")
-    logging.info("Starting application cleanup...")
+def create_main_window():
+    """Create main window with fallback"""
+    global main_window_instance
 
     try:
-        # Stop background audio
-        if player and player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
-            player.stop()
-            if hasattr(player, "deleteLater"):
-                player.deleteLater()
+        from ui.main_window import OptimizedMainWindow
 
-        if audio_output and hasattr(audio_output, "deleteLater"):
-            audio_output.deleteLater()
+        main_window_instance = OptimizedMainWindow(controller_instance)
+        print("✅ Modern main window created")
+        return True
 
+    except Exception as e:
+        print(f"⚠️ Modern window failed, creating fallback: {e}")
+        return create_fallback_window()
+
+
+def create_fallback_window():
+    """Create minimal fallback window"""
+    global main_window_instance
+
+    try:
+        from PyQt6.QtWidgets import (
+            QMainWindow,
+            QWidget,
+            QVBoxLayout,
+            QLabel,
+            QPushButton,
+            QTextEdit,
+        )
+
+        main_window_instance = QMainWindow()
+        main_window_instance.setWindowTitle("DENSO Neural Matrix - Safe Mode")
+        main_window_instance.setGeometry(100, 100, 800, 600)
+
+        central = QWidget()
+        layout = QVBoxLayout(central)
+
+        # Header
+        header = QLabel("🚀 DENSO Neural Matrix - Safe Mode")
+        header.setStyleSheet(
+            """
+            font-size: 18px;
+            font-weight: bold;
+            color: #6366F1;
+            padding: 16px;
+            text-align: center;
+        """
+        )
+        layout.addWidget(header)
+
+        # Log area
+        log_area = QTextEdit()
+        log_area.setReadOnly(True)
+        log_area.setStyleSheet(
+            """
+            background: #0F172A;
+            color: #F8FAFC;
+            border: 1px solid #6366F1;
+            border-radius: 8px;
+            font-family: "Consolas", monospace;
+            font-size: 12px;
+            padding: 8px;
+        """
+        )
+        layout.addWidget(log_area)
+
+        # Connect controller logs if available
+        if controller_instance and hasattr(controller_instance, "log_message"):
+            controller_instance.log_message.connect(
+                lambda msg, level: log_area.append(f"[{level.upper()}] {msg}")
+            )
+
+        # Control buttons
+        btn_layout = QVBoxLayout()
+
+        test_btn = QPushButton("🔗 Test Connections")
+        test_btn.setStyleSheet(
+            """
+            QPushButton {
+                background: #6366F1;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 16px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background: #4F46E5;
+            }
+        """
+        )
+        if controller_instance and hasattr(controller_instance, "test_all_connections"):
+            test_btn.clicked.connect(controller_instance.test_all_connections)
+        btn_layout.addWidget(test_btn)
+
+        sync_btn = QPushButton("🚀 Run Sync")
+        sync_btn.setStyleSheet(test_btn.styleSheet())
+        if controller_instance and hasattr(controller_instance, "run_full_sync"):
+            sync_btn.clicked.connect(
+                lambda: controller_instance.run_full_sync("spo_to_sql")
+            )
+        btn_layout.addWidget(sync_btn)
+
+        layout.addLayout(btn_layout)
+        main_window_instance.setCentralWidget(central)
+
+        print("✅ Fallback window created")
+        return True
+
+    except Exception as e:
+        print(f"❌ Fallback window creation failed: {e}")
+        return False
+
+
+def connect_ui_logging():
+    """Connect UI logging handler to main window"""
+    try:
+        if (
+            logger_ui_handler
+            and main_window_instance
+            and hasattr(main_window_instance, "log_console")
+        ):
+
+            logger_ui_handler.log_record_emitted.connect(
+                main_window_instance.log_console.add_log_message
+            )
+            print("✅ UI logging connected")
+
+    except Exception as e:
+        print(f"⚠️ UI logging connection failed: {e}")
+
+
+def setup_signal_handlers():
+    """Setup signal handlers for graceful shutdown"""
+
+    def signal_handler(signum, frame):
+        print(f"\n🔄 Received signal {signum}, shutting down gracefully...")
+        cleanup_application()
+        if app_instance:
+            app_instance.quit()
+
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
+
+def cleanup_application():
+    """Comprehensive application cleanup"""
+    global controller_instance, main_window_instance, logger_ui_handler
+
+    print("🧹 Starting application cleanup...")
+
+    try:
         # Cleanup main window
         if main_window_instance:
             try:
-                main_window_instance.cleanup()
-                if hasattr(main_window_instance, "deleteLater"):
-                    main_window_instance.deleteLater()
+                if hasattr(main_window_instance, "cleanup"):
+                    main_window_instance.cleanup()
+                main_window_instance.close()
             except Exception as e:
-                print(f"Error cleaning up main window: {e}")
+                print(f"Window cleanup error: {e}")
 
         # Cleanup controller
         if controller_instance:
             try:
-                controller_instance.cleanup()
-                if hasattr(controller_instance, "deleteLater"):
-                    controller_instance.deleteLater()
+                if hasattr(controller_instance, "cleanup"):
+                    controller_instance.cleanup()
             except Exception as e:
-                print(f"Error cleaning up controller: {e}")
+                print(f"Controller cleanup error: {e}")
 
-        # Cleanup UI handler
-        if ui_handler:
+        # Cleanup logging
+        if logger_ui_handler:
             try:
-                if hasattr(ui_handler, "log_record_emitted"):
-                    ui_handler.log_record_emitted.disconnect()
-                if hasattr(ui_handler, "deleteLater"):
-                    ui_handler.deleteLater()
+                logger_ui_handler.cleanup()
             except Exception as e:
-                print(f"Error cleaning up UI handler: {e}")
+                print(f"Logger cleanup error: {e}")
 
-        print("Application cleanup completed")
-        logging.info("Application cleanup completed")
+        # Final logging cleanup
+        try:
+            from utils.logger import LoggerManager
+
+            LoggerManager.cleanup_logging()
+        except Exception as e:
+            print(f"Final logging cleanup error: {e}")
+
+        print("✅ Application cleanup completed")
 
     except Exception as e:
-        print(f"Error during cleanup: {e}")
-        logging.error(f"Error during cleanup: {e}")
+        print(f"❌ Cleanup error: {e}")
 
 
-def handle_exception(exc_type, exc_value, exc_traceback):
-    """Global exception handler"""
-    if issubclass(exc_type, KeyboardInterrupt):
-        sys.__excepthook__(exc_type, exc_value, exc_traceback)
-        return
-
-    logging.critical(
-        "Unhandled exception", exc_info=(exc_type, exc_value, exc_traceback)
-    )
-
-    # Show critical error dialog
-    if app_instance:
-        try:
-            QMessageBox.critical(
-                None,
-                "Critical Error",
-                f"An unhandled error occurred:\n{exc_value}\n\nThe application will close.",
-                QMessageBox.StandardButton.Ok,
-            )
-        except:
-            pass
-
-    cleanup_resources()
-
-
-def handle_signal(signum, frame):
-    """Signal handler for graceful shutdown"""
-    print(f"Received signal {signum}, shutting down...")
-    logging.info(f"Received signal {signum}, shutting down...")
-    cleanup_resources()
-    if app_instance:
-        app_instance.quit()
-
-
-def create_missing_directories():
-    """Create required directories if they don't exist"""
-    directories = [
-        "logs",
-        "config",
-        "data",
-        "reports",
-        "resources/images",
-        "resources/audio",
-        "assets/icons",
-        "assets/images",
-    ]
-
-    for dir_path in directories:
-        full_path = project_root / dir_path
-        full_path.mkdir(parents=True, exist_ok=True)
-
-
-def main():
-    """Main application entry point"""
-    global app_instance, controller_instance, main_window_instance
-
-    # Setup exception handling
-    sys.excepthook = handle_exception
-    signal.signal(signal.SIGINT, handle_signal)
-    signal.signal(signal.SIGTERM, handle_signal)
-    atexit.register(cleanup_resources)
-
-    exit_code = 1
-
+def run_application():
+    """Run the main application event loop"""
     try:
-        print("Starting DENSO Neural Matrix...")
-
-        # Check imports
-        if not setup_imports():
-            return exit_code
-
-        print("Imports successful...")
-
-        # Create required directories
-        create_missing_directories()
-
-        # Setup logging
-        ui_handler = setup_logging()
-        print("Logging setup complete...")
-
-        # Create QApplication
-        app_instance = QApplication(sys.argv)
-        app_instance.setApplicationName("DENSO Neural Matrix")
-        app_instance.setApplicationVersion("1.0.0")
-        print("QApplication created...")
-
-        # Apply theme
-        apply_ultra_modern_theme(app_instance)
-        logging.info("Ultra Modern Theme applied")
-        print("Theme applied...")
-
-        # Initialize core components
-        print("Creating AppController...")
-        controller_instance = AppController()
-        print("AppController created successfully")
-
-        # Create MainWindow with timeout protection
-        print("Creating MainWindow...")
-        if not create_main_window_with_timeout():
-            print("Failed to create MainWindow - switching to minimal mode")
-            # Create a minimal fallback window
-            from PyQt6.QtWidgets import QMainWindow, QLabel, QVBoxLayout, QWidget
-
-            main_window_instance = QMainWindow()
-            central_widget = QWidget()
-            layout = QVBoxLayout(central_widget)
-            label = QLabel(
-                "DENSO Neural Matrix - Minimal Mode\n\nMain UI failed to load."
-            )
-            layout.addWidget(label)
-            main_window_instance.setCentralWidget(central_widget)
-            main_window_instance.setWindowTitle("DENSO Neural Matrix - Minimal")
-            main_window_instance.setGeometry(100, 100, 400, 200)
-
-        print("MainWindow created successfully")
-
-        # Connect UI logging if available
-        if ui_handler and hasattr(main_window_instance, "log_panel"):
-            try:
-                ui_handler.log_record_emitted.connect(
-                    main_window_instance.log_panel.log_console.add_log_message
-                )
-                print("UI logging connected...")
-            except Exception as e:
-                print(f"UI logging connection failed: {e}")
-
-        # Setup UI enhancements (skip if in minimal mode)
-        if hasattr(main_window_instance, "config_manager"):
-            setup_background_image(main_window_instance)
-            setup_background_audio()
+        if not main_window_instance:
+            return 1
 
         # Show main window
-        print("Showing main window...")
         main_window_instance.show()
-        print("Main window should be visible now")
+        print("🚀 Application started successfully")
 
-        # Create timer for Qt event processing
+        # Process events timer
         timer = QTimer()
         timer.timeout.connect(lambda: None)
         timer.start(100)
 
-        logging.info("DENSO Neural Matrix started successfully")
-        print("Application started successfully - entering event loop...")
-
-        # Run application
+        # Run event loop
         exit_code = app_instance.exec()
-        print(f"Application exited with code: {exit_code}")
+        print(f"📊 Application exited with code: {exit_code}")
+        return exit_code
 
     except Exception as e:
-        print(f"Critical error in main: {e}")
-        logging.critical(f"Critical error in main: {e}", exc_info=True)
-        if app_instance:
-            try:
-                QMessageBox.critical(
-                    None,
-                    "Startup Error",
-                    f"Failed to start application:\n{e}",
-                    QMessageBox.StandardButton.Ok,
-                )
-            except:
-                pass
-    finally:
-        cleanup_resources()
-        try:
-            logging.info(f"Application finished with exit code: {exit_code}")
-        except:
-            pass
+        print(f"❌ Application runtime error: {e}")
+        return 1
 
+
+def handle_startup_error(error_msg):
+    """Handle startup errors with user notification"""
+    try:
+        if app_instance:
+            QMessageBox.critical(
+                None,
+                "DENSO Neural Matrix - Startup Error",
+                f"Failed to start application:\n\n{error_msg}\n\nPlease check the logs for details.",
+                QMessageBox.StandardButton.Ok,
+            )
+    except Exception:
+        pass
+
+    print(f"💥 CRITICAL ERROR: {error_msg}")
+
+
+def main():
+    """Main application entry point"""
+    exit_code = 1
+    splash = None
+
+    try:
+        print("🚀 Starting DENSO Neural Matrix 2025...")
+
+        # Setup environment
+        if not setup_environment():
+            handle_startup_error("Environment setup failed")
+            return exit_code
+
+        # Create QApplication
+        if not create_application():
+            handle_startup_error("QApplication creation failed")
+            return exit_code
+
+        # Apply modern theme
+        try:
+            from ui.styles.theme import apply_modern_theme
+
+            apply_modern_theme(app_instance)
+            print("✅ Modern theme applied")
+        except Exception as e:
+            print(f"⚠️ Theme application failed: {e}")
+
+        # Show splash screen
+        splash = create_splash_screen()
+        if splash:
+            QApplication.processEvents()
+
+        # Setup logging
+        if not setup_logging():
+            handle_startup_error("Logging system failed")
+            return exit_code
+
+        # Create controller
+        if not create_controller():
+            handle_startup_error("Controller creation failed")
+            return exit_code
+
+        # Create main window
+        if not create_main_window():
+            handle_startup_error("Main window creation failed")
+            return exit_code
+
+        # Connect UI logging
+        connect_ui_logging()
+
+        # Setup signal handlers
+        setup_signal_handlers()
+        atexit.register(cleanup_application)
+
+        # Hide splash screen
+        if splash:
+            splash.close()
+
+        # Run application
+        exit_code = run_application()
+
+    except KeyboardInterrupt:
+        print("\n⚡ Interrupted by user")
+        exit_code = 130
+
+    except Exception as e:
+        error_msg = f"Unexpected error: {e}"
+        handle_startup_error(error_msg)
+
+    finally:
+        # Final cleanup
+        try:
+            if splash:
+                splash.close()
+            cleanup_application()
+        except Exception as e:
+            print(f"Final cleanup error: {e}")
+
+    print(f"🏁 Application finished with exit code: {exit_code}")
     return exit_code
 
 

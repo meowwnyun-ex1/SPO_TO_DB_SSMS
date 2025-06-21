@@ -1,223 +1,615 @@
-# ui/components/config_panel.py - Compact Configuration Panel
-from PyQt6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QGridLayout,
-    QScrollArea,
-    QTableWidget,
-    QTableWidgetItem,
-    QHeaderView,
-    QAbstractItemView,
-    QMessageBox,
-    QCheckBox,
-    QLabel,
-)
-from PyQt6.QtCore import Qt, pyqtSlot, QTimer, pyqtSignal
+# ui/components/config_panel.py - Modern 2025 Config Panel
+from PyQt6.QtWidgets import *
+from PyQt6.QtCore import *
+from PyQt6.QtGui import *
 import sys
-import logging
 from pathlib import Path
 
-# Add project root to path for imports
 current_dir = Path(__file__).parent.absolute()
 project_root = current_dir.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 try:
-    from ui.styles.theme import (
-        get_modern_tab_style,
-        UltraModernColors,
-        get_modern_checkbox_style,
-        CompactScaling,
-    )
-    from ui.widgets.modern_button import ModernButton
-    from ui.widgets.modern_input import (
-        ModernLineEdit,
-        ModernSpinBox,
-        FormField,
-        PasswordField,
-        ModernTextEdit,
-    )
-    from ui.widgets.holographic_combobox import HolographicComboBox
-    from ui.widgets.neon_groupbox import NeonGroupBox
-    from utils.error_handling import handle_exceptions, ErrorCategory, ErrorSeverity
-    from utils.config_manager import get_simple_config_manager
-
+    from ui.styles.theme import ModernColors, Typography, BorderRadius, Spacing
+    from ui.widgets.modern_button import ActionButton, IconButton
+    from ui.widgets.modern_input import *
+    from utils.config_manager import get_config_manager
 except ImportError as e:
-    print(f"Import error in config_panel.py: {e}")
-    sys.exit(1)
-
-logger = logging.getLogger(__name__)
+    print(f"Config panel import error: {e}")
 
 
-class CompactFormField(QWidget):
-    """Ultra-compact form field for 900x500 display"""
+class ConfigSection(QWidget):
+    """Collapsible configuration section"""
 
-    def __init__(self, input_widget, label_text="", parent=None):
-        super().__init__(parent)
-        self.input_widget = input_widget
-        self.label_text = label_text
-        self._setup_ui()
-
-    def _setup_ui(self):
-        """Setup compact form layout"""
-        layout = QHBoxLayout(self)  # Horizontal layout to save vertical space
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
-
-        if self.label_text:
-            self.label = QLabel(self.label_text)
-            self.label.setFont(
-                QFont("Segoe UI", CompactScaling.FONT_SIZE_SMALL, QFont.Weight.Normal)
-            )
-            self.label.setStyleSheet(f"color: {UltraModernColors.TEXT_PRIMARY};")
-            self.label.setMinimumWidth(100)  # Fixed width for alignment
-            self.label.setMaximumWidth(100)
-            layout.addWidget(self.label)
-
-        # Handle checkbox specially
-        if isinstance(self.input_widget, QCheckBox):
-            # For checkboxes, no separate label needed
-            layout.addWidget(self.input_widget)
-            if hasattr(self, "label"):
-                self.label.hide()
-        else:
-            self.input_widget.setMaximumHeight(22)  # Compact height
-            layout.addWidget(self.input_widget)
-
-    def get_value(self):
-        """Get value from input widget"""
-        if isinstance(self.input_widget, QLineEdit):
-            return self.input_widget.text()
-        elif isinstance(self.input_widget, ModernTextEdit):
-            return self.input_widget.toPlainText()
-        elif isinstance(self.input_widget, HolographicComboBox):
-            return self.input_widget.currentText()
-        elif isinstance(self.input_widget, ModernSpinBox):
-            return self.input_widget.value()
-        elif isinstance(self.input_widget, QCheckBox):
-            return self.input_widget.isChecked()
-        return None
-
-    def set_value(self, value):
-        """Set value to input widget"""
-        if isinstance(self.input_widget, QLineEdit):
-            self.input_widget.setText(str(value))
-        elif isinstance(self.input_widget, ModernTextEdit):
-            self.input_widget.setText(str(value))
-        elif isinstance(self.input_widget, HolographicComboBox):
-            index = self.input_widget.findText(str(value))
-            if index >= 0:
-                self.input_widget.setCurrentIndex(index)
-        elif isinstance(self.input_widget, ModernSpinBox):
-            self.input_widget.setValue(
-                float(value) if self.input_widget.is_decimal else int(value)
-            )
-        elif isinstance(self.input_widget, QCheckBox):
-            self.input_widget.setChecked(bool(value))
-
-
-class CompactMappingTable(QWidget):
-    """Compact mapping table with minimal height"""
-
-    def __init__(self, title: str, parent=None):
+    def __init__(self, title, icon="", parent=None):
         super().__init__(parent)
         self.title = title
+        self.icon = icon
+        self.is_expanded = False
+        self.content_widget = None
         self._setup_ui()
 
     def _setup_ui(self):
-        """Setup compact table layout"""
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(2, 2, 2, 2)
-        layout.setSpacing(2)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
-        # Title
-        title_label = QLabel(self.title)
-        title_label.setFont(
-            QFont("Segoe UI", CompactScaling.FONT_SIZE_SMALL, QFont.Weight.Bold)
-        )
-        title_label.setStyleSheet(f"color: {UltraModernColors.NEON_BLUE};")
-        layout.addWidget(title_label)
-
-        # Compact table
-        self.table = QTableWidget(3, 2)  # Start with 3 rows only
-        self.table.setHorizontalHeaderLabels(["Source", "Target"])
-        self.table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Stretch
-        )
-        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table.setMaximumHeight(120)  # Limit table height
-        self.table.setMinimumHeight(80)
-
-        # Style table for compact view
-        self.table.setStyleSheet(
+        # Header button
+        self.header_btn = QPushButton(f"{self.icon} {self.title}")
+        self.header_btn.setCheckable(True)
+        self.header_btn.clicked.connect(self._toggle_section)
+        self.header_btn.setStyleSheet(
             f"""
-            QTableWidget {{
-                background: {UltraModernColors.GLASS_BG_DARK};
-                border: 1px solid {UltraModernColors.GLASS_BORDER};
-                border-radius: 3px;
-                gridline-color: {UltraModernColors.GLASS_BORDER};
-                font-size: {CompactScaling.FONT_SIZE_SMALL}px;
+            QPushButton {{
+                background: {ModernColors.SURFACE_TERTIARY};
+                border: 1px solid {ModernColors.GLASS_BORDER};
+                border-radius: {BorderRadius.BASE}px;
+                padding: 12px 16px;
+                text-align: left;
+                font-size: {Typography.TEXT_BASE}px;
+                font-weight: {Typography.WEIGHT_MEDIUM};
+                color: {ModernColors.TEXT_PRIMARY};
             }}
-            QTableWidget::item {{
-                padding: 2px;
-                min-height: 18px;
+            QPushButton:hover {{
+                background: {ModernColors.SURFACE_ELEVATED};
+                border-color: {ModernColors.PRIMARY};
             }}
-            QHeaderView::section {{
-                background: {UltraModernColors.GLASS_BG_LIGHT};
-                border: 1px solid {UltraModernColors.GLASS_BORDER};
-                padding: 3px;
-                font-size: {CompactScaling.FONT_SIZE_TINY}px;
-                font-weight: bold;
+            QPushButton:checked {{
+                background: {ModernColors.PRIMARY};
+                color: white;
             }}
         """
         )
-        layout.addWidget(self.table)
+        layout.addWidget(self.header_btn)
 
-        # Compact button row
-        button_layout = QHBoxLayout()
-        button_layout.setSpacing(2)
-
-        self.add_button = ModernButton("+ Add", "ghost", "sm")
-        self.remove_button = ModernButton("- Remove", "danger", "sm")
-
-        button_layout.addWidget(self.add_button)
-        button_layout.addWidget(self.remove_button)
-        button_layout.addStretch(1)
-
-        layout.addLayout(button_layout)
-
-        # Connect signals
-        self.add_button.clicked.connect(self._add_row)
-        self.remove_button.clicked.connect(self._remove_row)
-
-    def _add_row(self):
-        """Add new row to table"""
-        row = self.table.rowCount()
-        self.table.insertRow(row)
-        self.table.setItem(row, 0, QTableWidgetItem(""))
-        self.table.setItem(row, 1, QTableWidgetItem(""))
-
-    def _remove_row(self):
-        """Remove selected rows"""
-        selected_rows = sorted(
-            set(index.row() for index in self.table.selectedIndexes()), reverse=True
+        # Content container
+        self.content_container = QWidget()
+        self.content_container.hide()
+        self.content_container.setStyleSheet(
+            f"""
+            QWidget {{
+                background: {ModernColors.SURFACE_SECONDARY};
+                border: 1px solid {ModernColors.GLASS_BORDER};
+                border-top: none;
+                border-radius: 0 0 {BorderRadius.BASE}px {BorderRadius.BASE}px;
+                padding: 16px;
+            }}
+        """
         )
-        if not selected_rows:
-            selected_rows = (
-                [self.table.rowCount() - 1] if self.table.rowCount() > 0 else []
+        layout.addWidget(self.content_container)
+
+        # Content layout
+        self.content_layout = QVBoxLayout(self.content_container)
+        self.content_layout.setContentsMargins(0, 0, 0, 0)
+        self.content_layout.setSpacing(12)
+
+    def add_content(self, widget):
+        """Add widget to section content"""
+        self.content_layout.addWidget(widget)
+
+    def _toggle_section(self, checked):
+        """Toggle section visibility"""
+        self.is_expanded = checked
+        if checked:
+            self.content_container.show()
+            self.header_btn.setText(f"{self.icon} {self.title} ▼")
+        else:
+            self.content_container.hide()
+            self.header_btn.setText(f"{self.icon} {self.title} ▶")
+
+    def set_expanded(self, expanded):
+        """Programmatically expand/collapse section"""
+        self.header_btn.setChecked(expanded)
+        self._toggle_section(expanded)
+
+
+class SharePointConfigSection(ConfigSection):
+    """SharePoint configuration section"""
+
+    def __init__(self, parent=None):
+        super().__init__("SharePoint Configuration", "🔗", parent)
+        self._setup_content()
+
+    def _setup_content(self):
+        # Site URL
+        self.site_field = create_text_field(
+            "https://company.sharepoint.com/sites/site", "Site URL", True
+        )
+        self.add_content(self.site_field)
+
+        # List Name
+        self.list_field = create_text_field("List name", "List Name", True)
+        self.add_content(self.list_field)
+
+        # Authentication section
+        auth_group = QGroupBox("Authentication")
+        auth_group.setStyleSheet(
+            f"""
+            QGroupBox {{
+                font-weight: {Typography.WEIGHT_MEDIUM};
+                color: {ModernColors.TEXT_PRIMARY};
+                border: 1px solid {ModernColors.GLASS_BORDER};
+                border-radius: {BorderRadius.SM}px;
+                margin-top: 8px;
+                padding-top: 12px;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                left: 8px;
+                padding: 0 8px;
+            }}
+        """
+        )
+
+        auth_layout = QVBoxLayout(auth_group)
+        auth_layout.setSpacing(12)
+
+        self.client_id_field = create_text_field("Client ID (GUID)", "Client ID", True)
+        auth_layout.addWidget(self.client_id_field)
+
+        self.client_secret_field = create_password_field("Client Secret", True)
+        auth_layout.addWidget(self.client_secret_field)
+
+        self.tenant_id_field = create_text_field("Tenant ID (GUID)", "Tenant ID", True)
+        auth_layout.addWidget(self.tenant_id_field)
+
+        self.add_content(auth_group)
+
+        # Test button
+        test_btn = ActionButton.secondary("🔍 Test Connection", size="sm")
+        test_btn.clicked.connect(self._test_sharepoint)
+        self.add_content(test_btn)
+
+    def _test_sharepoint(self):
+        """Test SharePoint connection"""
+        # Implement test logic
+        pass
+
+    def get_config(self):
+        """Get SharePoint configuration"""
+        return {
+            "sharepoint_site": self.site_field.get_value(),
+            "sharepoint_list": self.list_field.get_value(),
+            "sharepoint_client_id": self.client_id_field.get_value(),
+            "sharepoint_client_secret": self.client_secret_field.get_value(),
+            "tenant_id": self.tenant_id_field.get_value(),
+        }
+
+    def set_config(self, config):
+        """Set SharePoint configuration"""
+        self.site_field.set_value(config.get("sharepoint_site", ""))
+        self.list_field.set_value(config.get("sharepoint_list", ""))
+        self.client_id_field.set_value(config.get("sharepoint_client_id", ""))
+        self.client_secret_field.set_value(config.get("sharepoint_client_secret", ""))
+        self.tenant_id_field.set_value(config.get("tenant_id", ""))
+
+
+class DatabaseConfigSection(ConfigSection):
+    """Database configuration section"""
+
+    def __init__(self, parent=None):
+        super().__init__("Database Configuration", "🗄️", parent)
+        self._setup_content()
+
+    def _setup_content(self):
+        # Database type selector
+        self.db_type_field = create_dropdown_field(
+            ["SQL Server", "SQLite"], "Database Type", True
+        )
+        self.db_type_field.input_widget.currentTextChanged.connect(
+            self._on_db_type_changed
+        )
+        self.add_content(self.db_type_field)
+
+        # SQL Server section
+        self.sql_section = QWidget()
+        sql_layout = QVBoxLayout(self.sql_section)
+        sql_layout.setSpacing(12)
+
+        self.server_field = create_text_field(
+            "Server\\Instance or IP:Port", "Server", True
+        )
+        sql_layout.addWidget(self.server_field)
+
+        self.database_field = create_text_field("Database name", "Database", True)
+        sql_layout.addWidget(self.database_field)
+
+        # Credentials in horizontal layout
+        cred_layout = QHBoxLayout()
+        cred_layout.setSpacing(12)
+
+        self.username_field = create_text_field("Username", "Username", True)
+        cred_layout.addWidget(self.username_field)
+
+        self.password_field = create_password_field("Password", True)
+        cred_layout.addWidget(self.password_field)
+
+        sql_layout.addLayout(cred_layout)
+
+        self.add_content(self.sql_section)
+
+        # SQLite section
+        self.sqlite_section = QWidget()
+        sqlite_layout = QVBoxLayout(self.sqlite_section)
+
+        self.sqlite_file_field = FileUploadField("SQLite Files (*.db *.sqlite)")
+        sqlite_layout.addWidget(QLabel("Database File:"))
+        sqlite_layout.addWidget(self.sqlite_file_field)
+
+        self.add_content(self.sqlite_section)
+        self.sqlite_section.hide()
+
+        # Test button
+        test_btn = ActionButton.secondary("🔍 Test Connection", size="sm")
+        test_btn.clicked.connect(self._test_database)
+        self.add_content(test_btn)
+
+    def _on_db_type_changed(self, db_type):
+        """Handle database type change"""
+        if db_type == "SQL Server":
+            self.sql_section.show()
+            self.sqlite_section.hide()
+        else:
+            self.sql_section.hide()
+            self.sqlite_section.show()
+
+    def _test_database(self):
+        """Test database connection"""
+        pass
+
+    def get_config(self):
+        """Get database configuration"""
+        db_type = self.db_type_field.get_value()
+        config = {"database_type": "sqlserver" if db_type == "SQL Server" else "sqlite"}
+
+        if db_type == "SQL Server":
+            config.update(
+                {
+                    "sql_server": self.server_field.get_value(),
+                    "sql_database": self.database_field.get_value(),
+                    "sql_username": self.username_field.get_value(),
+                    "sql_password": self.password_field.get_value(),
+                }
             )
+        else:
+            config.update({"sqlite_file": self.sqlite_file_field.file_label.text()})
 
-        for row in selected_rows:
-            self.table.removeRow(row)
+        return config
 
-    def get_mapping(self) -> dict:
+    def set_config(self, config):
+        """Set database configuration"""
+        db_type = (
+            "SQL Server" if config.get("database_type") == "sqlserver" else "SQLite"
+        )
+        self.db_type_field.set_value(db_type)
+        self._on_db_type_changed(db_type)
+
+        if db_type == "SQL Server":
+            self.server_field.set_value(config.get("sql_server", ""))
+            self.database_field.set_value(config.get("sql_database", ""))
+            self.username_field.set_value(config.get("sql_username", ""))
+            self.password_field.set_value(config.get("sql_password", ""))
+
+
+class SyncConfigSection(ConfigSection):
+    """Synchronization configuration section"""
+
+    def __init__(self, parent=None):
+        super().__init__("Sync Configuration", "🔄", parent)
+        self._setup_content()
+
+    def _setup_content(self):
+        # Auto sync settings
+        auto_sync_layout = QHBoxLayout()
+
+        self.auto_sync_check = ModernCheckBox("Enable Auto Sync")
+        auto_sync_layout.addWidget(self.auto_sync_check)
+
+        auto_sync_layout.addStretch()
+
+        self.interval_field = create_number_field(1, 1440, "Interval (min)", False)
+        self.interval_field.set_value(10)
+        auto_sync_layout.addWidget(self.interval_field)
+
+        auto_sync_widget = QWidget()
+        auto_sync_widget.setLayout(auto_sync_layout)
+        self.add_content(auto_sync_widget)
+
+        # Sync direction
+        direction_layout = QHBoxLayout()
+
+        direction_layout.addWidget(QLabel("Direction:"))
+
+        self.direction_combo = ModernComboBox()
+        self.direction_combo.addItems(
+            ["SharePoint → SQL", "SQL → SharePoint", "Bidirectional"]
+        )
+        direction_layout.addWidget(self.direction_combo)
+        direction_layout.addStretch()
+
+        direction_widget = QWidget()
+        direction_widget.setLayout(direction_layout)
+        self.add_content(direction_widget)
+
+        # Batch settings
+        batch_layout = QHBoxLayout()
+
+        self.batch_size_field = create_number_field(100, 10000, "Batch Size", False)
+        self.batch_size_field.set_value(1000)
+        batch_layout.addWidget(self.batch_size_field)
+
+        self.timeout_field = create_number_field(10, 300, "Timeout (sec)", False)
+        self.timeout_field.set_value(30)
+        batch_layout.addWidget(self.timeout_field)
+
+        batch_widget = QWidget()
+        batch_widget.setLayout(batch_layout)
+        self.add_content(batch_widget)
+
+    def get_config(self):
+        """Get sync configuration"""
+        direction_map = {
+            "SharePoint → SQL": "spo_to_sql",
+            "SQL → SharePoint": "sql_to_spo",
+            "Bidirectional": "bidirectional",
+        }
+
+        return {
+            "auto_sync_enabled": self.auto_sync_check.isChecked(),
+            "sync_interval": self.interval_field.get_value() * 60,  # Convert to seconds
+            "auto_sync_direction": direction_map.get(
+                self.direction_combo.currentText(), "spo_to_sql"
+            ),
+            "batch_size": self.batch_size_field.get_value(),
+            "connection_timeout": self.timeout_field.get_value(),
+        }
+
+    def set_config(self, config):
+        """Set sync configuration"""
+        self.auto_sync_check.setChecked(config.get("auto_sync_enabled", False))
+        self.interval_field.set_value(
+            config.get("sync_interval", 600) // 60
+        )  # Convert to minutes
+
+        direction_map = {
+            "spo_to_sql": "SharePoint → SQL",
+            "sql_to_spo": "SQL → SharePoint",
+            "bidirectional": "Bidirectional",
+        }
+        direction = direction_map.get(config.get("auto_sync_direction", "spo_to_sql"))
+        self.direction_combo.setCurrentText(direction)
+
+        self.batch_size_field.set_value(config.get("batch_size", 1000))
+        self.timeout_field.set_value(config.get("connection_timeout", 30))
+
+
+class ConfigPanel(QWidget):
+    """Main 2025 Modern Configuration Panel"""
+
+    # Signals
+    config_changed = pyqtSignal()
+    test_connection_requested = pyqtSignal(str)  # connection_type
+
+    def __init__(self, controller=None, parent=None):
+        super().__init__(parent)
+        self.controller = controller
+        self.config_manager = get_config_manager()
+        self._setup_ui()
+        self._load_config()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+
+        # Header
+        header_layout = QHBoxLayout()
+
+        title = QLabel("Configuration")
+        title.setStyleSheet(
+            f"""
+            font-size: {Typography.TEXT_2XL}px;
+            font-weight: {Typography.WEIGHT_BOLD};
+            color: {ModernColors.TEXT_PRIMARY};
+        """
+        )
+        header_layout.addWidget(title)
+        header_layout.addStretch()
+
+        # Header actions
+        save_btn = ActionButton.primary("💾 Save", size="sm")
+        save_btn.clicked.connect(self._save_config)
+        header_layout.addWidget(save_btn)
+
+        reset_btn = ActionButton.ghost("🔄 Reset", size="sm")
+        reset_btn.clicked.connect(self._reset_config)
+        header_layout.addWidget(reset_btn)
+
+        layout.addLayout(header_layout)
+
+        # Scroll area for sections
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setStyleSheet("QScrollArea { border: none; }")
+
+        content_widget = QWidget()
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setSpacing(12)
+
+        # Configuration sections
+        self.sharepoint_section = SharePointConfigSection()
+        self.sharepoint_section.set_expanded(True)  # Expand first section by default
+        content_layout.addWidget(self.sharepoint_section)
+
+        self.database_section = DatabaseConfigSection()
+        content_layout.addWidget(self.database_section)
+
+        self.sync_section = SyncConfigSection()
+        content_layout.addWidget(self.sync_section)
+
+        # Field mapping section
+        self.mapping_section = self._create_mapping_section()
+        content_layout.addWidget(self.mapping_section)
+
+        content_layout.addStretch()
+        scroll.setWidget(content_widget)
+        layout.addWidget(scroll)
+
+        # Status bar
+        self.status_label = QLabel("Ready")
+        self.status_label.setStyleSheet(
+            f"""
+            color: {ModernColors.TEXT_SECONDARY};
+            font-size: {Typography.TEXT_SM}px;
+            padding: 8px;
+        """
+        )
+        layout.addWidget(self.status_label)
+
+    def _create_mapping_section(self):
+        """Create field mapping section"""
+        section = ConfigSection("Field Mapping", "🔗")
+
+        # Mapping tables container
+        mapping_container = QWidget()
+        mapping_layout = QHBoxLayout(mapping_container)
+        mapping_layout.setSpacing(16)
+
+        # SharePoint to SQL mapping
+        spo_to_sql_group = QGroupBox("SharePoint → SQL")
+        spo_to_sql_group.setStyleSheet(
+            f"""
+            QGroupBox {{
+                font-weight: {Typography.WEIGHT_MEDIUM};
+                color: {ModernColors.TEXT_PRIMARY};
+                border: 1px solid {ModernColors.GLASS_BORDER};
+                border-radius: {BorderRadius.SM}px;
+                margin-top: 8px;
+                padding-top: 12px;
+            }}
+        """
+        )
+
+        spo_sql_layout = QVBoxLayout(spo_to_sql_group)
+
+        self.spo_to_sql_table = self._create_mapping_table()
+        spo_sql_layout.addWidget(self.spo_to_sql_table)
+
+        spo_sql_btn_layout = QHBoxLayout()
+        add_spo_sql_btn = IconButton("➕", tooltip="Add mapping", size="sm")
+        remove_spo_sql_btn = IconButton("➖", tooltip="Remove mapping", size="sm")
+        add_spo_sql_btn.clicked.connect(
+            lambda: self._add_mapping_row(self.spo_to_sql_table)
+        )
+        remove_spo_sql_btn.clicked.connect(
+            lambda: self._remove_mapping_row(self.spo_to_sql_table)
+        )
+
+        spo_sql_btn_layout.addWidget(add_spo_sql_btn)
+        spo_sql_btn_layout.addWidget(remove_spo_sql_btn)
+        spo_sql_btn_layout.addStretch()
+        spo_sql_layout.addLayout(spo_sql_btn_layout)
+
+        mapping_layout.addWidget(spo_to_sql_group)
+
+        # SQL to SharePoint mapping
+        sql_to_spo_group = QGroupBox("SQL → SharePoint")
+        sql_to_spo_group.setStyleSheet(
+            f"""
+            QGroupBox {{
+                font-weight: {Typography.WEIGHT_MEDIUM};
+                color: {ModernColors.TEXT_PRIMARY};
+                border: 1px solid {ModernColors.GLASS_BORDER};
+                border-radius: {BorderRadius.SM}px;
+                margin-top: 8px;
+                padding-top: 12px;
+            }}
+        """
+        )
+
+        sql_spo_layout = QVBoxLayout(sql_to_spo_group)
+
+        self.sql_to_spo_table = self._create_mapping_table()
+        sql_spo_layout.addWidget(self.sql_to_spo_table)
+
+        sql_spo_btn_layout = QHBoxLayout()
+        add_sql_spo_btn = IconButton("➕", tooltip="Add mapping", size="sm")
+        remove_sql_spo_btn = IconButton("➖", tooltip="Remove mapping", size="sm")
+        add_sql_spo_btn.clicked.connect(
+            lambda: self._add_mapping_row(self.sql_to_spo_table)
+        )
+        remove_sql_spo_btn.clicked.connect(
+            lambda: self._remove_mapping_row(self.sql_to_spo_table)
+        )
+
+        sql_spo_btn_layout.addWidget(add_sql_spo_btn)
+        sql_spo_btn_layout.addWidget(remove_sql_spo_btn)
+        sql_spo_btn_layout.addStretch()
+        sql_spo_layout.addLayout(sql_spo_btn_layout)
+
+        mapping_layout.addWidget(sql_to_spo_group)
+
+        section.add_content(mapping_container)
+        return section
+
+    def _create_mapping_table(self):
+        """Create mapping table widget"""
+        table = QTableWidget(3, 2)
+        table.setHorizontalHeaderLabels(["Source Field", "Target Field"])
+        table.horizontalHeader().setStretchLastSection(True)
+        table.setAlternatingRowColors(True)
+        table.setMaximumHeight(150)
+
+        table.setStyleSheet(
+            f"""
+            QTableWidget {{
+                background: {ModernColors.SURFACE_PRIMARY};
+                border: 1px solid {ModernColors.GLASS_BORDER};
+                border-radius: {BorderRadius.SM}px;
+                gridline-color: {ModernColors.GLASS_BORDER};
+                color: {ModernColors.TEXT_PRIMARY};
+                font-size: {Typography.TEXT_SM}px;
+            }}
+            QTableWidget::item {{
+                padding: 6px;
+                border: none;
+            }}
+            QTableWidget::item:selected {{
+                background: {ModernColors.PRIMARY};
+            }}
+            QHeaderView::section {{
+                background: {ModernColors.SURFACE_TERTIARY};
+                border: 1px solid {ModernColors.GLASS_BORDER};
+                padding: 6px;
+                font-weight: {Typography.WEIGHT_MEDIUM};
+            }}
+        """
+        )
+
+        return table
+
+    def _add_mapping_row(self, table):
+        """Add new row to mapping table"""
+        row = table.rowCount()
+        table.insertRow(row)
+        table.setItem(row, 0, QTableWidgetItem(""))
+        table.setItem(row, 1, QTableWidgetItem(""))
+
+    def _remove_mapping_row(self, table):
+        """Remove selected row from mapping table"""
+        current_row = table.currentRow()
+        if current_row >= 0:
+            table.removeRow(current_row)
+
+    def _get_mapping_from_table(self, table):
         """Get mapping dictionary from table"""
         mapping = {}
-        for row in range(self.table.rowCount()):
-            source_item = self.table.item(row, 0)
-            target_item = self.table.item(row, 1)
+        for row in range(table.rowCount()):
+            source_item = table.item(row, 0)
+            target_item = table.item(row, 1)
             if source_item and target_item:
                 source = source_item.text().strip()
                 target = target_item.text().strip()
@@ -225,470 +617,92 @@ class CompactMappingTable(QWidget):
                     mapping[source] = target
         return mapping
 
-    def set_mapping(self, mapping: dict):
+    def _set_mapping_to_table(self, table, mapping):
         """Set mapping dictionary to table"""
-        self.table.clearContents()
-        self.table.setRowCount(max(len(mapping), 3))
-
+        table.setRowCount(max(len(mapping), 3))
         for row, (source, target) in enumerate(mapping.items()):
-            self.table.setItem(row, 0, QTableWidgetItem(str(source)))
-            self.table.setItem(row, 1, QTableWidgetItem(str(target)))
+            table.setItem(row, 0, QTableWidgetItem(source))
+            table.setItem(row, 1, QTableWidgetItem(target))
 
-
-class ConfigPanel(QWidget):
-    """
-    Compact configuration panel optimized for 900x500 display.
-    Uses accordion-style collapsible sections instead of tabs.
-    """
-
-    # Signals to communicate with AppController
-    config_changed = pyqtSignal()
-    request_auto_sync_toggle = pyqtSignal(bool)
-    request_update_config_setting = pyqtSignal(str, object, str)
-
-    def __init__(self, controller, parent=None):
-        super().__init__(parent)
-        self.controller = controller
-        self.config_manager = get_simple_config_manager()
-        self.cleanup_done = False
-
-        # Timer for deferred saving
-        self._save_timer = QTimer(self)
-        self._save_timer.setSingleShot(True)
-        self._save_timer.setInterval(500)  # Faster save for compact UI
-        self._save_timer.timeout.connect(self._save_all_settings)
-
-        # Store form field widgets
-        self.field_widgets = {}
-        self.mapping_tables = {}
-
-        self._setup_ui()
-        self._load_current_config()
-        self._connect_signals()
-
-        logger.info("Compact ConfigPanel initialized")
-
-    @handle_exceptions(ErrorCategory.UI, ErrorSeverity.HIGH)
-    def _setup_ui(self):
-        """Setup compact configuration layout"""
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(4, 4, 4, 4)
-        main_layout.setSpacing(4)
-
-        # Create scroll area for main content
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-
-        content_widget = QWidget()
-        scroll_area.setWidget(content_widget)
-        content_layout = QVBoxLayout(content_widget)
-        content_layout.setContentsMargins(4, 4, 4, 4)
-        content_layout.setSpacing(6)
-
-        # Add configuration sections
-        self._add_connection_section(content_layout)
-        self._add_sync_section(content_layout)
-        self._add_mapping_section(content_layout)
-
-        content_layout.addStretch(1)
-        main_layout.addWidget(scroll_area)
-
-        # Add action buttons at bottom
-        self._add_action_buttons(main_layout)
-
-    def _add_connection_section(self, layout):
-        """Add connection configuration section"""
-        connection_group = NeonGroupBox("Connection Settings")
-        connection_layout = QVBoxLayout()
-        connection_layout.setSpacing(3)
-
-        # SharePoint settings - most essential only
-        sp_fields = [
-            ("sharepoint_site", "SharePoint Site URL:"),
-            ("sharepoint_list", "List Name:"),
-            ("sharepoint_client_id", "Client ID:"),
-            ("sharepoint_client_secret", "Client Secret:"),
-            ("tenant_id", "Tenant ID:"),
-        ]
-
-        for field_name, label in sp_fields:
-            if field_name == "sharepoint_client_secret":
-                widget = PasswordField()
-            else:
-                widget = ModernLineEdit()
-
-            field = CompactFormField(widget, label)
-            self.field_widgets[field_name] = field
-            connection_layout.addWidget(field)
-
-        # Database settings
-        db_layout = QHBoxLayout()
-        db_layout.setSpacing(4)
-
-        # Database type selector
-        db_type_field = CompactFormField(HolographicComboBox(), "DB Type:")
-        db_type_field.input_widget.addItems(["SQL Server", "SQLite"])
-        self.database_type_selector = db_type_field.input_widget
-        self.field_widgets["database_type"] = db_type_field
-        db_layout.addWidget(db_type_field)
-
-        connection_layout.addLayout(db_layout)
-
-        # SQL Server fields in compact grid
-        sql_grid = QGridLayout()
-        sql_grid.setSpacing(2)
-
-        sql_fields = [
-            ("sql_server", "Server:", 0, 0),
-            ("sql_database", "Database:", 0, 1),
-            ("sql_username", "Username:", 1, 0),
-            ("sql_password", "Password:", 1, 1),
-        ]
-
-        for field_name, label, row, col in sql_fields:
-            widget = PasswordField() if "password" in field_name else ModernLineEdit()
-            field = CompactFormField(widget, label)
-            self.field_widgets[field_name] = field
-            sql_grid.addWidget(field, row, col)
-
-        connection_layout.addLayout(sql_grid)
-
-        connection_group.setLayout(connection_layout)
-        layout.addWidget(connection_group)
-
-    def _add_sync_section(self, layout):
-        """Add sync configuration section"""
-        sync_group = NeonGroupBox("Sync Settings")
-        sync_layout = QVBoxLayout()
-        sync_layout.setSpacing(3)
-
-        # Sync settings in compact rows
-        sync_fields = [
-            (
-                "sync_interval",
-                "Interval (sec):",
-                ModernSpinBox(min_val=30, max_val=3600),
-            ),
-            ("batch_size", "Batch Size:", ModernSpinBox(min_val=100, max_val=10000)),
-        ]
-
-        for field_name, label, widget in sync_fields:
-            field = CompactFormField(widget, label)
-            self.field_widgets[field_name] = field
-            sync_layout.addWidget(field)
-
-        # Auto-sync checkbox
-        auto_sync_checkbox = QCheckBox("Enable Auto Synchronization")
-        auto_sync_checkbox.setStyleSheet(get_modern_checkbox_style())
-        self.auto_sync_enabled_checkbox = auto_sync_checkbox
-        sync_layout.addWidget(auto_sync_checkbox)
-
-        sync_group.setLayout(sync_layout)
-        layout.addWidget(sync_group)
-
-    def _add_mapping_section(self, layout):
-        """Add data mapping section with horizontal split"""
-        mapping_group = NeonGroupBox("Data Mapping")
-        mapping_layout = QHBoxLayout()  # Horizontal split for better space usage
-        mapping_layout.setSpacing(4)
-
-        # SharePoint to SQL mapping
-        self.sp_to_sql_table = CompactMappingTable("SPO → SQL")
-        self.mapping_tables["sharepoint_to_sql_mapping"] = self.sp_to_sql_table
-        mapping_layout.addWidget(self.sp_to_sql_table)
-
-        # SQL to SharePoint mapping
-        self.sql_to_sp_table = CompactMappingTable("SQL → SPO")
-        self.mapping_tables["sql_to_sharepoint_mapping"] = self.sql_to_sp_table
-        mapping_layout.addWidget(self.sql_to_sp_table)
-
-        mapping_group.setLayout(mapping_layout)
-        layout.addWidget(mapping_group)
-
-    def _add_action_buttons(self, layout):
-        """Add action buttons at bottom"""
-        button_layout = QHBoxLayout()
-        button_layout.setSpacing(4)
-
-        self.test_button = ModernButton("🌐 Test Connections", "secondary", "sm")
-        self.save_button = ModernButton("💾 Save Config", "primary", "sm")
-        self.reset_button = ModernButton("🔄 Reset", "ghost", "sm")
-
-        button_layout.addWidget(self.test_button)
-        button_layout.addWidget(self.save_button)
-        button_layout.addWidget(self.reset_button)
-        button_layout.addStretch(1)
-
-        layout.addLayout(button_layout)
-
-    @handle_exceptions(ErrorCategory.UI, ErrorSeverity.MEDIUM)
-    def _load_current_config(self):
-        """Load current configuration into UI fields"""
+    def _load_config(self):
+        """Load configuration from config manager"""
         try:
             config = self.config_manager.get_config()
 
-            # Load field values
-            for key, field_widget in self.field_widgets.items():
-                try:
-                    value = getattr(config, key, None)
-                    if value is not None:
-                        field_widget.set_value(value)
-                except Exception as e:
-                    logger.debug(f"Error loading config key '{key}': {e}")
+            # Load section configs
+            self.sharepoint_section.set_config(config.__dict__)
+            self.database_section.set_config(config.__dict__)
+            self.sync_section.set_config(config.__dict__)
 
-            # Load auto-sync checkbox
-            self.auto_sync_enabled_checkbox.setChecked(config.auto_sync_enabled)
+            # Load mappings
+            self._set_mapping_to_table(
+                self.spo_to_sql_table, getattr(config, "sharepoint_to_sql_mapping", {})
+            )
+            self._set_mapping_to_table(
+                self.sql_to_spo_table, getattr(config, "sql_to_sharepoint_mapping", {})
+            )
 
-            # Set database type selector
-            if config.database_type.lower() == "sqlserver":
-                self.database_type_selector.setCurrentText("SQL Server")
-            else:
-                self.database_type_selector.setCurrentText("SQLite")
-
-            # Load mapping tables
-            for mapping_key, table_widget in self.mapping_tables.items():
-                mapping_data = getattr(config, mapping_key, {})
-                table_widget.set_mapping(mapping_data)
-
-            logger.info("Configuration loaded into compact UI successfully")
+            self.status_label.setText("Configuration loaded")
 
         except Exception as e:
-            logger.error(f"Error loading configuration: {e}")
+            self.status_label.setText(f"Error loading config: {e}")
 
-    @handle_exceptions(ErrorCategory.UI, ErrorSeverity.HIGH)
-    def _connect_signals(self):
-        """Connect UI signals to handlers"""
+    def _save_config(self):
+        """Save configuration"""
         try:
-            # Database type selector
-            self.database_type_selector.currentIndexChanged.connect(
-                self._on_db_type_changed
+            # Collect all configuration
+            config_data = {}
+            config_data.update(self.sharepoint_section.get_config())
+            config_data.update(self.database_section.get_config())
+            config_data.update(self.sync_section.get_config())
+
+            # Add mappings
+            config_data["sharepoint_to_sql_mapping"] = self._get_mapping_from_table(
+                self.spo_to_sql_table
+            )
+            config_data["sql_to_sharepoint_mapping"] = self._get_mapping_from_table(
+                self.sql_to_spo_table
             )
 
-            # Auto-sync checkbox
-            self.auto_sync_enabled_checkbox.stateChanged.connect(
-                self._on_auto_sync_checkbox_changed
-            )
+            # Update config manager
+            for key, value in config_data.items():
+                self.config_manager.update_setting(key, value)
 
-            # Action buttons
-            self.test_button.clicked.connect(self._test_connections)
-            self.save_button.clicked.connect(self._save_all_settings)
-            self.reset_button.clicked.connect(self._reset_config)
-
-            # Form field changes - connect to deferred save
-            self._connect_form_field_signals()
-
-            # Mapping table changes
-            for table in self.mapping_tables.values():
-                table.table.itemChanged.connect(self._defer_save)
-
-            logger.debug("Compact ConfigPanel signals connected successfully")
-
-        except Exception as e:
-            logger.error(f"Error connecting ConfigPanel signals: {e}")
-
-    def _connect_form_field_signals(self):
-        """Connect form field signals for auto-save"""
-        for key, field_widget in self.field_widgets.items():
-            try:
-                input_widget = field_widget.input_widget
-
-                if isinstance(input_widget, ModernLineEdit):
-                    input_widget.textChanged.connect(self._defer_save)
-                elif isinstance(input_widget, HolographicComboBox):
-                    input_widget.currentTextChanged.connect(self._defer_save)
-                elif isinstance(input_widget, ModernSpinBox):
-                    input_widget.valueChanged.connect(self._defer_save)
-                elif isinstance(input_widget, QCheckBox):
-                    input_widget.stateChanged.connect(self._defer_save)
-
-            except Exception as e:
-                logger.debug(f"Error connecting signal for field '{key}': {e}")
-
-    @pyqtSlot()
-    def _defer_save(self):
-        """Start timer to defer saving changes"""
-        if not self._save_timer.isActive():
-            self._save_timer.start()
-
-    @pyqtSlot()
-    def _save_all_settings(self):
-        """Save all configuration settings"""
-        try:
-            logger.info("Saving all configuration settings...")
-
-            # Save form fields
-            for key, field_widget in self.field_widgets.items():
-                try:
-                    value = field_widget.get_value()
-                    if value is not None:
-                        # Determine value type for proper conversion
-                        if key in ["sync_interval", "batch_size"]:
-                            value_type = "int"
-                        elif "password" in key or "secret" in key:
-                            value_type = "str"
-                        else:
-                            value_type = "str"
-
-                        self.request_update_config_setting.emit(key, value, value_type)
-                except Exception as e:
-                    logger.error(f"Error saving field '{key}': {e}")
-
-            # Save mapping tables
-            for mapping_key, table_widget in self.mapping_tables.items():
-                try:
-                    mapping_data = table_widget.get_mapping()
-                    self.request_update_config_setting.emit(
-                        mapping_key, mapping_data, "dict"
-                    )
-                except Exception as e:
-                    logger.error(f"Error saving mapping '{mapping_key}': {e}")
-
-            # Save auto-sync setting
-            self.request_update_config_setting.emit(
-                "auto_sync_enabled", self.auto_sync_enabled_checkbox.isChecked(), "bool"
-            )
-
+            self.config_manager.save_config()
             self.config_changed.emit()
-            logger.info("All configuration settings saved successfully")
+            self.status_label.setText("✅ Configuration saved successfully")
 
         except Exception as e:
-            logger.error(f"Error saving configuration settings: {e}")
+            self.status_label.setText(f"❌ Error saving config: {e}")
 
-    @pyqtSlot(int)
-    def _on_db_type_changed(self, index: int):
-        """Handle database type change"""
-        try:
-            selected_type = "sqlserver" if index == 0 else "sqlite"
-            self.request_update_config_setting.emit(
-                "database_type", selected_type, "str"
-            )
-            logger.info(f"Database type changed to: {selected_type}")
-        except Exception as e:
-            logger.error(f"Error handling database type change: {e}")
-
-    @pyqtSlot(int)
-    def _on_auto_sync_checkbox_changed(self, state: int):
-        """Handle auto-sync checkbox change"""
-        try:
-            is_checked = state == Qt.CheckState.Checked.value
-            self.request_auto_sync_toggle.emit(is_checked)
-            logger.info(f"Auto-sync toggled: {is_checked}")
-        except Exception as e:
-            logger.error(f"Error handling auto-sync toggle: {e}")
-
-    @pyqtSlot()
-    def _test_connections(self):
-        """Test connections with current settings"""
-        try:
-            # Save current settings first
-            self._save_all_settings()
-            # Request connection test from controller
-            if hasattr(self.controller, "test_all_connections"):
-                self.controller.test_all_connections()
-        except Exception as e:
-            logger.error(f"Error testing connections: {e}")
-
-    @pyqtSlot()
     def _reset_config(self):
         """Reset configuration to defaults"""
-        try:
-            reply = QMessageBox.question(
-                self,
-                "Reset Configuration",
-                "Reset all settings to default values?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
+        reply = QMessageBox.question(
+            self,
+            "Reset Configuration",
+            "Are you sure you want to reset all settings to default values?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
 
-            if reply == QMessageBox.StandardButton.Yes:
-                # Reload config from file
+        if reply == QMessageBox.StandardButton.Yes:
+            try:
                 self.config_manager.reload_config()
-                self._load_current_config()
-                logger.info("Configuration reset to defaults")
-
-        except Exception as e:
-            logger.error(f"Error resetting configuration: {e}")
-
-    # Methods for external updates (called by MainWindow)
-    def update_sharepoint_sites(self, sites: list):
-        """Update SharePoint sites dropdown (placeholder for future)"""
-        logger.debug(f"SharePoint sites updated: {len(sites)} sites")
-
-    def update_sharepoint_lists(self, lists: list):
-        """Update SharePoint lists dropdown (placeholder for future)"""
-        logger.debug(f"SharePoint lists updated: {len(lists)} lists")
-
-    def update_database_names(self, databases: list):
-        """Update database names dropdown (placeholder for future)"""
-        logger.debug(f"Database names updated: {len(databases)} databases")
-
-    def update_database_tables(self, tables: list):
-        """Update database tables dropdown (placeholder for future)"""
-        logger.debug(f"Database tables updated: {len(tables)} tables")
+                self._load_config()
+                self.status_label.setText("Configuration reset to defaults")
+            except Exception as e:
+                self.status_label.setText(f"Error resetting config: {e}")
 
     def cleanup(self):
-        """Perform cleanup for ConfigPanel"""
-        if self.cleanup_done:
-            logger.debug("ConfigPanel cleanup already performed")
-            return
-
-        logger.info("Initiating ConfigPanel cleanup...")
-
+        """Cleanup config panel"""
         try:
-            # Stop save timer
-            if self._save_timer and self._save_timer.isActive():
-                self._save_timer.stop()
-                self._save_timer.deleteLater()
-                self._save_timer = None
-
-            # Disconnect signals
-            try:
-                self.database_type_selector.currentIndexChanged.disconnect()
-                self.auto_sync_enabled_checkbox.stateChanged.disconnect()
-                self.test_button.clicked.disconnect()
-                self.save_button.clicked.disconnect()
-                self.reset_button.clicked.disconnect()
-            except (TypeError, RuntimeError):
-                pass
-
-            # Clean up form field widgets
-            for field_widget in self.field_widgets.values():
-                try:
-                    input_widget = field_widget.input_widget
-                    if hasattr(input_widget, "textChanged"):
-                        input_widget.textChanged.disconnect()
-                    elif hasattr(input_widget, "currentTextChanged"):
-                        input_widget.currentTextChanged.disconnect()
-                    elif hasattr(input_widget, "valueChanged"):
-                        input_widget.valueChanged.disconnect()
-                    elif hasattr(input_widget, "stateChanged"):
-                        input_widget.stateChanged.disconnect()
-                except (TypeError, RuntimeError):
-                    pass
-                field_widget.deleteLater()
-
-            self.field_widgets.clear()
-
-            # Clean up mapping tables
-            for table_widget in self.mapping_tables.values():
-                try:
-                    table_widget.table.itemChanged.disconnect()
-                    table_widget.deleteLater()
-                except (TypeError, RuntimeError):
-                    pass
-
-            self.mapping_tables.clear()
-
-            # Clean up remaining widgets
-            for child in self.findChildren(QWidget):
-                if child and child != self:
-                    child.deleteLater()
-
-            self.cleanup_done = True
-            logger.info("ConfigPanel cleanup completed successfully")
-
+            # Clear any timers or connections
+            pass
         except Exception as e:
-            logger.error(f"Error during ConfigPanel cleanup: {e}")
-            self.cleanup_done = True
+            print(f"Config panel cleanup error: {e}")
+
+
+# Factory function
+def create_config_panel(controller=None, parent=None):
+    """Create modern config panel instance"""
+    return ConfigPanel(controller, parent)

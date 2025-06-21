@@ -1,456 +1,632 @@
-# ui/components/dashboard.py - Compact Dashboard Component
-from PyQt6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QGridLayout,
-    QFileDialog,
-    QMessageBox,
-    QLabel,
-)
-from PyQt6.QtCore import pyqtSignal, pyqtSlot, Qt
-from PyQt6.QtGui import QFont
-import logging
+# ui/components/dashboard.py - Modern 2025 Dashboard
+from PyQt6.QtWidgets import *
+from PyQt6.QtCore import *
+from PyQt6.QtGui import *
 import sys
 from pathlib import Path
 
-# Add project root to path for imports
 current_dir = Path(__file__).parent.absolute()
 project_root = current_dir.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 try:
-    from ui.widgets.status_card import ModernStatusCard
-    from ui.widgets.holographic_progress_bar import HolographicProgressBar
-    from ui.widgets.modern_button import ActionButton
-    from ui.styles.theme import UltraModernColors, CompactScaling
-    from ui.widgets.neon_groupbox import NeonGroupBox
-    from utils.error_handling import handle_exceptions, ErrorCategory, ErrorSeverity
-    from utils.config_manager import get_simple_config
+    from ui.styles.theme import ModernColors, Typography, BorderRadius, Spacing
+    from ui.widgets.modern_button import ActionButton, IconButton
+except ImportError:
 
-except ImportError as e:
-    print(f"Import error in dashboard.py: {e}")
-    sys.exit(1)
+    class ModernColors:
+        SURFACE_SECONDARY = "#1E293B"
+        PRIMARY = "#6366F1"
+        SUCCESS = "#10B981"
+        ERROR = "#EF4444"
+        WARNING = "#F59E0B"
+        TEXT_PRIMARY = "#F8FAFC"
+        TEXT_SECONDARY = "#CBD5E1"
 
-logger = logging.getLogger(__name__)
 
+class StatusIndicator(QWidget):
+    """Modern status indicator with pulse animation"""
 
-class CompactStatusGrid(QWidget):
-    """Compact status display grid for 900x500"""
-
-    def __init__(self, parent=None):
+    def __init__(self, size=12, parent=None):
         super().__init__(parent)
+        self.status = "disconnected"
+        self.size = size
+        self.setFixedSize(size, size)
+
+        # Pulse animation
+        self.pulse_animation = QPropertyAnimation(self, b"opacity")
+        self.pulse_animation.setDuration(1500)
+        self.pulse_animation.setStartValue(0.3)
+        self.pulse_animation.setEndValue(1.0)
+        self.pulse_animation.setLoopCount(-1)
+        self.pulse_animation.setEasingCurve(QEasingCurve.Type.InOutSine)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        colors = {
+            "connected": ModernColors.SUCCESS,
+            "disconnected": ModernColors.ERROR,
+            "connecting": ModernColors.WARNING,
+            "syncing": ModernColors.PRIMARY,
+        }
+
+        color = QColor(colors.get(self.status, ModernColors.ERROR))
+        painter.setBrush(color)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(0, 0, self.size, self.size)
+
+    def set_status(self, status):
+        self.status = status
+        if status in ["connecting", "syncing"]:
+            self.pulse_animation.start()
+        else:
+            self.pulse_animation.stop()
+            self.setProperty("opacity", 1.0)
+        self.update()
+
+
+class MetricCard(QWidget):
+    """Modern metric display card"""
+
+    def __init__(self, title, value="—", unit="", trend=None, parent=None):
+        super().__init__(parent)
+        self.title = title
+        self.value = value
+        self.unit = unit
+        self.trend = trend
         self._setup_ui()
 
     def _setup_ui(self):
-        """Setup compact status grid"""
-        layout = QGridLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(3)
-
-        # Create compact status cards
-        self.sp_status_card = ModernStatusCard("SharePoint", "disconnected")
-        self.db_status_card = ModernStatusCard("Database", "disconnected")
-        self.sync_status_card = ModernStatusCard("Last Sync", "never")
-        self.auto_sync_card = ModernStatusCard(
-            "Auto-Sync", False, is_boolean_status=True
-        )
-
-        # Arrange in 2x2 grid for compact layout
-        layout.addWidget(self.sp_status_card, 0, 0)
-        layout.addWidget(self.db_status_card, 0, 1)
-        layout.addWidget(self.sync_status_card, 1, 0)
-        layout.addWidget(self.auto_sync_card, 1, 1)
-
-        # Reduce card heights for compact display
-        for card in [
-            self.sp_status_card,
-            self.db_status_card,
-            self.sync_status_card,
-            self.auto_sync_card,
-        ]:
-            card.setMaximumHeight(CompactScaling.STATUS_CARD_HEIGHT)
-
-    def cleanup(self):
-        """Cleanup status cards"""
-        cards = [
-            self.sp_status_card,
-            self.db_status_card,
-            self.sync_status_card,
-            self.auto_sync_card,
-        ]
-        for card in cards:
-            if hasattr(card, "cleanup_animations"):
-                card.cleanup_animations()
-
-
-class CompactControlPanel(QWidget):
-    """Compact control panel with essential buttons"""
-
-    # Signals
-    run_sync_requested = pyqtSignal(str)
-    clear_cache_requested = pyqtSignal()
-    test_connections_requested = pyqtSignal()
-    import_excel_requested = pyqtSignal(str, str, dict)
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.config = get_simple_config()  # Use simple config access
-        self._setup_ui()
-
-    def _setup_ui(self):
-        """Setup compact control panel"""
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(4)
-
-        # Essential action buttons in horizontal layout
-        self.sync_button = ActionButton("🚀 Sync", "primary", "sm")
-        self.test_button = ActionButton("🌐 Test", "secondary", "sm")
-        self.excel_button = ActionButton("📊 Excel", "ghost", "sm")
-        self.cache_button = ActionButton("🧹 Clean", "ghost", "sm")
-
-        # Add buttons to layout
-        layout.addWidget(self.sync_button)
-        layout.addWidget(self.test_button)
-        layout.addWidget(self.excel_button)
-        layout.addWidget(self.cache_button)
-        layout.addStretch(1)  # Push buttons to left
-
-        # Connect signals
-        self.sync_button.clicked.connect(self._on_sync_clicked)
-        self.test_button.clicked.connect(self.test_connections_requested.emit)
-        self.excel_button.clicked.connect(self._on_excel_clicked)
-        self.cache_button.clicked.connect(self.clear_cache_requested.emit)
-
-    @pyqtSlot()
-    def _on_sync_clicked(self):
-        """Handle sync button click"""
-        try:
-            config = get_simple_config()
-            direction = getattr(config, "auto_sync_direction", "spo_to_sql")
-            self.run_sync_requested.emit(direction)
-        except Exception as e:
-            logger.error(f"Error handling sync click: {e}")
-
-    @pyqtSlot()
-    def _on_excel_clicked(self):
-        """Handle Excel import button click"""
-        try:
-            file_dialog = QFileDialog(self)
-            file_dialog.setWindowTitle("Select Excel File")
-            file_dialog.setNameFilter("Excel Files (*.xlsx *.xls)")
-            file_dialog.setFileMode(QFileDialog.FileMode.ExistingFile)
-
-            if file_dialog.exec():
-                selected_files = file_dialog.selectedFiles()
-                if selected_files:
-                    file_path = selected_files[0]
-
-                    config = get_simple_config()
-                    table_name = getattr(config, "sql_table_name", "imported_data")
-                    column_mapping = getattr(config, "excel_import_mapping", {})
-
-                    if not column_mapping:
-                        QMessageBox.warning(
-                            self,
-                            "Missing Config",
-                            "Excel import mapping not configured.\nPlease configure in Config panel.",
-                            QMessageBox.StandardButton.Ok,
-                        )
-                        return
-
-                    self.import_excel_requested.emit(
-                        file_path, table_name, column_mapping
-                    )
-
-        except Exception as e:
-            logger.error(f"Error handling Excel import: {e}")
-
-
-class CompactProgressPanel(QWidget):
-    """Compact progress display panel"""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._setup_ui()
-
-    def _setup_ui(self):
-        """Setup compact progress panel"""
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(2)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(8)
 
-        # Current task label - smaller font
-        self.task_label = QLabel("Idle")
-        self.task_label.setFont(
-            QFont("Segoe UI", CompactScaling.FONT_SIZE_NORMAL, QFont.Weight.Bold)
+        # Header with title and indicator
+        header_layout = QHBoxLayout()
+
+        title_label = QLabel(self.title)
+        title_label.setStyleSheet(
+            f"""
+            font-size: {Typography.TEXT_SM}px;
+            font-weight: {Typography.WEIGHT_MEDIUM};
+            color: {ModernColors.TEXT_SECONDARY};
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        """
         )
-        self.task_label.setStyleSheet(f"color: {UltraModernColors.NEON_GREEN};")
-        self.task_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        header_layout.addWidget(title_label)
+
+        self.status_indicator = StatusIndicator(8)
+        header_layout.addWidget(self.status_indicator)
+        header_layout.addStretch()
+
+        layout.addLayout(header_layout)
+
+        # Value display
+        value_layout = QHBoxLayout()
+
+        self.value_label = QLabel(self.value)
+        self.value_label.setStyleSheet(
+            f"""
+            font-size: {Typography.TEXT_2XL}px;
+            font-weight: {Typography.WEIGHT_BOLD};
+            color: {ModernColors.TEXT_PRIMARY};
+        """
+        )
+        value_layout.addWidget(self.value_label)
+
+        if self.unit:
+            unit_label = QLabel(self.unit)
+            unit_label.setStyleSheet(
+                f"""
+                font-size: {Typography.TEXT_BASE}px;
+                color: {ModernColors.TEXT_SECONDARY};
+                margin-left: 4px;
+            """
+            )
+            value_layout.addWidget(unit_label)
+
+        value_layout.addStretch()
+        layout.addLayout(value_layout)
+
+        # Trend indicator
+        if self.trend:
+            self.trend_label = QLabel(self.trend)
+            self.trend_label.setStyleSheet(
+                f"""
+                font-size: {Typography.TEXT_SM}px;
+                color: {ModernColors.SUCCESS};
+            """
+            )
+            layout.addWidget(self.trend_label)
+
+        # Card styling
+        self.setStyleSheet(
+            f"""
+            QWidget {{
+                background: {ModernColors.SURFACE_SECONDARY};
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: {BorderRadius.MD}px;
+            }}
+            QWidget:hover {{
+                border-color: {ModernColors.PRIMARY};
+                background: rgba(30, 41, 59, 0.8);
+            }}
+        """
+        )
+        self.setMinimumHeight(100)
+
+    def update_value(self, value, status="neutral", trend=None):
+        colors = {
+            "success": ModernColors.SUCCESS,
+            "error": ModernColors.ERROR,
+            "warning": ModernColors.WARNING,
+            "neutral": ModernColors.TEXT_PRIMARY,
+        }
+
+        color = colors.get(status, ModernColors.TEXT_PRIMARY)
+        self.value_label.setText(str(value))
+        self.value_label.setStyleSheet(
+            f"""
+            font-size: {Typography.TEXT_2XL}px;
+            font-weight: {Typography.WEIGHT_BOLD};
+            color: {color};
+        """
+        )
+
+        self.status_indicator.set_status(status)
+
+        if trend and hasattr(self, "trend_label"):
+            self.trend_label.setText(trend)
+
+
+class QuickActionsPanel(QWidget):
+    """Quick action buttons panel"""
+
+    sync_requested = pyqtSignal()
+    test_requested = pyqtSignal()
+    import_requested = pyqtSignal()
+    clean_requested = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._setup_ui()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
+
+        # Section title
+        title = QLabel("Quick Actions")
+        title.setStyleSheet(
+            f"""
+            font-size: {Typography.TEXT_LG}px;
+            font-weight: {Typography.WEIGHT_SEMIBOLD};
+            color: {ModernColors.TEXT_PRIMARY};
+            margin-bottom: 8px;
+        """
+        )
+        layout.addWidget(title)
+
+        # Action buttons grid
+        grid = QGridLayout()
+        grid.setSpacing(8)
+
+        # Primary actions
+        self.sync_btn = ActionButton.primary("🚀 Run Sync", size="md")
+        self.sync_btn.clicked.connect(self.sync_requested.emit)
+
+        self.test_btn = ActionButton.secondary("🔗 Test Connections", size="md")
+        self.test_btn.clicked.connect(self.test_requested.emit)
+
+        # Secondary actions
+        self.import_btn = ActionButton.accent("📊 Import Excel", size="md")
+        self.import_btn.clicked.connect(self.import_requested.emit)
+
+        self.clean_btn = ActionButton.ghost("🧹 Clean Cache", size="md")
+        self.clean_btn.clicked.connect(self.clean_requested.emit)
+
+        grid.addWidget(self.sync_btn, 0, 0)
+        grid.addWidget(self.test_btn, 0, 1)
+        grid.addWidget(self.import_btn, 1, 0)
+        grid.addWidget(self.clean_btn, 1, 1)
+
+        layout.addLayout(grid)
+
+
+class ProgressPanel(QWidget):
+    """Modern progress display panel"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._setup_ui()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(12)
+
+        # Header
+        header_layout = QHBoxLayout()
+
+        title = QLabel("Current Operation")
+        title.setStyleSheet(
+            f"""
+            font-size: {Typography.TEXT_LG}px;
+            font-weight: {Typography.WEIGHT_SEMIBOLD};
+            color: {ModernColors.TEXT_PRIMARY};
+        """
+        )
+        header_layout.addWidget(title)
+
+        self.status_indicator = StatusIndicator(10)
+        header_layout.addWidget(self.status_indicator)
+        header_layout.addStretch()
+
+        layout.addLayout(header_layout)
+
+        # Task description
+        self.task_label = QLabel("Ready")
+        self.task_label.setStyleSheet(
+            f"""
+            font-size: {Typography.TEXT_BASE}px;
+            color: {ModernColors.TEXT_SECONDARY};
+        """
+        )
         layout.addWidget(self.task_label)
 
-        # Compact progress bar
-        self.progress_bar = HolographicProgressBar()
+        # Progress bar
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setStyleSheet(
+            f"""
+            QProgressBar {{
+                background: rgba(51, 65, 85, 0.5);
+                border: none;
+                border-radius: 6px;
+                height: 12px;
+                text-align: center;
+                color: {ModernColors.TEXT_PRIMARY};
+                font-weight: {Typography.WEIGHT_MEDIUM};
+                font-size: {Typography.TEXT_SM}px;
+            }}
+            QProgressBar::chunk {{
+                background: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:0,
+                    stop:0 {ModernColors.PRIMARY},
+                    stop:1 #8B5CF6
+                );
+                border-radius: 6px;
+            }}
+        """
+        )
         self.progress_bar.setMinimum(0)
         self.progress_bar.setMaximum(100)
         self.progress_bar.setValue(0)
-        self.progress_bar.setMaximumHeight(CompactScaling.PROGRESS_BAR_HEIGHT)
         layout.addWidget(self.progress_bar)
 
-    def update_progress(self, task_name: str, percentage: int, message: str):
-        """Update progress display"""
-        try:
-            # Truncate long messages for compact display
-            display_message = message[:30] + "..." if len(message) > 30 else message
-            self.task_label.setText(f"{task_name}: {display_message}")
-            self.progress_bar.setValue(max(0, min(100, percentage)))
-        except Exception as e:
-            logger.debug(f"Error updating progress: {e}")
+        # Card styling
+        self.setStyleSheet(
+            f"""
+            QWidget {{
+                background: {ModernColors.SURFACE_SECONDARY};
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: {BorderRadius.MD}px;
+            }}
+        """
+        )
 
-    def update_current_task(self, task_description: str):
-        """Update current task description"""
-        try:
-            # Truncate for compact display
-            display_task = (
-                task_description[:40] + "..."
-                if len(task_description) > 40
-                else task_description
-            )
-            self.task_label.setText(display_task)
-        except Exception as e:
-            logger.debug(f"Error updating task: {e}")
+    def update_progress(self, task, percentage, message=""):
+        display_text = f"{task}: {message}" if message else task
+        self.task_label.setText(display_text)
+        self.progress_bar.setValue(percentage)
+
+        if percentage > 0 and percentage < 100:
+            self.status_indicator.set_status("syncing")
+        elif percentage == 100:
+            self.status_indicator.set_status("connected")
+        else:
+            self.status_indicator.set_status("disconnected")
+
+
+class SystemOverview(QWidget):
+    """System overview with key metrics"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._setup_ui()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(16)
+
+        # Section title
+        title = QLabel("System Overview")
+        title.setStyleSheet(
+            f"""
+            font-size: {Typography.TEXT_LG}px;
+            font-weight: {Typography.WEIGHT_SEMIBOLD};
+            color: {ModernColors.TEXT_PRIMARY};
+        """
+        )
+        layout.addWidget(title)
+
+        # Metrics grid
+        grid = QGridLayout()
+        grid.setSpacing(12)
+
+        # Create metric cards
+        self.sp_card = MetricCard("SharePoint", "Disconnected")
+        self.db_card = MetricCard("Database", "Disconnected")
+        self.sync_card = MetricCard("Last Sync", "Never")
+        self.auto_sync_card = MetricCard("Auto Sync", "Disabled")
+
+        grid.addWidget(self.sp_card, 0, 0)
+        grid.addWidget(self.db_card, 0, 1)
+        grid.addWidget(self.sync_card, 1, 0)
+        grid.addWidget(self.auto_sync_card, 1, 1)
+
+        layout.addLayout(grid)
+
+        # Store cards for easy access
+        self.cards = {
+            "sharepoint": self.sp_card,
+            "database": self.db_card,
+            "sync": self.sync_card,
+            "auto_sync": self.auto_sync_card,
+        }
+
+    def update_metric(self, metric_type, value, status="neutral", trend=None):
+        if metric_type in self.cards:
+            self.cards[metric_type].update_value(value, status, trend)
+
+
+class RecentActivity(QWidget):
+    """Recent activity log display"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.activities = []
+        self._setup_ui()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(12)
+
+        # Header
+        header_layout = QHBoxLayout()
+
+        title = QLabel("Recent Activity")
+        title.setStyleSheet(
+            f"""
+            font-size: {Typography.TEXT_LG}px;
+            font-weight: {Typography.WEIGHT_SEMIBOLD};
+            color: {ModernColors.TEXT_PRIMARY};
+        """
+        )
+        header_layout.addWidget(title)
+        header_layout.addStretch()
+
+        clear_btn = IconButton("🗑", tooltip="Clear activity", size="sm")
+        clear_btn.clicked.connect(self.clear_activities)
+        header_layout.addWidget(clear_btn)
+
+        layout.addLayout(header_layout)
+
+        # Activity list
+        self.activity_list = QListWidget()
+        self.activity_list.setStyleSheet(
+            f"""
+            QListWidget {{
+                background: transparent;
+                border: none;
+                outline: none;
+            }}
+            QListWidget::item {{
+                background: rgba(51, 65, 85, 0.3);
+                border: 1px solid rgba(255, 255, 255, 0.05);
+                border-radius: 6px;
+                padding: 8px;
+                margin: 2px 0;
+                color: {ModernColors.TEXT_PRIMARY};
+                font-size: {Typography.TEXT_SM}px;
+            }}
+            QListWidget::item:hover {{
+                background: rgba(51, 65, 85, 0.5);
+                border-color: {ModernColors.PRIMARY};
+            }}
+        """
+        )
+        self.activity_list.setMaximumHeight(200)
+        layout.addWidget(self.activity_list)
+
+        # Card styling
+        self.setStyleSheet(
+            f"""
+            QWidget {{
+                background: {ModernColors.SURFACE_SECONDARY};
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: {BorderRadius.MD}px;
+            }}
+        """
+        )
+
+    def add_activity(self, message, activity_type="info"):
+        from datetime import datetime
+
+        icons = {"info": "ℹ️", "success": "✅", "warning": "⚠️", "error": "❌"}
+
+        icon = icons.get(activity_type, "ℹ️")
+        timestamp = datetime.now().strftime("%H:%M:%S")
+
+        item_text = f"{icon} {timestamp} - {message}"
+        self.activity_list.insertItem(0, item_text)
+
+        # Limit to 50 items
+        if self.activity_list.count() > 50:
+            self.activity_list.takeItem(self.activity_list.count() - 1)
+
+    def clear_activities(self):
+        self.activity_list.clear()
+        self.add_activity("Activity log cleared", "info")
 
 
 class Dashboard(QWidget):
-    """
-    Compact dashboard optimized for 900x500 display.
-    Consolidates all essential information in minimal space.
-    """
+    """Main 2025 Modern Dashboard"""
 
-    # Signals to communicate with AppController
-    run_sync_requested = pyqtSignal(str)
-    clear_cache_requested = pyqtSignal()
+    # Signals
+    sync_requested = pyqtSignal()
     test_connections_requested = pyqtSignal()
-    import_excel_requested = pyqtSignal(str, str, dict)
+    import_excel_requested = pyqtSignal()
+    clear_cache_requested = pyqtSignal()
 
-    def __init__(self, controller, parent=None):
+    def __init__(self, controller=None, parent=None):
         super().__init__(parent)
         self.controller = controller
         self.cleanup_done = False
-
         self._setup_ui()
         self._connect_signals()
 
-        logger.info("Compact Dashboard initialized")
-
-    @handle_exceptions(ErrorCategory.UI, ErrorSeverity.HIGH)
     def _setup_ui(self):
-        """Setup compact dashboard layout"""
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(6, 6, 6, 6)
-        main_layout.setSpacing(4)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(24)
 
-        # 1. Status section - most important info at top
-        status_group = NeonGroupBox("System Status")
-        status_layout = QVBoxLayout()
-        status_layout.setContentsMargins(4, 8, 4, 4)
-        status_layout.setSpacing(4)
+        # Top section - Overview and Progress
+        top_section = QHBoxLayout()
+        top_section.setSpacing(24)
 
-        self.status_grid = CompactStatusGrid()
-        status_layout.addWidget(self.status_grid)
-        status_group.setLayout(status_layout)
-        main_layout.addWidget(status_group)
+        # System overview (left side)
+        self.overview = SystemOverview()
+        top_section.addWidget(self.overview, 2)
 
-        # 2. Progress section - show current operations
-        progress_group = NeonGroupBox("Current Operation")
-        progress_layout = QVBoxLayout()
-        progress_layout.setContentsMargins(4, 8, 4, 4)
-        progress_layout.setSpacing(2)
+        # Progress panel (right side)
+        self.progress_panel = ProgressPanel()
+        top_section.addWidget(self.progress_panel, 1)
 
-        self.progress_panel = CompactProgressPanel()
-        progress_layout.addWidget(self.progress_panel)
-        progress_group.setLayout(progress_layout)
-        main_layout.addWidget(progress_group)
+        layout.addLayout(top_section)
 
-        # 3. Quick actions - essential controls
-        actions_group = NeonGroupBox("Quick Actions")
-        actions_layout = QVBoxLayout()
-        actions_layout.setContentsMargins(4, 8, 4, 4)
-        actions_layout.setSpacing(4)
+        # Middle section - Actions and Activity
+        middle_section = QHBoxLayout()
+        middle_section.setSpacing(24)
 
-        self.control_panel = CompactControlPanel()
-        actions_layout.addWidget(self.control_panel)
-        actions_group.setLayout(actions_layout)
-        main_layout.addWidget(actions_group)
+        # Quick actions (left side)
+        self.actions_panel = QuickActionsPanel()
+        middle_section.addWidget(self.actions_panel, 1)
 
-        # 4. System info - compact footer
-        self._create_system_info_footer(main_layout)
+        # Recent activity (right side)
+        self.activity_panel = RecentActivity()
+        middle_section.addWidget(self.activity_panel, 1)
 
-        main_layout.addStretch(1)  # Push content to top
+        layout.addLayout(middle_section)
 
-    def _create_system_info_footer(self, main_layout):
-        """Create compact system information footer"""
-        try:
-            footer_layout = QHBoxLayout()
-            footer_layout.setContentsMargins(0, 0, 0, 0)
-            footer_layout.setSpacing(8)
+        layout.addStretch()
 
-            # System status indicators
-            config = self.config_manager.get_config()
-
-            version_label = QLabel(f"v{config.app_version}")
-            version_label.setFont(QFont("Segoe UI", CompactScaling.FONT_SIZE_TINY))
-            version_label.setStyleSheet(f"color: {UltraModernColors.TEXT_SECONDARY};")
-
-            db_type_label = QLabel(f"DB: {config.database_type.upper()}")
-            db_type_label.setFont(QFont("Segoe UI", CompactScaling.FONT_SIZE_TINY))
-            db_type_label.setStyleSheet(f"color: {UltraModernColors.TEXT_SECONDARY};")
-
-            footer_layout.addWidget(version_label)
-            footer_layout.addWidget(db_type_label)
-            footer_layout.addStretch(1)
-
-            main_layout.addLayout(footer_layout)
-
-        except Exception as e:
-            logger.error(f"Error creating system info footer: {e}")
-
-    @handle_exceptions(ErrorCategory.UI, ErrorSeverity.HIGH)
     def _connect_signals(self):
-        """Connect UI elements to controller actions"""
-        try:
-            # Connect control panel signals
-            self.control_panel.run_sync_requested.connect(self.run_sync_requested.emit)
-            self.control_panel.clear_cache_requested.connect(
-                self.clear_cache_requested.emit
-            )
-            self.control_panel.test_connections_requested.connect(
-                self.test_connections_requested.emit
-            )
-            self.control_panel.import_excel_requested.connect(
-                self.import_excel_requested.emit
-            )
+        """Connect internal signals"""
+        self.actions_panel.sync_requested.connect(self.sync_requested.emit)
+        self.actions_panel.test_requested.connect(self.test_connections_requested.emit)
+        self.actions_panel.import_requested.connect(self.import_excel_requested.emit)
+        self.actions_panel.clean_requested.connect(self.clear_cache_requested.emit)
 
-            logger.debug("Compact dashboard signals connected successfully")
+    # Public interface methods for MainWindow
+    def update_sharepoint_status(self, status):
+        status_map = {
+            "connected": ("Connected", "success"),
+            "disconnected": ("Disconnected", "error"),
+            "connecting": ("Connecting...", "connecting"),
+            "error": ("Error", "error"),
+        }
+        display, status_type = status_map.get(status, (status, "neutral"))
+        self.overview.update_metric("sharepoint", display, status_type)
+        self.activity_panel.add_activity(f"SharePoint: {display}", status_type)
 
-        except Exception as e:
-            logger.error(f"Error connecting dashboard signals: {e}")
+    def update_database_status(self, status):
+        status_map = {
+            "connected": ("Connected", "success"),
+            "disconnected": ("Disconnected", "error"),
+            "connecting": ("Connecting...", "connecting"),
+            "error": ("Error", "error"),
+        }
+        display, status_type = status_map.get(status, (status, "neutral"))
+        self.overview.update_metric("database", display, status_type)
+        self.activity_panel.add_activity(f"Database: {display}", status_type)
 
-    # Methods called by MainWindow to update dashboard state
+    def update_sync_status(self, status):
+        self.overview.update_metric(
+            "sync", status, "success" if status != "Never" else "neutral"
+        )
+        if status != "Never":
+            self.activity_panel.add_activity(f"Sync completed: {status}", "success")
 
-    @pyqtSlot(str, int, str)
-    @handle_exceptions(ErrorCategory.UI, ErrorSeverity.LOW)
-    def update_progress(self, task_name: str, percentage: int, message: str):
-        """Update progress bar and current task label"""
-        if self.progress_panel:
-            self.progress_panel.update_progress(task_name, percentage, message)
+    def update_auto_sync_status(self, enabled):
+        status = "Enabled" if enabled else "Disabled"
+        status_type = "success" if enabled else "neutral"
+        self.overview.update_metric("auto_sync", status, status_type)
+        self.activity_panel.add_activity(f"Auto-sync {status.lower()}", "info")
 
-    @pyqtSlot(str)
-    @handle_exceptions(ErrorCategory.UI, ErrorSeverity.LOW)
-    def update_current_task(self, task_description: str):
-        """Update current task description label"""
-        if self.progress_panel:
-            self.progress_panel.update_current_task(task_description)
+    def update_progress(self, task, percentage, message=""):
+        self.progress_panel.update_progress(task, percentage, message)
+        if percentage == 100:
+            self.activity_panel.add_activity(f"Completed: {task}", "success")
+        elif percentage == 0:
+            self.activity_panel.add_activity(f"Started: {task}", "info")
 
-    @pyqtSlot(str, str)
-    @handle_exceptions(ErrorCategory.UI, ErrorSeverity.LOW)
-    def update_status(self, service_name: str, status: str):
-        """Update specific status cards"""
-        try:
-            if not self.status_grid:
-                return
+    def update_current_task(self, task):
+        self.progress_panel.task_label.setText(task)
+        if task != "Ready" and task != "Idle":
+            self.activity_panel.add_activity(f"Task: {task}", "info")
 
-            if service_name == "SharePoint" and hasattr(
-                self.status_grid, "sp_status_card"
-            ):
-                self.status_grid.sp_status_card.set_status(status)
-            elif service_name == "Database" and hasattr(
-                self.status_grid, "db_status_card"
-            ):
-                self.status_grid.db_status_card.set_status(status)
+    def add_activity_log(self, message, level="info"):
+        self.activity_panel.add_activity(message, level)
 
-            logger.debug(f"Status updated: {service_name} → {status}")
-
-        except Exception as e:
-            logger.debug(f"Error updating status: {e}")
-
-    # Properties for backward compatibility with MainWindow
-
+    # Backward compatibility properties
     @property
     def sp_status_card(self):
-        """Access to SharePoint status card"""
-        return self.status_grid.sp_status_card if self.status_grid else None
+        return self.overview.sp_card
 
     @property
     def db_status_card(self):
-        """Access to database status card"""
-        return self.status_grid.db_status_card if self.status_grid else None
+        return self.overview.db_card
 
     @property
     def last_sync_status_card(self):
-        """Access to last sync status card"""
-        return self.status_grid.sync_status_card if self.status_grid else None
+        return self.overview.sync_card
 
     @property
     def auto_sync_status_card(self):
-        """Access to auto-sync status card"""
-        return self.status_grid.auto_sync_card if self.status_grid else None
-
-    # Backward compatibility methods
-
-    def update_connection_status(self, service_name: str, status: str):
-        """Backward compatibility method"""
-        self.update_status(service_name, status)
-
-    def set_progress(self, percentage: int, message: str = ""):
-        """Backward compatibility method"""
-        self.update_progress("Operation", percentage, message)
+        return self.overview.auto_sync_card
 
     def cleanup(self):
-        """Perform cleanup for the Dashboard"""
+        """Cleanup dashboard resources"""
         if self.cleanup_done:
-            logger.debug("Dashboard cleanup already performed")
             return
 
-        logger.info("Initiating Dashboard cleanup...")
-
         try:
-            # Clean up status grid
-            if hasattr(self, "status_grid") and self.status_grid:
-                self.status_grid.cleanup()
-                self.status_grid.deleteLater()
-                self.status_grid = None
+            # Cleanup panels
+            if hasattr(self, "activity_panel"):
+                self.activity_panel.clear_activities()
 
-            # Clean up other components
-            components = ["progress_panel", "control_panel"]
-            for comp_name in components:
-                comp = getattr(self, comp_name, None)
-                if comp:
-                    if hasattr(comp, "cleanup"):
-                        comp.cleanup()
-                    comp.deleteLater()
-                    setattr(self, comp_name, None)
+            # Cleanup animations
+            for card in self.overview.cards.values():
+                if hasattr(card, "status_indicator"):
+                    card.status_indicator.pulse_animation.stop()
 
-            # Disconnect control panel signals
-            try:
-                if hasattr(self, "control_panel") and self.control_panel:
-                    self.control_panel.run_sync_requested.disconnect()
-                    self.control_panel.clear_cache_requested.disconnect()
-                    self.control_panel.test_connections_requested.disconnect()
-                    self.control_panel.import_excel_requested.disconnect()
-            except (TypeError, RuntimeError):
-                pass
-
-            # Clean up remaining child widgets
-            for child in self.findChildren(QWidget):
-                if child and child != self:
-                    child.deleteLater()
+            if hasattr(self.progress_panel, "status_indicator"):
+                self.progress_panel.status_indicator.pulse_animation.stop()
 
             self.cleanup_done = True
-            logger.info("Dashboard cleanup completed successfully")
 
         except Exception as e:
-            logger.error(f"Error during Dashboard cleanup: {e}")
-            self.cleanup_done = True
+            print(f"Dashboard cleanup error: {e}")
+
+
+# Factory function for easy creation
+def create_modern_dashboard(controller=None, parent=None):
+    """Create a modern dashboard instance"""
+    return Dashboard(controller, parent)

@@ -1,431 +1,378 @@
-# ui/widgets/status_card.py - Compact Status Card Widget
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QSizePolicy
-from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve
-from PyQt6.QtGui import QFont, QColor, QPainter
-from typing import Any
-import logging
+# ui/widgets/status_card.py - Modern 2025 Status Card
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLabel
+from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve, pyqtSignal, QTimer
+from PyQt6.QtGui import QPainter, QColor
+import sys
+from pathlib import Path
+
+current_dir = Path(__file__).parent.absolute()
+project_root = current_dir.parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
 try:
-    from ..styles.theme import UltraModernColors, get_modern_card_style, CompactScaling
+    from ui.styles.theme import ModernColors, Typography, BorderRadius
 except ImportError:
-    # Fallback if import fails
-    class UltraModernColors:
-        GLASS_BG_DARK = "rgba(10, 10, 10, 0.92)"
-        GLASS_BG_LIGHT = "rgba(25, 25, 25, 0.75)"
-        GLASS_BORDER = "rgba(255, 255, 255, 0.15)"
-        TEXT_PRIMARY = "#E0E0E0"
-        TEXT_SECONDARY = "#A0A0A0"
-        TEXT_SECONDARY_ALT = "#707070"
-        SUCCESS_COLOR = "#00FF7F"
-        ERROR_COLOR = "#FF6347"
-        WARNING_COLOR = "#FFD700"
-        NEON_BLUE = "#00D4FF"
-        NEON_PURPLE = "#9D4EDD"
-        NEON_GREEN = "#00F5A0"
-        NEON_PINK = "#FF006E"
-        NEON_YELLOW = "#FFD23F"
 
-    class CompactScaling:
-        FONT_SIZE_TINY = 7
-        FONT_SIZE_SMALL = 8
-        FONT_SIZE_NORMAL = 9
-        STATUS_CARD_HEIGHT = 40
-
-    def get_modern_card_style():
-        return ""
+    class ModernColors:
+        SUCCESS = "#10B981"
+        ERROR = "#EF4444"
+        WARNING = "#F59E0B"
+        TEXT_PRIMARY = "#F8FAFC"
 
 
-logger = logging.getLogger(__name__)
+class StatusDot(QWidget):
+    """Animated status indicator dot"""
 
-
-class UltraCompactStatusIndicator(QWidget):
-    """Ultra-compact status indicator dot"""
-
-    def __init__(self, status="disconnected", parent=None):
+    def __init__(self, size=8, parent=None):
         super().__init__(parent)
-        self.status = status
-        self.setFixedSize(12, 12)  # Smaller for ultra-compact layout
+        self.status = "disconnected"
+        self.dot_size = size
+        self.setFixedSize(size + 4, size + 4)
+
+        self.pulse_timer = QTimer(self)
+        self.pulse_timer.timeout.connect(self.update)
+        self.pulse_value = 0
 
     def paintEvent(self, event):
-        """Paint compact status dot"""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         colors = {
-            "connected": UltraModernColors.SUCCESS_COLOR,
-            "disconnected": UltraModernColors.ERROR_COLOR,
-            "error": UltraModernColors.ERROR_COLOR,
-            "success": UltraModernColors.SUCCESS_COLOR,
-            "never": "#666666",
-            "syncing": UltraModernColors.NEON_BLUE,
-            "warning": UltraModernColors.WARNING_COLOR,
-            "in_progress": UltraModernColors.NEON_PURPLE,
-            "connecting": UltraModernColors.NEON_YELLOW,
-            "failed": UltraModernColors.ERROR_COLOR,
+            "connected": ModernColors.SUCCESS,
+            "disconnected": ModernColors.ERROR,
+            "connecting": ModernColors.WARNING,
+            "syncing": ModernColors.PRIMARY,
+            "error": ModernColors.ERROR,
         }
 
-        color = QColor(colors.get(self.status, UltraModernColors.TEXT_SECONDARY_ALT))
+        base_color = QColor(colors.get(self.status, ModernColors.ERROR))
 
-        painter.setBrush(color)
-        painter.setPen(Qt.PenStyle.NoPen)
-
-        # Draw filled circle
-        rect = self.rect().adjusted(2, 2, -2, -2)
-        painter.drawEllipse(rect)
-
-        # Add pulse effect for active states
-        if self.status in ["connecting", "syncing", "in_progress"]:
-            # Simple pulsing ring
+        # Draw pulsing ring for active states
+        if self.status in ["connecting", "syncing"] and self.pulse_timer.isActive():
+            ring_color = QColor(base_color)
+            ring_color.setAlpha(int(100 * (1 - self.pulse_value)))
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            pen = painter.pen()
-            pen.setColor(color)
-            pen.setWidth(1)
-            painter.setPen(pen)
-            painter.drawEllipse(self.rect().adjusted(1, 1, -1, -1))
+            painter.setPen(ring_color)
+            ring_size = self.dot_size + int(4 * self.pulse_value)
+            painter.drawEllipse(
+                2 - int(2 * self.pulse_value),
+                2 - int(2 * self.pulse_value),
+                ring_size,
+                ring_size,
+            )
 
-    def set_status(self, status: str):
-        """Set status and trigger repaint"""
-        if self.status != status:
-            self.status = status
-            self.update()
+        # Draw main dot
+        painter.setBrush(base_color)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(2, 2, self.dot_size, self.dot_size)
+
+    def set_status(self, status):
+        self.status = status
+        if status in ["connecting", "syncing"]:
+            self.pulse_timer.start(50)
+        else:
+            self.pulse_timer.stop()
+            self.pulse_value = 0
+        self.update()
+
+    def _update_pulse(self):
+        self.pulse_value = (self.pulse_value + 0.1) % 1.0
 
 
 class ModernStatusCard(QWidget):
-    """
-    Ultra-compact status card optimized for 900x500 display.
-    Single line layout with minimal height.
-    """
+    """2025 Modern status card with animations"""
 
-    def __init__(
-        self,
-        title: str,
-        initial_status: Any,
-        is_boolean_status: bool = False,
-        parent=None,
-    ):
+    status_clicked = pyqtSignal(str)
+
+    def __init__(self, title, initial_status="disconnected", parent=None):
         super().__init__(parent)
         self.title = title
-        self._status = initial_status
-        self.is_boolean_status = is_boolean_status
-        self.pulse_animation = None
-
+        self.status = initial_status
         self._setup_ui()
-        self.update_status_display()
+        self._setup_animations()
 
     def _setup_ui(self):
-        """Setup ultra-compact card layout"""
-        self.main_layout = QHBoxLayout(self)
-        self.main_layout.setContentsMargins(6, 4, 6, 4)  # Minimal margins
-        self.main_layout.setSpacing(6)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(6)
 
-        # Apply compact card styling
-        self.setStyleSheet(
-            f"""
-            QWidget {{
-                background: {UltraModernColors.GLASS_BG_DARK};
-                border: 1px solid {UltraModernColors.GLASS_BORDER};
-                border-radius: 4px;
-                min-height: {CompactScaling.STATUS_CARD_HEIGHT}px;
-                max-height: {CompactScaling.STATUS_CARD_HEIGHT}px;
-            }}
-            QWidget:hover {{
-                border-color: {UltraModernColors.NEON_BLUE};
-                background: {UltraModernColors.GLASS_BG_LIGHT};
-            }}
-        """
-        )
+        # Header with title and status dot
+        header_layout = QHBoxLayout()
+        header_layout.setSpacing(8)
 
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-
-        # Title label - compact font
+        # Title
         self.title_label = QLabel(self.title)
-        self.title_label.setFont(
-            QFont("Segoe UI", CompactScaling.FONT_SIZE_SMALL, QFont.Weight.Normal)
-        )
         self.title_label.setStyleSheet(
-            f"color: {UltraModernColors.TEXT_PRIMARY}; border: none; background: transparent;"
+            f"""
+            font-size: {Typography.TEXT_SM}px;
+            font-weight: {Typography.WEIGHT_MEDIUM};
+            color: {ModernColors.TEXT_SECONDARY};
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        """
         )
-        self.main_layout.addWidget(self.title_label)
+        header_layout.addWidget(self.title_label)
 
-        self.main_layout.addStretch(1)  # Push status to right
+        header_layout.addStretch()
 
-        # Status label - compact
-        self.status_label = QLabel()
-        self.status_label.setFont(
-            QFont("Segoe UI", CompactScaling.FONT_SIZE_SMALL, QFont.Weight.Bold)
-        )
-        self.status_label.setStyleSheet("border: none; background: transparent;")
-        self.main_layout.addWidget(self.status_label)
+        # Status dot
+        self.status_dot = StatusDot(8)
+        self.status_dot.set_status(self.status)
+        header_layout.addWidget(self.status_dot)
 
-        # Status indicator dot
-        self.status_indicator = UltraCompactStatusIndicator(
-            self.current_status_string()
-        )
-        self.main_layout.addWidget(self.status_indicator)
+        layout.addLayout(header_layout)
 
-    def current_status_string(self) -> str:
-        """Convert status to string representation"""
-        if self.is_boolean_status:
-            return "connected" if self._status else "disconnected"
-        return str(self._status) if self._status else "never"
-
-    def update_status_display(self):
-        """Update status display with compact styling"""
-        status_str = self.current_status_string()
-
-        # Status text and colors
-        status_configs = {
-            "connected": ("✓", UltraModernColors.SUCCESS_COLOR),
-            "disconnected": ("✗", UltraModernColors.ERROR_COLOR),
-            "error": ("!", UltraModernColors.ERROR_COLOR),
-            "success": ("✓", UltraModernColors.SUCCESS_COLOR),
-            "never": ("-", UltraModernColors.TEXT_SECONDARY_ALT),
-            "syncing": ("⟳", UltraModernColors.NEON_PURPLE),
-            "warning": ("⚠", UltraModernColors.WARNING_COLOR),
-            "in_progress": ("⟳", UltraModernColors.NEON_PURPLE),
-            "connecting": ("⟳", UltraModernColors.NEON_YELLOW),
-            "failed": ("✗", UltraModernColors.ERROR_COLOR),
-        }
-
-        symbol, color = status_configs.get(
-            status_str, ("?", UltraModernColors.TEXT_SECONDARY)
-        )
-
-        # Update status label with symbol and color
+        # Status text
+        self.status_label = QLabel(self._format_status(self.status))
         self.status_label.setStyleSheet(
-            f"color: {color}; border: none; background: transparent;"
+            f"""
+            font-size: {Typography.TEXT_BASE}px;
+            font-weight: {Typography.WEIGHT_SEMIBOLD};
+            color: {self._get_status_color(self.status)};
+        """
         )
-        self.status_label.setText(symbol)
+        layout.addWidget(self.status_label)
 
-        # Update status indicator
-        self.status_indicator.set_status(status_str)
+        # Card styling
+        self._update_card_style()
+        self.setMinimumHeight(70)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        # Update card border color based on status
-        border_color = (
-            color if status_str != "never" else UltraModernColors.GLASS_BORDER
-        )
+    def _setup_animations(self):
+        # Hover animation
+        self.hover_animation = QPropertyAnimation(self, b"styleSheet")
+        self.hover_animation.setDuration(200)
+        self.hover_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+    def _format_status(self, status):
+        status_map = {
+            "connected": "Connected",
+            "disconnected": "Disconnected",
+            "connecting": "Connecting...",
+            "syncing": "Syncing...",
+            "error": "Error",
+            "success": "Success",
+        }
+        return status_map.get(status, status.title())
+
+    def _get_status_color(self, status):
+        colors = {
+            "connected": ModernColors.SUCCESS,
+            "disconnected": ModernColors.ERROR,
+            "connecting": ModernColors.WARNING,
+            "syncing": ModernColors.PRIMARY,
+            "error": ModernColors.ERROR,
+            "success": ModernColors.SUCCESS,
+        }
+        return colors.get(status, ModernColors.TEXT_PRIMARY)
+
+    def _update_card_style(self):
+        border_color = self._get_status_color(self.status)
         self.setStyleSheet(
             f"""
             QWidget {{
-                background: {UltraModernColors.GLASS_BG_DARK};
-                border: 1px solid {border_color};
-                border-radius: 4px;
-                min-height: {CompactScaling.STATUS_CARD_HEIGHT}px;
-                max-height: {CompactScaling.STATUS_CARD_HEIGHT}px;
+                background: {ModernColors.SURFACE_SECONDARY};
+                border: 1px solid {border_color}40;
+                border-radius: {BorderRadius.BASE}px;
             }}
             QWidget:hover {{
-                border-color: {UltraModernColors.NEON_BLUE};
-                background: {UltraModernColors.GLASS_BG_LIGHT};
+                border-color: {border_color};
+                background: rgba(30, 41, 59, 0.8);
+                transform: translateY(-1px);
             }}
         """
         )
 
-        # Manage pulse animation for active states
-        if status_str in ["connecting", "in_progress", "syncing"]:
-            self._start_pulse_animation()
-        else:
-            self._stop_pulse_animation()
+    def set_status(self, status):
+        """Update card status with animation"""
+        if self.status == status:
+            return
 
-    def set_status(self, status: Any):
-        """Set new status and update display"""
-        if self.is_boolean_status:
-            # Convert various boolean representations
-            if isinstance(status, str):
-                self._status = status.lower() in (
-                    "true",
-                    "1",
-                    "yes",
-                    "on",
-                    "connected",
-                    "enabled",
-                )
-            else:
-                self._status = bool(status)
-        else:
-            self._status = status
+        self.status = status
+        self.status_dot.set_status(status)
 
-        self.update_status_display()
+        # Update text with color transition
+        new_color = self._get_status_color(status)
+        self.status_label.setText(self._format_status(status))
+        self.status_label.setStyleSheet(
+            f"""
+            font-size: {Typography.TEXT_BASE}px;
+            font-weight: {Typography.WEIGHT_SEMIBOLD};
+            color: {new_color};
+        """
+        )
 
-    def _start_pulse_animation(self):
-        """Start subtle pulse animation for active states"""
-        if self.pulse_animation:
-            return  # Already running
+        # Update card border
+        self._update_card_style()
 
-        try:
-            self.pulse_animation = QPropertyAnimation(self, b"styleSheet")
-            self.pulse_animation.setDuration(2000)  # 2 second cycle
-            self.pulse_animation.setLoopCount(-1)  # Infinite loop
-            self.pulse_animation.setEasingCurve(QEasingCurve.Type.InOutSine)
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.status_clicked.emit(self.title)
+        super().mousePressEvent(event)
 
-            # Animate border color opacity
-            base_style = f"""
-                QWidget {{
-                    background: {UltraModernColors.GLASS_BG_DARK};
-                    border: 1px solid {UltraModernColors.NEON_PURPLE};
-                    border-radius: 4px;
-                    min-height: {CompactScaling.STATUS_CARD_HEIGHT}px;
-                    max-height: {CompactScaling.STATUS_CARD_HEIGHT}px;
-                }}
-            """
 
-            bright_style = f"""
-                QWidget {{
-                    background: {UltraModernColors.GLASS_BG_LIGHT};
-                    border: 2px solid {UltraModernColors.NEON_PURPLE};
-                    border-radius: 4px;
-                    min-height: {CompactScaling.STATUS_CARD_HEIGHT}px;
-                    max-height: {CompactScaling.STATUS_CARD_HEIGHT}px;
-                }}
-            """
+class CompactStatusCard(QWidget):
+    """Compact version for tight spaces"""
 
-            self.pulse_animation.setKeyValueAt(0, base_style)
-            self.pulse_animation.setKeyValueAt(0.5, bright_style)
-            self.pulse_animation.setKeyValueAt(1, base_style)
+    def __init__(self, title, initial_status="disconnected", parent=None):
+        super().__init__(parent)
+        self.title = title
+        self.status = initial_status
+        self._setup_ui()
 
-            self.pulse_animation.start()
+    def _setup_ui(self):
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(12, 8, 12, 8)
+        layout.setSpacing(8)
 
-        except Exception as e:
-            logger.debug(f"Error starting pulse animation: {e}")
+        # Status dot
+        self.status_dot = StatusDot(6)
+        self.status_dot.set_status(self.status)
+        layout.addWidget(self.status_dot)
 
-    def _stop_pulse_animation(self):
-        """Stop pulse animation"""
-        if self.pulse_animation:
-            try:
-                self.pulse_animation.stop()
-                self.pulse_animation.deleteLater()
-                self.pulse_animation = None
-                # Reset to normal styling
-                self.update_status_display()
-            except Exception as e:
-                logger.debug(f"Error stopping pulse animation: {e}")
+        # Title
+        title_label = QLabel(self.title)
+        title_label.setStyleSheet(
+            f"""
+            font-size: {Typography.TEXT_SM}px;
+            color: {ModernColors.TEXT_PRIMARY};
+            font-weight: {Typography.WEIGHT_MEDIUM};
+        """
+        )
+        layout.addWidget(title_label)
 
-    def cleanup_animations(self):
-        """Cleanup animations"""
-        self._stop_pulse_animation()
+        layout.addStretch()
 
-    def enterEvent(self, event):
-        """Handle mouse enter - show tooltip with detailed status"""
-        super().enterEvent(event)
-        try:
-            # Create detailed tooltip
-            status_str = self.current_status_string()
-            detailed_status = {
-                "connected": "Connection established",
-                "disconnected": "Not connected",
-                "error": "Connection error",
-                "success": "Operation successful",
-                "never": "Never attempted",
-                "syncing": "Synchronization in progress",
-                "warning": "Warning condition",
-                "in_progress": "Operation in progress",
-                "connecting": "Attempting connection",
-                "failed": "Operation failed",
-            }
+        # Status text
+        self.status_label = QLabel(self._format_status(self.status))
+        self.status_label.setStyleSheet(
+            f"""
+            font-size: {Typography.TEXT_SM}px;
+            color: {self._get_status_color(self.status)};
+            font-weight: {Typography.WEIGHT_MEDIUM};
+        """
+        )
+        layout.addWidget(self.status_label)
 
-            tooltip = f"{self.title}: {detailed_status.get(status_str, status_str)}"
-            self.setToolTip(tooltip)
+        # Compact styling
+        self.setStyleSheet(
+            f"""
+            QWidget {{
+                background: {ModernColors.SURFACE_TERTIARY};
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: {BorderRadius.SM}px;
+            }}
+        """
+        )
+        self.setMaximumHeight(40)
 
-        except Exception as e:
-            logger.debug(f"Error setting tooltip: {e}")
+    def _format_status(self, status):
+        status_map = {
+            "connected": "✓",
+            "disconnected": "✗",
+            "connecting": "⟳",
+            "syncing": "⟳",
+            "error": "!",
+            "success": "✓",
+        }
+        return status_map.get(status, "?")
 
-    def leaveEvent(self, event):
-        """Handle mouse leave"""
-        super().leaveEvent(event)
+    def _get_status_color(self, status):
+        colors = {
+            "connected": ModernColors.SUCCESS,
+            "disconnected": ModernColors.ERROR,
+            "connecting": ModernColors.WARNING,
+            "syncing": ModernColors.PRIMARY,
+            "error": ModernColors.ERROR,
+            "success": ModernColors.SUCCESS,
+        }
+        return colors.get(status, ModernColors.TEXT_SECONDARY)
+
+    def set_status(self, status):
+        self.status = status
+        self.status_dot.set_status(status)
+        self.status_label.setText(self._format_status(status))
+        self.status_label.setStyleSheet(
+            f"""
+            font-size: {Typography.TEXT_SM}px;
+            color: {self._get_status_color(status)};
+            font-weight: {Typography.WEIGHT_MEDIUM};
+        """
+        )
 
 
 class StatusCardGroup(QWidget):
-    """Group of status cards in compact grid layout"""
+    """Container for managing multiple status cards"""
 
-    def __init__(self, parent=None):
+    def __init__(self, cards_config=None, compact=False, parent=None):
         super().__init__(parent)
-        self.status_cards = {}
-        self._setup_ui()
+        self.cards = {}
+        self.compact = compact
+        self._setup_ui(cards_config or [])
 
-    def _setup_ui(self):
-        """Setup grid layout for status cards"""
-        from PyQt6.QtWidgets import QGridLayout
+    def _setup_ui(self, cards_config):
+        if self.compact:
+            layout = QVBoxLayout(self)
+            layout.setSpacing(4)
+        else:
+            layout = QGridLayout(self)
+            layout.setSpacing(12)
 
-        self.grid_layout = QGridLayout(self)
-        self.grid_layout.setContentsMargins(0, 0, 0, 0)
-        self.grid_layout.setSpacing(4)  # Minimal spacing
+        layout.setContentsMargins(0, 0, 0, 0)
 
-    def add_status_card(
-        self,
-        card_id: str,
-        title: str,
-        initial_status: Any,
-        row: int,
-        col: int,
-        is_boolean: bool = False,
-    ):
-        """Add status card to grid"""
-        try:
-            card = ModernStatusCard(title, initial_status, is_boolean)
-            self.status_cards[card_id] = card
-            self.grid_layout.addWidget(card, row, col)
-            logger.debug(f"Added status card: {card_id} at ({row}, {col})")
-        except Exception as e:
-            logger.error(f"Error adding status card '{card_id}': {e}")
+        for i, config in enumerate(cards_config):
+            card_id = config.get("id", f"card_{i}")
+            title = config.get("title", f"Status {i+1}")
+            initial_status = config.get("status", "disconnected")
 
-    def update_status(self, card_id: str, status: Any):
-        """Update specific status card"""
-        try:
-            if card_id in self.status_cards:
-                self.status_cards[card_id].set_status(status)
-        except Exception as e:
-            logger.debug(f"Error updating status card '{card_id}': {e}")
+            if self.compact:
+                card = CompactStatusCard(title, initial_status)
+                layout.addWidget(card)
+            else:
+                card = ModernStatusCard(title, initial_status)
+                row = i // 2
+                col = i % 2
+                layout.addWidget(card, row, col)
 
-    def get_status_card(self, card_id: str) -> ModernStatusCard:
-        """Get status card by ID"""
-        return self.status_cards.get(card_id)
+            self.cards[card_id] = card
 
-    def cleanup(self):
-        """Cleanup all status cards"""
-        try:
-            for card in self.status_cards.values():
-                if hasattr(card, "cleanup_animations"):
-                    card.cleanup_animations()
-                card.deleteLater()
-            self.status_cards.clear()
-        except Exception as e:
-            logger.error(f"Error during status card group cleanup: {e}")
+    def update_status(self, card_id, status):
+        """Update specific card status"""
+        if card_id in self.cards:
+            self.cards[card_id].set_status(status)
+
+    def get_card(self, card_id):
+        """Get card instance by ID"""
+        return self.cards.get(card_id)
+
+    def add_card(self, card_id, title, initial_status="disconnected"):
+        """Dynamically add new card"""
+        if self.compact:
+            card = CompactStatusCard(title, initial_status)
+        else:
+            card = ModernStatusCard(title, initial_status)
+
+        self.cards[card_id] = card
+        self.layout().addWidget(card)
+        return card
+
+    def remove_card(self, card_id):
+        """Remove card by ID"""
+        if card_id in self.cards:
+            card = self.cards.pop(card_id)
+            self.layout().removeWidget(card)
+            card.deleteLater()
 
 
-# Backward compatibility - compact status display helper
-class CompactStatusDisplay(QWidget):
-    """Ultra-compact status display for tight spaces"""
+# Factory functions
+def create_status_card(title, status="disconnected", compact=False, parent=None):
+    """Create status card instance"""
+    if compact:
+        return CompactStatusCard(title, status, parent)
+    return ModernStatusCard(title, status, parent)
 
-    def __init__(self, statuses: dict, parent=None):
-        super().__init__(parent)
-        self.statuses = statuses
-        self._setup_ui()
 
-    def _setup_ui(self):
-        """Setup ultra-compact horizontal status display"""
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(4, 2, 4, 2)
-        layout.setSpacing(8)
-
-        self.indicators = {}
-
-        for status_id, (label, initial_value) in self.statuses.items():
-            # Mini label
-            label_widget = QLabel(label)
-            label_widget.setFont(QFont("Segoe UI", CompactScaling.FONT_SIZE_TINY))
-            label_widget.setStyleSheet(f"color: {UltraModernColors.TEXT_SECONDARY};")
-
-            # Mini indicator
-            indicator = UltraCompactStatusIndicator(initial_value)
-
-            self.indicators[status_id] = indicator
-
-            layout.addWidget(label_widget)
-            layout.addWidget(indicator)
-
-        layout.addStretch(1)
-        self.setMaximumHeight(20)  # Ultra-compact height
-
-    def update_status(self, status_id: str, status: str):
-        """Update mini status indicator"""
-        if status_id in self.indicators:
-            self.indicators[status_id].set_status(status)
+def create_status_group(cards_config, compact=False, parent=None):
+    """Create status card group"""
+    return StatusCardGroup(cards_config, compact, parent)

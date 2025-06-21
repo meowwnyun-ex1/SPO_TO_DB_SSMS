@@ -1,144 +1,263 @@
+# utils/logger.py - Modern 2025 Logging System
 import logging
 import logging.handlers
 from pathlib import Path
 from datetime import datetime
 from PyQt6.QtCore import QObject, pyqtSignal
+from typing import Optional
+import weakref
 
 
-# This QObject class can be used to emit log messages to the UI thread
-class NeuraUILogHandler(QObject, logging.Handler):
-    """
-    A custom logging handler that emits log records as signals,
-    allowing PyQt UI elements to display them in real-time.
-    """
+class ModernUILogHandler(QObject, logging.Handler):
+    """Modern logging handler with proper cleanup"""
 
     log_record_emitted = pyqtSignal(str, str)  # message, level
 
+    _instances = weakref.WeakSet()
+
     def __init__(self, parent=None):
-        super().__init__(parent)
+        QObject.__init__(self, parent)
         logging.Handler.__init__(self)
-        self.setFormatter(NeuralLogFormatter())
+
+        # Add to weak reference set for cleanup tracking
+        ModernUILogHandler._instances.add(self)
+
+        self.setFormatter(ModernLogFormatter())
+        self._is_destroyed = False
 
     def emit(self, record):
-        """Emits the formatted log record as a signal."""
+        """Emit log record as signal with safety checks"""
+        if self._is_destroyed:
+            return
+
         try:
             message = self.format(record)
-            self.log_record_emitted.emit(message, record.levelname.lower())
+            # Only emit if signal is still connected
+            if self.log_record_emitted.receivers() > 0:
+                self.log_record_emitted.emit(message, record.levelname.lower())
+        except (RuntimeError, AttributeError):
+            # Object has been deleted or signal disconnected
+            self._is_destroyed = True
         except Exception:
+            # Fallback to prevent logging errors from breaking the app
             self.handleError(record)
 
+    def cleanup(self):
+        """Safe cleanup method"""
+        if self._is_destroyed:
+            return
 
-class NeuralLogFormatter(logging.Formatter):
-    """Custom formatter สำหรับ neural logging system"""
+        try:
+            # Disconnect all signals
+            if hasattr(self, "log_record_emitted"):
+                self.log_record_emitted.disconnect()
+            self._is_destroyed = True
+        except (RuntimeError, TypeError):
+            pass
+
+    def __del__(self):
+        """Destructor with safe cleanup"""
+        try:
+            self.cleanup()
+        except:
+            pass
+
+    @classmethod
+    def cleanup_all_instances(cls):
+        """Cleanup all handler instances"""
+        instances_copy = list(cls._instances)
+        for handler in instances_copy:
+            try:
+                if handler and not handler._is_destroyed:
+                    handler.cleanup()
+            except (ReferenceError, AttributeError):
+                pass
+
+
+class ModernLogFormatter(logging.Formatter):
+    """Modern log formatter with clean output"""
 
     def __init__(self):
         super().__init__()
-        self.neural_symbols = {
-            "DEBUG": "◇",
-            "INFO": "◉",
-            "WARNING": "◈",
-            "ERROR": "◆",
-            "CRITICAL": "⬢",
+
+        # Modern icons
+        self.level_icons = {
+            "DEBUG": "🔍",
+            "INFO": "ℹ️",
+            "WARNING": "⚠️",
+            "ERROR": "❌",
+            "CRITICAL": "🚨",
         }
+
+        # Console colors
         self.colors = {
-            "DEBUG": "\033[90m",  # Gray
-            "INFO": "\033[96m",  # Cyan
-            "WARNING": "\033[93m",  # Yellow
-            "ERROR": "\033[91m",  # Red
-            "CRITICAL": "\033[95m",  # Magenta
-            "RESET": "\033[0m",  # Reset color
+            "DEBUG": "\033[36m",  # Cyan
+            "INFO": "\033[32m",  # Green
+            "WARNING": "\033[33m",  # Yellow
+            "ERROR": "\033[31m",  # Red
+            "CRITICAL": "\033[35m",  # Magenta
+            "RESET": "\033[0m",  # Reset
         }
 
     def format(self, record):
-        """Format log record with neural styling"""
-        symbol = self.neural_symbols.get(record.levelname, "◯")
-        timestamp = datetime.fromtimestamp(record.created).strftime("%H:%M:%S.%f")[:-3]
+        """Format log record with modern styling"""
+        icon = self.level_icons.get(record.levelname, "•")
+        timestamp = datetime.fromtimestamp(record.created).strftime("%H:%M:%S")
 
-        # Get color for console output
-        color_start = self.colors.get(record.levelname, self.colors["RESET"])
-        color_end = self.colors["RESET"]
-
-        # Neural log format
-        neural_format = (
-            f"{color_start}[{timestamp}] {symbol} {record.name} "
-            f"→ {record.getMessage()}{color_end}"
-        )
+        # For console output (with colors)
+        if hasattr(record, "console_output"):
+            color_start = self.colors.get(record.levelname, self.colors["RESET"])
+            color_end = self.colors["RESET"]
+            formatted_msg = (
+                f"{color_start}[{timestamp}] {icon} "
+                f"{record.name} → {record.getMessage()}{color_end}"
+            )
+        else:
+            # For UI output (no colors)
+            formatted_msg = (
+                f"[{timestamp}] {icon} {record.name} → {record.getMessage()}"
+            )
 
         # Add exception info if present
         if record.exc_info:
-            neural_format += f"\n⚠️ Exception: {self.formatException(record.exc_info)}"
+            formatted_msg += f"\n💥 Exception: {self.formatException(record.exc_info)}"
 
-        return neural_format
+        return formatted_msg
 
 
-class QuantumFileHandler(logging.handlers.RotatingFileHandler):
-    """Enhanced file handler with quantum data organization"""
+class PerformanceFileHandler(logging.handlers.RotatingFileHandler):
+    """High-performance file handler with modern features"""
 
     def __init__(self, filename, **kwargs):
         # Ensure log directory exists
         log_dir = Path(filename).parent
         log_dir.mkdir(parents=True, exist_ok=True)
+
+        # Default parameters for performance
+        kwargs.setdefault("maxBytes", 10 * 1024 * 1024)  # 10MB
+        kwargs.setdefault("backupCount", 5)
+        kwargs.setdefault("encoding", "utf-8")
+
         super().__init__(filename, **kwargs)
-        self.setFormatter(NeuralLogFormatter())  # Use custom formatter
+        self.setFormatter(ModernLogFormatter())
 
 
-def setup_neural_logging(
-    log_file: str = "logs/app.log",
-    log_level: str = "INFO",
-    max_bytes: int = 10 * 1024 * 1024,
-    backup_count: int = 5,
-):
-    """
-    Sets up the global neural logging configuration.
-    Configures file logging with rotation and console logging.
-    Returns the UI log handler for connecting to a QTextEdit.
-    """
-    # Remove all existing handlers to prevent duplicate logs
-    for handler in logging.root.handlers[:]:
-        logging.root.removeHandler(handler)
-        handler.close()
+class LoggerManager:
+    """Centralized logger management"""
 
-    logging.root.setLevel(logging.DEBUG)  # Set root to DEBUG to capture all messages
+    _ui_handler: Optional[ModernUILogHandler] = None
+    _is_initialized = False
 
-    # File handler with rotation
-    file_handler = QuantumFileHandler(
-        log_file, maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8"
-    )
-    file_handler.setLevel(logging.getLevelName(log_level))
-    file_handler.setFormatter(NeuralLogFormatter())
-    logging.root.addHandler(file_handler)
+    @classmethod
+    def setup_logging(
+        cls,
+        log_file: str = "logs/app.log",
+        log_level: str = "INFO",
+        max_bytes: int = 10 * 1024 * 1024,
+        backup_count: int = 5,
+    ) -> Optional[ModernUILogHandler]:
+        """Setup modern logging system"""
 
-    # Console handler
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.getLevelName(log_level))
-    console_handler.setFormatter(NeuralLogFormatter())
-    logging.root.addHandler(console_handler)
+        if cls._is_initialized:
+            return cls._ui_handler
 
-    # UI Log Handler
-    ui_log_handler = NeuraUILogHandler()
-    ui_log_handler.setLevel(logging.INFO)  # UI might show less verbose logs
-    logging.root.addHandler(ui_log_handler)
+        # Clean up any existing handlers
+        cls.cleanup_logging()
 
-    logging.info(f"Neural logging system initialized. Log level: {log_level}")
-    return ui_log_handler
+        # Set root logger level
+        logging.root.setLevel(logging.DEBUG)
+
+        try:
+            # File handler
+            file_handler = PerformanceFileHandler(
+                log_file, maxBytes=max_bytes, backupCount=backup_count
+            )
+            file_handler.setLevel(logging.getLevelName(log_level))
+            logging.root.addHandler(file_handler)
+
+            # Console handler
+            console_handler = logging.StreamHandler()
+            console_handler.setLevel(logging.getLevelName(log_level))
+            console_handler.setFormatter(ModernLogFormatter())
+            # Mark for console coloring
+            console_handler.addFilter(
+                lambda record: setattr(record, "console_output", True) or True
+            )
+            logging.root.addHandler(console_handler)
+
+            # UI Handler
+            cls._ui_handler = ModernUILogHandler()
+            cls._ui_handler.setLevel(logging.INFO)  # UI shows less verbose logs
+            logging.root.addHandler(cls._ui_handler)
+
+            cls._is_initialized = True
+
+            logging.info(f"Modern logging system initialized - Level: {log_level}")
+            return cls._ui_handler
+
+        except Exception as e:
+            print(f"Failed to setup logging: {e}")
+            return None
+
+    @classmethod
+    def cleanup_logging(cls):
+        """Safe cleanup of all logging handlers"""
+        if not cls._is_initialized:
+            return
+
+        try:
+            # Remove all existing handlers
+            for handler in logging.root.handlers[:]:
+                try:
+                    # Special cleanup for UI handlers
+                    if isinstance(handler, ModernUILogHandler):
+                        handler.cleanup()
+
+                    logging.root.removeHandler(handler)
+
+                    # Close file handlers
+                    if hasattr(handler, "close"):
+                        handler.close()
+
+                except Exception as e:
+                    print(f"Error removing handler: {e}")
+
+            # Cleanup all UI handler instances
+            ModernUILogHandler.cleanup_all_instances()
+
+            cls._ui_handler = None
+            cls._is_initialized = False
+
+        except Exception as e:
+            print(f"Error during logging cleanup: {e}")
+
+    @classmethod
+    def get_ui_handler(cls) -> Optional[ModernUILogHandler]:
+        """Get current UI handler"""
+        return cls._ui_handler
+
+    @classmethod
+    def is_initialized(cls) -> bool:
+        """Check if logging is initialized"""
+        return cls._is_initialized
 
 
-def get_neural_logger(name: str):
-    """Returns a logger instance with the neural logging configuration."""
+def get_logger(name: str) -> logging.Logger:
+    """Get logger instance with modern configuration"""
     return logging.getLogger(name)
 
 
 class OperationTimer:
-    """Context manager for timing operations."""
+    """Context manager for timing operations"""
 
     def __init__(self, operation_name: str, logger_name: str = "__main__"):
         self.operation_name = operation_name
-        self.logger = get_neural_logger(logger_name)
+        self.logger = get_logger(logger_name)
         self.start_time = None
 
     def __enter__(self):
         self.start_time = datetime.now()
-        self.logger.info(f"▶ Starting: {self.operation_name}...")
+        self.logger.info(f"🚀 Starting: {self.operation_name}")
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -146,89 +265,83 @@ class OperationTimer:
 
         if exc_type:
             self.logger.error(
-                f"◆ Failed: {self.operation_name} ({duration:.3f}s) - {exc_val}"
+                f"💥 Failed: {self.operation_name} ({duration:.3f}s) - {exc_val}"
             )
         else:
-            self.logger.info(f"◎ Completed: {self.operation_name} ({duration:.3f}s)")
+            self.logger.info(f"✅ Completed: {self.operation_name} ({duration:.3f}s)")
 
 
-class NeuralDebugger:
-    """Advanced debugging utilities for neural operations"""
+class ModernDebugger:
+    """Modern debugging utilities"""
 
     @staticmethod
     def log_function_entry(func):
         """Decorator for logging function entry/exit"""
 
         def wrapper(*args, **kwargs):
-            logger = get_neural_logger(func.__module__)
-            logger.info(f"◉ Entering: {func.__name__}")
+            logger = get_logger(func.__module__)
+            logger.debug(f"→ Entering: {func.__name__}")
 
             try:
                 result = func(*args, **kwargs)
-                logger.info(f"◎ Exiting: {func.__name__}")
+                logger.debug(f"← Exiting: {func.__name__}")
                 return result
             except Exception as e:
-                logger.error(f"◆ Exception in {func.__name__}: {e}")
+                logger.error(f"💥 Exception in {func.__name__}: {e}")
                 raise
 
         return wrapper
 
     @staticmethod
-    def log_data_flow(data, stage_name):
+    def log_data_flow(data, stage_name: str, logger_name: str = "data_flow"):
         """Log data transformation stages"""
-        logger = get_neural_logger("data_flow")
+        logger = get_logger(logger_name)
 
-        if hasattr(data, "__len__"):
-            logger.info(f"Data Flow: {stage_name} - Records: {len(data)}")
-        else:
-            logger.info(f"Data Flow: {stage_name} - Data Type: {type(data).__name__}")
-
-        # Optionally, log a snippet of data for debugging purposes
-        if isinstance(data, (list, pd.DataFrame)) and len(data) > 0:
-            if isinstance(data, pd.DataFrame):
-                logger.debug(f"  Snippet:\n{data.head(2).to_string()}")
+        try:
+            if hasattr(data, "__len__"):
+                count = len(data)
+                logger.info(f"📊 {stage_name}: {count} records")
             else:
-                logger.debug(f"  Snippet: {data[:2]}...")
+                logger.info(f"📊 {stage_name}: {type(data).__name__}")
+
+            # Log sample data for debugging
+            if isinstance(data, (list, tuple)) and len(data) > 0:
+                logger.debug(f"   Sample: {str(data[:2])[:100]}...")
+            elif hasattr(data, "head"):  # pandas DataFrame
+                logger.debug(f"   Sample:\n{data.head(2)}")
+
+        except Exception as e:
+            logger.warning(f"Error logging data flow for {stage_name}: {e}")
 
 
-if __name__ == "__main__":
-    # Example usage for testing
-    ui_handler = setup_neural_logging(log_level="DEBUG")
+# Convenience functions
+def setup_neural_logging(*args, **kwargs):
+    """Backward compatibility function"""
+    return LoggerManager.setup_logging(*args, **kwargs)
 
-    # You would connect ui_handler.log_record_emitted to your UI's log display
-    # For testing, we can print it
-    # ui_handler.log_record_emitted.connect(lambda msg, level: print(f"[UI_SIGNAL] {level.upper()}: {msg}"))
 
-    my_logger = get_neural_logger("test_module")
+def cleanup_neural_logging():
+    """Cleanup logging system"""
+    LoggerManager.cleanup_logging()
 
-    my_logger.debug("This is a debug message.")
-    my_logger.info("This is an info message.")
-    my_logger.warning("This is a warning message.")
 
+def get_neural_logger(name: str):
+    """Backward compatibility function"""
+    return get_logger(name)
+
+
+# Global cleanup function for application shutdown
+def shutdown_logging():
+    """Safe shutdown of logging system"""
     try:
-        raise ValueError("Something went wrong!")
-    except ValueError:
-        my_logger.error("An error occurred.", exc_info=True)
+        LoggerManager.cleanup_logging()
+        # Force cleanup of logging module
+        logging.shutdown()
+    except Exception as e:
+        print(f"Error during logging shutdown: {e}")
 
-    my_logger.critical("This is a critical message.")
 
-    with OperationTimer("ComplexCalculation"):
-        time.sleep(0.5)  # Simulate work
-        my_logger.info("Intermediate step completed.")
+# Automatic cleanup registration
+import atexit
 
-    @NeuralDebugger.log_function_entry
-    def example_function(a, b):
-        my_logger.info(f"Calculating {a} + {b}")
-        return a + b
-
-    result = example_function(5, 3)
-    my_logger.info(f"Result: {result}")
-
-    import pandas as pd
-
-    sample_df = pd.DataFrame({"col1": [1, 2, 3], "col2": ["A", "B", "C"]})
-    NeuralDebugger.log_data_flow(sample_df, "Initial Data Load")
-
-    # To see UI messages if not connected to a real UI
-    # for msg, level in ui_handler.log_record_emitted: # This won't work directly outside of Qt loop
-    #     print(f"UI Logged: [{level}] {msg}")
+atexit.register(shutdown_logging)
