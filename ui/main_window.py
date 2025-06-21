@@ -1,4 +1,4 @@
-# ui/main_window.py - Modern 2025 Design
+# ui/main_window.py - Fixed Modern 2025 Main Window
 from PyQt6.QtWidgets import *
 from PyQt6.QtCore import *
 from PyQt6.QtGui import *
@@ -13,504 +13,115 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 try:
-    from ui.styles.theme import (
-        ModernColors,
-        Typography,
-        Spacing,
-        BorderRadius,
-        get_button_style,
-        get_input_style,
-        get_card_style,
-        get_progress_style,
-        get_tab_style,
-    )
+    from ui.styles.theme import ModernColors, Typography, BorderRadius
+    from ui.components.dashboard import create_modern_dashboard
+    from ui.components.config_panel import create_config_panel
+    from ui.components.connection_form import create_connection_setup_widget
+    from ui.widgets.cyber_log_console import LogConsoleWithControls
+    from ui.widgets.modern_button import ActionButton
 except ImportError as e:
-    print(f"Theme import error: {e}")
+    print(f"Import error in main_window: {e}")
 
-    # Fallback minimal styling
+    # Fallback minimal colors
     class ModernColors:
         SURFACE_PRIMARY = "#0F172A"
+        SURFACE_SECONDARY = "#1E293B"
         TEXT_PRIMARY = "#F8FAFC"
         PRIMARY = "#6366F1"
+        GLASS_BORDER = "rgba(255, 255, 255, 0.1)"
+
+    class Typography:
+        PRIMARY_FONT = "Inter"
+        TEXT_2XL = 20
+        TEXT_BASE = 14
+        WEIGHT_BOLD = 700
 
 
 logger = logging.getLogger(__name__)
 
 
-class ModernHeaderBar(QWidget):
-    """Modern application header with branding and controls"""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._setup_ui()
-
-    def _setup_ui(self):
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(24, 16, 24, 16)
-        layout.setSpacing(16)
-
-        # App branding
-        brand_layout = QHBoxLayout()
-
-        # Logo/Icon (placeholder)
-        logo_label = QLabel("🚀")
-        logo_label.setStyleSheet(
-            f"""
-            font-size: 24px;
-            color: {ModernColors.PRIMARY};
-        """
-        )
-        brand_layout.addWidget(logo_label)
-
-        # App title
-        title_label = QLabel("DENSO Neural Matrix")
-        title_label.setStyleSheet(
-            f"""
-            font-size: 20px;
-            font-weight: 700;
-            color: {ModernColors.TEXT_PRIMARY};
-            font-family: "{Typography.PRIMARY_FONT}";
-        """
-        )
-        brand_layout.addWidget(title_label)
-
-        # Subtitle
-        subtitle_label = QLabel("SharePoint ↔ SQL Sync")
-        subtitle_label.setStyleSheet(
-            f"""
-            font-size: 14px;
-            color: {ModernColors.TEXT_SECONDARY};
-            margin-left: 8px;
-        """
-        )
-        brand_layout.addWidget(subtitle_label)
-
-        layout.addLayout(brand_layout)
-        layout.addStretch()
-
-        # Status indicators
-        self.connection_status = QLabel("●")
-        self.connection_status.setStyleSheet(
-            f"""
-            font-size: 16px;
-            color: {ModernColors.ERROR};
-        """
-        )
-        self.connection_status.setToolTip("Connection Status")
-        layout.addWidget(self.connection_status)
-
-        # Style the header
-        self.setStyleSheet(
-            f"""
-            QWidget {{
-                background: {ModernColors.SURFACE_SECONDARY};
-                border-bottom: 1px solid {ModernColors.GLASS_BORDER};
-            }}
-        """
-        )
-        self.setFixedHeight(80)
-
-    def update_connection_status(self, connected: bool):
-        """Update connection status indicator"""
-        color = ModernColors.SUCCESS if connected else ModernColors.ERROR
-        self.connection_status.setStyleSheet(
-            f"""
-            font-size: 16px;
-            color: {color};
-        """
-        )
-
-
-class ModernStatusCard(QWidget):
-    """Modern status card component"""
-
-    def __init__(self, title: str, value: str = "—", parent=None):
-        super().__init__(parent)
-        self.title = title
-        self.value = value
-        self._setup_ui()
-
-    def _setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 16, 20, 16)
-        layout.setSpacing(8)
-
-        # Title
-        title_label = QLabel(self.title)
-        title_label.setStyleSheet(
-            f"""
-            font-size: 12px;
-            font-weight: 500;
-            color: {ModernColors.TEXT_SECONDARY};
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        """
-        )
-        layout.addWidget(title_label)
-
-        # Value
-        self.value_label = QLabel(self.value)
-        self.value_label.setStyleSheet(
-            f"""
-            font-size: 18px;
-            font-weight: 600;
-            color: {ModernColors.TEXT_PRIMARY};
-        """
-        )
-        layout.addWidget(self.value_label)
-
-        # Card styling
-        self.setStyleSheet(
-            f"""
-            QWidget {{
-                background: {ModernColors.SURFACE_SECONDARY};
-                border: 1px solid {ModernColors.GLASS_BORDER};
-                border-radius: {BorderRadius.MD}px;
-            }}
-            QWidget:hover {{
-                border-color: {ModernColors.PRIMARY};
-                background: {ModernColors.SURFACE_TERTIARY};
-            }}
-        """
-        )
-        self.setMinimumHeight(80)
-
-    def update_value(self, value: str, status: str = "neutral"):
-        """Update card value with status color"""
-        colors = {
-            "success": ModernColors.SUCCESS,
-            "error": ModernColors.ERROR,
-            "warning": ModernColors.WARNING,
-            "neutral": ModernColors.TEXT_PRIMARY,
-        }
-
-        color = colors.get(status, ModernColors.TEXT_PRIMARY)
-        self.value_label.setText(value)
-        self.value_label.setStyleSheet(
-            f"""
-            font-size: 18px;
-            font-weight: 600;
-            color: {color};
-        """
-        )
-
-
-class ModernProgressSection(QWidget):
-    """Modern progress display section"""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._setup_ui()
-
-    def _setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 20, 24, 20)
-        layout.setSpacing(16)
-
-        # Section title
-        title = QLabel("Current Operation")
-        title.setStyleSheet(
-            f"""
-            font-size: 16px;
-            font-weight: 600;
-            color: {ModernColors.TEXT_PRIMARY};
-            margin-bottom: 8px;
-        """
-        )
-        layout.addWidget(title)
-
-        # Task description
-        self.task_label = QLabel("Ready")
-        self.task_label.setStyleSheet(
-            f"""
-            font-size: 14px;
-            color: {ModernColors.TEXT_SECONDARY};
-            margin-bottom: 12px;
-        """
-        )
-        layout.addWidget(self.task_label)
-
-        # Progress bar
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setStyleSheet(get_progress_style())
-        self.progress_bar.setMinimum(0)
-        self.progress_bar.setMaximum(100)
-        self.progress_bar.setValue(0)
-        self.progress_bar.setTextVisible(True)
-        layout.addWidget(self.progress_bar)
-
-        # Card styling
-        self.setStyleSheet(
-            f"""
-            QWidget {{
-                background: {ModernColors.SURFACE_SECONDARY};
-                border: 1px solid {ModernColors.GLASS_BORDER};
-                border-radius: {BorderRadius.MD}px;
-            }}
-        """
-        )
-
-    def update_progress(self, task: str, percent: int, message: str = ""):
-        """Update progress display"""
-        self.task_label.setText(f"{task}: {message}" if message else task)
-        self.progress_bar.setValue(percent)
-
-
-class ModernActionButton(QPushButton):
-    """Modern action button with icon and text"""
-
-    def __init__(
-        self, text: str, icon: str = "", variant: str = "primary", parent=None
-    ):
-        super().__init__(parent)
-        self.setText(f"{icon} {text}" if icon else text)
-        self.setStyleSheet(get_button_style(variant, "md"))
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setMinimumHeight(44)
-
-
-class ModernDashboard(QWidget):
-    """Modern dashboard with status cards and controls"""
-
-    # Signals
-    sync_requested = pyqtSignal()
-    test_connections_requested = pyqtSignal()
-    import_excel_requested = pyqtSignal()
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._setup_ui()
-
-    def _setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(24)
-
-        # Status cards grid
-        status_section = self._create_status_section()
-        layout.addWidget(status_section)
-
-        # Progress section
-        self.progress_section = ModernProgressSection()
-        layout.addWidget(self.progress_section)
-
-        # Action buttons
-        actions_section = self._create_actions_section()
-        layout.addWidget(actions_section)
-
-        layout.addStretch()
-
-    def _create_status_section(self):
-        """Create status cards section"""
-        section = QWidget()
-        layout = QVBoxLayout(section)
-        layout.setSpacing(16)
-
-        # Section title
-        title = QLabel("System Status")
-        title.setStyleSheet(
-            f"""
-            font-size: 16px;
-            font-weight: 600;
-            color: {ModernColors.TEXT_PRIMARY};
-        """
-        )
-        layout.addWidget(title)
-
-        # Status cards grid
-        cards_grid = QGridLayout()
-        cards_grid.setSpacing(16)
-
-        self.sp_status_card = ModernStatusCard("SharePoint", "Disconnected")
-        self.db_status_card = ModernStatusCard("Database", "Disconnected")
-        self.sync_status_card = ModernStatusCard("Last Sync", "Never")
-        self.auto_sync_card = ModernStatusCard("Auto Sync", "Disabled")
-
-        cards_grid.addWidget(self.sp_status_card, 0, 0)
-        cards_grid.addWidget(self.db_status_card, 0, 1)
-        cards_grid.addWidget(self.sync_status_card, 1, 0)
-        cards_grid.addWidget(self.auto_sync_card, 1, 1)
-
-        layout.addLayout(cards_grid)
-        return section
-
-    def _create_actions_section(self):
-        """Create action buttons section"""
-        section = QWidget()
-        layout = QVBoxLayout(section)
-        layout.setSpacing(16)
-
-        # Section title
-        title = QLabel("Quick Actions")
-        title.setStyleSheet(
-            f"""
-            font-size: 16px;
-            font-weight: 600;
-            color: {ModernColors.TEXT_PRIMARY};
-        """
-        )
-        layout.addWidget(title)
-
-        # Action buttons grid
-        buttons_grid = QGridLayout()
-        buttons_grid.setSpacing(12)
-
-        # Primary actions
-        sync_btn = ModernActionButton("Run Sync", "🚀", "primary")
-        sync_btn.clicked.connect(self.sync_requested.emit)
-
-        test_btn = ModernActionButton("Test Connections", "🔗", "secondary")
-        test_btn.clicked.connect(self.test_connections_requested.emit)
-
-        excel_btn = ModernActionButton("Import Excel", "📊", "accent")
-        excel_btn.clicked.connect(self.import_excel_requested.emit)
-
-        clean_btn = ModernActionButton("Clean Cache", "🧹", "ghost")
-
-        buttons_grid.addWidget(sync_btn, 0, 0)
-        buttons_grid.addWidget(test_btn, 0, 1)
-        buttons_grid.addWidget(excel_btn, 1, 0)
-        buttons_grid.addWidget(clean_btn, 1, 1)
-
-        layout.addLayout(buttons_grid)
-        return section
-
-    def update_status_card(self, card_type: str, value: str, status: str = "neutral"):
-        """Update specific status card"""
-        cards = {
-            "sharepoint": self.sp_status_card,
-            "database": self.db_status_card,
-            "sync": self.sync_status_card,
-            "auto_sync": self.auto_sync_card,
-        }
-
-        if card_type in cards:
-            cards[card_type].update_value(value, status)
-
-
-class ModernLogConsole(QTextEdit):
-    """Modern log console with syntax highlighting"""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._setup_ui()
-
-    def _setup_ui(self):
-        self.setReadOnly(True)
-        self.setFont(QFont(Typography.MONO_FONT, Typography.TEXT_SM))
-
-        self.setStyleSheet(
-            f"""
-            QTextEdit {{
-                background: {ModernColors.SURFACE_PRIMARY};
-                color: {ModernColors.TEXT_PRIMARY};
-                border: 1px solid {ModernColors.GLASS_BORDER};
-                border-radius: {BorderRadius.MD}px;
-                padding: 16px;
-                font-family: "{Typography.MONO_FONT}";
-                font-size: {Typography.TEXT_SM}px;
-                line-height: 1.6;
-            }}
-        """
-        )
-
-        # Add welcome message
-        self.append_log("System initialized", "info")
-
-    def append_log(self, message: str, level: str = "info"):
-        """Append formatted log message"""
-        colors = {
-            "info": ModernColors.TEXT_PRIMARY,
-            "success": ModernColors.SUCCESS,
-            "warning": ModernColors.WARNING,
-            "error": ModernColors.ERROR,
-            "debug": ModernColors.TEXT_MUTED,
-        }
-
-        icons = {
-            "info": "ℹ",
-            "success": "✓",
-            "warning": "⚠",
-            "error": "✗",
-            "debug": "◇",
-        }
-
-        color = colors.get(level, ModernColors.TEXT_PRIMARY)
-        icon = icons.get(level, "●")
-
-        from datetime import datetime
-
-        timestamp = datetime.now().strftime("%H:%M:%S")
-
-        self.append(
-            f'<span style="color: {ModernColors.TEXT_MUTED};">[{timestamp}]</span> '
-            f'<span style="color: {color};">{icon} {message}</span>'
-        )
-
-
 class ModernTabWidget(QTabWidget):
-    """Modern tab widget with custom styling"""
+    """Enhanced tab widget with modern styling"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setStyleSheet(get_tab_style())
+        self._setup_styling()
         self.setMovable(True)
         self.setTabsClosable(False)
 
+    def _setup_styling(self):
+        """Apply tab styling without unsupported properties"""
+        self.setStyleSheet(
+            f"""
+            QTabWidget::pane {{
+                background: {ModernColors.SURFACE_SECONDARY};
+                border: 1px solid {ModernColors.GLASS_BORDER};
+                border-radius: 8px;
+                margin-top: -1px;
+            }}
+            QTabBar::tab {{
+                background: rgba(51, 65, 85, 0.5);
+                border: 1px solid {ModernColors.GLASS_BORDER};
+                border-bottom: none;
+                border-top-left-radius: 8px;
+                border-top-right-radius: 8px;
+                padding: 12px 20px;
+                margin-right: 2px;
+                color: #CBD5E1;
+                font-weight: 500;
+                min-width: 100px;
+                font-size: 14px;
+            }}
+            QTabBar::tab:selected {{
+                background: {ModernColors.PRIMARY};
+                color: white;
+                border-color: {ModernColors.PRIMARY};
+                font-weight: 600;
+            }}
+            QTabBar::tab:hover:!selected {{
+                background: rgba(99, 102, 241, 0.3);
+                color: {ModernColors.TEXT_PRIMARY};
+            }}
+        """
+        )
+
 
 class OptimizedMainWindow(QMainWindow):
-    """Modern 2025 Main Window with optimized performance"""
+    """Fixed 2025 Main Window with proper error handling and cleanup"""
 
     def __init__(self, controller, parent=None):
         super().__init__(parent)
         self.controller = controller
         self.cleanup_done = False
+        self.dashboard = None
+        self.config_panel = None
+        self.log_console = None
 
-        self._setup_window()
-        self._setup_ui()
-        self._connect_signals()
+        # Initialize window safely
+        self._safe_init()
 
-        logger.info("Modern MainWindow initialized")
+    def _safe_init(self):
+        """Safe initialization with error handling"""
+        try:
+            self._setup_window()
+            self._setup_ui()
+            self._connect_signals()
+            logger.info("Modern MainWindow initialized successfully")
+        except Exception as e:
+            logger.error(f"Error initializing MainWindow: {e}", exc_info=True)
+            self._create_fallback_ui()
 
     def _setup_window(self):
         """Setup window properties"""
-        self.setWindowTitle("DENSO Neural Matrix")
+        self.setWindowTitle("DENSO Neural Matrix - SharePoint ↔ SQL Sync")
         self.setMinimumSize(1200, 800)
         self.resize(1400, 900)
 
-        # Center window on screen
+        # Center on screen
         screen = QApplication.primaryScreen().geometry()
         x = (screen.width() - self.width()) // 2
         y = (screen.height() - self.height()) // 2
         self.move(x, y)
-
-        # Set window icon (if available)
-        try:
-            icon_path = project_root / "assets" / "icons" / "app.ico"
-            if icon_path.exists():
-                self.setWindowIcon(QIcon(str(icon_path)))
-        except Exception:
-            pass
-
-    def _setup_ui(self):
-        """Setup modern UI layout"""
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-
-        main_layout = QVBoxLayout(central_widget)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
-
-        # Header bar
-        self.header_bar = ModernHeaderBar()
-        main_layout.addWidget(self.header_bar)
-
-        # Main content area
-        content_area = self._create_content_area()
-        main_layout.addWidget(content_area)
-
-        # Status bar
-        self._setup_status_bar()
 
         # Apply global styling
         self.setStyleSheet(
@@ -522,218 +133,120 @@ class OptimizedMainWindow(QMainWindow):
         """
         )
 
-    def _create_content_area(self):
-        """Create main content area with tabs"""
+    def _setup_ui(self):
+        """Setup modern UI with proper error handling"""
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+
+        main_layout = QVBoxLayout(central_widget)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # Header
+        header = self._create_header()
+        main_layout.addWidget(header)
+
+        # Main content with tabs
         self.tab_widget = ModernTabWidget()
 
-        # Dashboard tab
-        self.dashboard = ModernDashboard()
-        self.tab_widget.addTab(self.dashboard, "📊 Dashboard")
+        try:
+            # Dashboard tab
+            self.dashboard = create_modern_dashboard(self.controller)
+            self.tab_widget.addTab(self.dashboard, "📊 Dashboard")
 
-        # Configuration tab
-        config_widget = self._create_config_tab()
-        self.tab_widget.addTab(config_widget, "⚙️ Configuration")
+            # Connection Setup tab (แยกออกจาก Config)
+            self.connection_setup = create_connection_setup_widget()
+            self.tab_widget.addTab(self.connection_setup, "🔗 Connections")
 
-        # Logs tab
-        logs_widget = self._create_logs_tab()
-        self.tab_widget.addTab(logs_widget, "📝 Logs")
+            # Config tab (สำหรับ sync settings)
+            self.config_panel = create_config_panel(self.controller)
+            self.tab_widget.addTab(self.config_panel, "⚙️ Sync Settings")
 
-        return self.tab_widget
+            # Logs tab
+            logs_widget = self._create_logs_tab()
+            self.tab_widget.addTab(logs_widget, "📝 Logs")
 
-    def _create_config_tab(self):
-        """Create configuration tab content"""
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(24)
+        except Exception as e:
+            logger.error(f"Error creating tabs: {e}")
+            self._create_simple_tabs()
 
-        # Configuration sections
-        sections = [
-            self._create_sharepoint_config(),
-            self._create_database_config(),
-            self._create_sync_config(),
-        ]
+        main_layout.addWidget(self.tab_widget)
 
-        for section in sections:
-            layout.addWidget(section)
+        # Status bar
+        self._setup_status_bar()
 
+    def _create_header(self):
+        """Create modern header bar"""
+        header = QWidget()
+        header.setFixedHeight(70)
+        header.setStyleSheet(
+            f"""
+            QWidget {{
+                background: {ModernColors.SURFACE_SECONDARY};
+                border-bottom: 1px solid {ModernColors.GLASS_BORDER};
+            }}
+        """
+        )
+
+        layout = QHBoxLayout(header)
+        layout.setContentsMargins(24, 16, 24, 16)
+
+        # Branding
+        brand_layout = QHBoxLayout()
+
+        logo = QLabel("🚀")
+        logo.setStyleSheet(f"font-size: 24px; color: {ModernColors.PRIMARY};")
+        brand_layout.addWidget(logo)
+
+        title = QLabel("DENSO Neural Matrix")
+        title.setStyleSheet(
+            f"""
+            font-size: {Typography.TEXT_2XL}px;
+            font-weight: {Typography.WEIGHT_BOLD};
+            color: {ModernColors.TEXT_PRIMARY};
+            font-family: "{Typography.PRIMARY_FONT}";
+        """
+        )
+        brand_layout.addWidget(title)
+
+        subtitle = QLabel("SharePoint ↔ SQL Sync System")
+        subtitle.setStyleSheet(
+            f"""
+            font-size: {Typography.TEXT_BASE}px;
+            color: {ModernColors.TEXT_SECONDARY};
+            margin-left: 8px;
+        """
+        )
+        brand_layout.addWidget(subtitle)
+
+        layout.addLayout(brand_layout)
         layout.addStretch()
-        return widget
 
-    def _create_sharepoint_config(self):
-        """Create SharePoint configuration section"""
-        group = QGroupBox("SharePoint Configuration")
-        group.setStyleSheet(
+        # Connection status
+        self.connection_status = QLabel("●")
+        self.connection_status.setStyleSheet(
             f"""
-            QGroupBox {{
-                font-size: 16px;
-                font-weight: 600;
-                color: {ModernColors.TEXT_PRIMARY};
-                border: 1px solid {ModernColors.GLASS_BORDER};
-                border-radius: {BorderRadius.MD}px;
-                margin-top: 12px;
-                padding-top: 16px;
-                background: {ModernColors.SURFACE_SECONDARY};
-            }}
-            QGroupBox::title {{
-                subcontrol-origin: margin;
-                subcontrol-position: top left;
-                padding: 8px 16px;
-                background: {ModernColors.PRIMARY};
-                border-radius: {BorderRadius.SM}px;
-                color: {ModernColors.TEXT_PRIMARY};
-            }}
+            font-size: 16px;
+            color: {ModernColors.ERROR};
         """
         )
+        self.connection_status.setToolTip("Connection Status")
+        layout.addWidget(self.connection_status)
 
-        layout = QFormLayout(group)
-        layout.setSpacing(16)
-        layout.setContentsMargins(20, 30, 20, 20)
-
-        # SharePoint fields
-        self.sp_site_input = QLineEdit()
-        self.sp_site_input.setPlaceholderText(
-            "https://company.sharepoint.com/sites/site"
-        )
-        self.sp_site_input.setStyleSheet(get_input_style())
-
-        self.sp_list_input = QLineEdit()
-        self.sp_list_input.setPlaceholderText("List name")
-        self.sp_list_input.setStyleSheet(get_input_style())
-
-        layout.addRow("Site URL:", self.sp_site_input)
-        layout.addRow("List Name:", self.sp_list_input)
-
-        return group
-
-    def _create_database_config(self):
-        """Create database configuration section"""
-        group = QGroupBox("Database Configuration")
-        group.setStyleSheet(
-            f"""
-            QGroupBox {{
-                font-size: 16px;
-                font-weight: 600;
-                color: {ModernColors.TEXT_PRIMARY};
-                border: 1px solid {ModernColors.GLASS_BORDER};
-                border-radius: {BorderRadius.MD}px;
-                margin-top: 12px;
-                padding-top: 16px;
-                background: {ModernColors.SURFACE_SECONDARY};
-            }}
-            QGroupBox::title {{
-                subcontrol-origin: margin;
-                subcontrol-position: top left;
-                padding: 8px 16px;
-                background: {ModernColors.ACCENT};
-                border-radius: {BorderRadius.SM}px;
-                color: {ModernColors.TEXT_PRIMARY};
-            }}
-        """
-        )
-
-        layout = QFormLayout(group)
-        layout.setSpacing(16)
-        layout.setContentsMargins(20, 30, 20, 20)
-
-        # Database fields
-        self.db_server_input = QLineEdit()
-        self.db_server_input.setPlaceholderText("Server\\Instance")
-        self.db_server_input.setStyleSheet(get_input_style())
-
-        self.db_name_input = QLineEdit()
-        self.db_name_input.setPlaceholderText("Database name")
-        self.db_name_input.setStyleSheet(get_input_style())
-
-        layout.addRow("Server:", self.db_server_input)
-        layout.addRow("Database:", self.db_name_input)
-
-        return group
-
-    def _create_sync_config(self):
-        """Create sync configuration section"""
-        group = QGroupBox("Synchronization Settings")
-        group.setStyleSheet(
-            f"""
-            QGroupBox {{
-                font-size: 16px;
-                font-weight: 600;
-                color: {ModernColors.TEXT_PRIMARY};
-                border: 1px solid {ModernColors.GLASS_BORDER};
-                border-radius: {BorderRadius.MD}px;
-                margin-top: 12px;
-                padding-top: 16px;
-                background: {ModernColors.SURFACE_SECONDARY};
-            }}
-            QGroupBox::title {{
-                subcontrol-origin: margin;
-                subcontrol-position: top left;
-                padding: 8px 16px;
-                background: {ModernColors.SUCCESS};
-                border-radius: {BorderRadius.SM}px;
-                color: {ModernColors.TEXT_PRIMARY};
-            }}
-        """
-        )
-
-        layout = QVBoxLayout(group)
-        layout.setSpacing(16)
-        layout.setContentsMargins(20, 30, 20, 20)
-
-        # Auto sync checkbox
-        self.auto_sync_checkbox = QCheckBox("Enable automatic synchronization")
-        self.auto_sync_checkbox.setStyleSheet(
-            f"""
-            QCheckBox {{
-                font-size: 14px;
-                color: {ModernColors.TEXT_PRIMARY};
-                spacing: 8px;
-            }}
-            QCheckBox::indicator {{
-                width: 18px;
-                height: 18px;
-                border-radius: 4px;
-                border: 2px solid {ModernColors.GLASS_BORDER};
-                background: {ModernColors.SURFACE_PRIMARY};
-            }}
-            QCheckBox::indicator:checked {{
-                background: {ModernColors.PRIMARY};
-                border-color: {ModernColors.PRIMARY};
-            }}
-        """
-        )
-        layout.addWidget(self.auto_sync_checkbox)
-
-        # Sync interval
-        interval_layout = QHBoxLayout()
-        interval_label = QLabel("Sync interval (minutes):")
-        interval_label.setStyleSheet(f"color: {ModernColors.TEXT_PRIMARY};")
-
-        self.interval_spinbox = QSpinBox()
-        self.interval_spinbox.setRange(1, 1440)
-        self.interval_spinbox.setValue(10)
-        self.interval_spinbox.setStyleSheet(get_input_style())
-
-        interval_layout.addWidget(interval_label)
-        interval_layout.addWidget(self.interval_spinbox)
-        interval_layout.addStretch()
-
-        layout.addLayout(interval_layout)
-
-        return group
+        return header
 
     def _create_logs_tab(self):
-        """Create logs tab content"""
+        """Create logs tab with console"""
         widget = QWidget()
         layout = QVBoxLayout(widget)
-        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(16)
 
         # Log controls
         controls_layout = QHBoxLayout()
 
-        clear_btn = ModernActionButton("Clear Logs", "🗑", "ghost")
-        export_btn = ModernActionButton("Export Logs", "💾", "secondary")
+        clear_btn = ActionButton.ghost("🗑 Clear", size="sm")
+        export_btn = ActionButton.secondary("💾 Export", size="sm")
 
         controls_layout.addWidget(clear_btn)
         controls_layout.addWidget(export_btn)
@@ -742,16 +255,79 @@ class OptimizedMainWindow(QMainWindow):
         layout.addLayout(controls_layout)
 
         # Log console
-        self.log_console = ModernLogConsole()
+        self.log_console = LogConsoleWithControls()
         layout.addWidget(self.log_console)
 
         # Connect clear button
-        clear_btn.clicked.connect(self.log_console.clear)
+        clear_btn.clicked.connect(self.log_console.console.clear)
+        export_btn.clicked.connect(self._export_logs)
 
         return widget
 
+    def _create_simple_tabs(self):
+        """Fallback simple tabs if main creation fails"""
+        # Simple dashboard
+        dashboard_widget = QWidget()
+        dashboard_layout = QVBoxLayout(dashboard_widget)
+        dashboard_layout.addWidget(QLabel("Dashboard - Simplified Mode"))
+
+        # Simple connection form
+        connection_widget = QWidget()
+        connection_layout = QVBoxLayout(connection_widget)
+        connection_layout.addWidget(QLabel("Connection Setup - Simplified Mode"))
+
+        # Simple config
+        config_widget = QWidget()
+        config_layout = QVBoxLayout(config_widget)
+        config_layout.addWidget(QLabel("Sync Settings - Simplified Mode"))
+
+        self.tab_widget.addTab(dashboard_widget, "📊 Dashboard")
+        self.tab_widget.addTab(connection_widget, "🔗 Connections")
+        self.tab_widget.addTab(config_widget, "⚙️ Sync")
+
+    def _create_fallback_ui(self):
+        """Create minimal fallback UI if main UI fails"""
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+
+        layout = QVBoxLayout(central_widget)
+
+        # Header
+        header = QLabel("🚀 DENSO Neural Matrix - Safe Mode")
+        header.setStyleSheet(
+            f"""
+            font-size: 18px;
+            font-weight: bold;
+            color: {ModernColors.PRIMARY};
+            padding: 16px;
+            text-align: center;
+        """
+        )
+        layout.addWidget(header)
+
+        # Message
+        message = QLabel("Running in safe mode. Some features may be limited.")
+        message.setStyleSheet(
+            f"color: {ModernColors.TEXT_SECONDARY}; text-align: center;"
+        )
+        layout.addWidget(message)
+
+        # Basic controls
+        controls = QHBoxLayout()
+
+        test_btn = QPushButton("Test Connections")
+        test_btn.clicked.connect(self._test_connections)
+        controls.addWidget(test_btn)
+
+        sync_btn = QPushButton("Run Sync")
+        sync_btn.clicked.connect(self._run_sync)
+        controls.addWidget(sync_btn)
+
+        layout.addLayout(controls)
+        layout.addStretch()
+
     def _setup_status_bar(self):
-        """Setup modern status bar"""
+        """Setup status bar"""
         status_bar = self.statusBar()
         status_bar.setStyleSheet(
             f"""
@@ -760,106 +336,172 @@ class OptimizedMainWindow(QMainWindow):
                 border-top: 1px solid {ModernColors.GLASS_BORDER};
                 color: {ModernColors.TEXT_SECONDARY};
                 font-size: 12px;
-                padding: 4px 16px;
             }}
         """
         )
 
-        # Status labels
-        self.connection_label = QLabel("Disconnected")
-        self.sync_label = QLabel("Ready")
+        self.status_label = QLabel("Ready")
+        status_bar.addWidget(self.status_label)
 
-        status_bar.addWidget(self.connection_label)
+        self.sync_label = QLabel("Idle")
         status_bar.addPermanentWidget(self.sync_label)
 
     def _connect_signals(self):
-        """Connect controller signals to UI updates"""
+        """Connect controller signals with error handling"""
+        if not self.controller:
+            return
+
         try:
-            if hasattr(self.controller, "log_message"):
-                self.controller.log_message.connect(self._add_log)
+            # Connect available signals
+            signal_connections = [
+                ("log_message", self._handle_log_message),
+                ("sharepoint_status_update", self._update_sharepoint_status),
+                ("database_status_update", self._update_database_status),
+                ("progress_updated", self._handle_progress),
+                ("current_task_update", self._update_current_task),
+                ("sync_completed", self._handle_sync_completed),
+            ]
 
-            if hasattr(self.controller, "sharepoint_status_update"):
-                self.controller.sharepoint_status_update.connect(self._update_sp_status)
+            for signal_name, handler in signal_connections:
+                if hasattr(self.controller, signal_name):
+                    signal = getattr(self.controller, signal_name)
+                    signal.connect(handler)
+                    logger.debug(f"Connected signal: {signal_name}")
 
-            if hasattr(self.controller, "database_status_update"):
-                self.controller.database_status_update.connect(self._update_db_status)
-
-            if hasattr(self.controller, "progress_updated"):
-                self.controller.progress_updated.connect(self._update_progress)
-
-            if hasattr(self.controller, "current_task_update"):
-                self.controller.current_task_update.connect(self._update_task)
-
-            # Connect dashboard signals
-            self.dashboard.sync_requested.connect(self._run_sync)
-            self.dashboard.test_connections_requested.connect(self._test_connections)
-            self.dashboard.import_excel_requested.connect(self._import_excel)
+            # Connect dashboard signals if available
+            if self.dashboard:
+                if hasattr(self.dashboard, "sync_requested"):
+                    self.dashboard.sync_requested.connect(self._run_sync)
+                if hasattr(self.dashboard, "test_connections_requested"):
+                    self.dashboard.test_connections_requested.connect(
+                        self._test_connections
+                    )
+                if hasattr(self.dashboard, "import_excel_requested"):
+                    self.dashboard.import_excel_requested.connect(self._import_excel)
+                if hasattr(self.dashboard, "clear_cache_requested"):
+                    self.dashboard.clear_cache_requested.connect(self._clear_cache)
 
         except Exception as e:
-            logger.error(f"Signal connection error: {e}")
+            logger.error(f"Error connecting signals: {e}")
 
+    # Signal handlers
     @pyqtSlot(str, str)
-    def _add_log(self, message: str, level: str):
-        """Add log message to console"""
-        self.log_console.append_log(message, level)
+    def _handle_log_message(self, message: str, level: str):
+        """Handle log messages"""
+        try:
+            if self.log_console and hasattr(self.log_console, "console"):
+                self.log_console.console.add_log_message(message, level)
+        except Exception as e:
+            logger.debug(f"Error handling log message: {e}")
 
     @pyqtSlot(str)
-    def _update_sp_status(self, status: str):
+    def _update_sharepoint_status(self, status: str):
         """Update SharePoint status"""
-        status_map = {
-            "connected": ("Connected", "success"),
-            "disconnected": ("Disconnected", "error"),
-            "connecting": ("Connecting...", "warning"),
-            "error": ("Error", "error"),
-        }
+        try:
+            if self.dashboard and hasattr(self.dashboard, "update_sharepoint_status"):
+                self.dashboard.update_sharepoint_status(status)
 
-        display_text, status_type = status_map.get(status, (status.title(), "neutral"))
-        self.dashboard.update_status_card("sharepoint", display_text, status_type)
-        self.header_bar.update_connection_status(status == "connected")
+            # Update header connection status
+            connected = status == "connected"
+            color = ModernColors.SUCCESS if connected else ModernColors.ERROR
+            self.connection_status.setStyleSheet(f"font-size: 16px; color: {color};")
+
+        except Exception as e:
+            logger.debug(f"Error updating SharePoint status: {e}")
 
     @pyqtSlot(str)
-    def _update_db_status(self, status: str):
+    def _update_database_status(self, status: str):
         """Update database status"""
-        status_map = {
-            "connected": ("Connected", "success"),
-            "disconnected": ("Disconnected", "error"),
-            "connecting": ("Connecting...", "warning"),
-            "error": ("Error", "error"),
-        }
-
-        display_text, status_type = status_map.get(status, (status.title(), "neutral"))
-        self.dashboard.update_status_card("database", display_text, status_type)
+        try:
+            if self.dashboard and hasattr(self.dashboard, "update_database_status"):
+                self.dashboard.update_database_status(status)
+        except Exception as e:
+            logger.debug(f"Error updating database status: {e}")
 
     @pyqtSlot(str, int, str)
-    def _update_progress(self, task: str, percent: int, message: str):
-        """Update progress display"""
-        self.dashboard.progress_section.update_progress(task, percent, message)
+    def _handle_progress(self, task: str, percent: int, message: str):
+        """Handle progress updates"""
+        try:
+            if self.dashboard and hasattr(self.dashboard, "update_progress"):
+                self.dashboard.update_progress(task, percent, message)
+        except Exception as e:
+            logger.debug(f"Error handling progress: {e}")
 
     @pyqtSlot(str)
-    def _update_task(self, task: str):
-        """Update current task display"""
-        self.sync_label.setText(task)
+    def _update_current_task(self, task: str):
+        """Update current task"""
+        try:
+            self.sync_label.setText(task)
+            if self.dashboard and hasattr(self.dashboard, "update_current_task"):
+                self.dashboard.update_current_task(task)
+        except Exception as e:
+            logger.debug(f"Error updating current task: {e}")
 
+    @pyqtSlot(bool, str, dict)
+    def _handle_sync_completed(self, success: bool, message: str, stats: dict):
+        """Handle sync completion"""
+        try:
+            status = "success" if success else "failed"
+            if self.dashboard and hasattr(self.dashboard, "update_sync_status"):
+                self.dashboard.update_sync_status(status)
+        except Exception as e:
+            logger.debug(f"Error handling sync completion: {e}")
+
+    # Action handlers
     def _test_connections(self):
         """Test all connections"""
-        if hasattr(self.controller, "test_all_connections"):
-            self.controller.test_all_connections()
+        try:
+            if self.controller and hasattr(self.controller, "test_all_connections"):
+                self.controller.test_all_connections()
+        except Exception as e:
+            logger.error(f"Error testing connections: {e}")
 
     def _run_sync(self):
         """Run synchronization"""
-        if hasattr(self.controller, "run_full_sync"):
-            self.controller.run_full_sync("spo_to_sql")
+        try:
+            if self.controller and hasattr(self.controller, "run_full_sync"):
+                self.controller.run_full_sync("spo_to_sql")
+        except Exception as e:
+            logger.error(f"Error running sync: {e}")
 
     def _import_excel(self):
         """Import Excel file"""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "Select Excel File", "", "Excel Files (*.xlsx *.xls)"
-        )
-        if file_path and hasattr(self.controller, "import_excel_data"):
-            self.controller.import_excel_data(file_path, "imported_data", {})
+        try:
+            file_path, _ = QFileDialog.getOpenFileName(
+                self, "Select Excel File", "", "Excel Files (*.xlsx *.xls)"
+            )
+            if (
+                file_path
+                and self.controller
+                and hasattr(self.controller, "import_excel_data")
+            ):
+                self.controller.import_excel_data(file_path, "imported_data", {})
+        except Exception as e:
+            logger.error(f"Error importing Excel: {e}")
+
+    def _clear_cache(self):
+        """Clear system cache"""
+        try:
+            if self.controller and hasattr(self.controller, "run_cache_cleanup"):
+                self.controller.run_cache_cleanup()
+        except Exception as e:
+            logger.error(f"Error clearing cache: {e}")
+
+    def _export_logs(self):
+        """Export logs to file"""
+        try:
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "Export Logs", "denso_logs.txt", "Text Files (*.txt)"
+            )
+            if file_path and self.log_console:
+                success = self.log_console.console.export_logs(file_path)
+                if success:
+                    self.status_label.setText(f"Logs exported to: {file_path}")
+        except Exception as e:
+            logger.error(f"Error exporting logs: {e}")
 
     def closeEvent(self, event):
-        """Handle window close event"""
+        """Handle window close with confirmation"""
         reply = QMessageBox.question(
             self,
             "Exit Application",
@@ -875,23 +517,31 @@ class OptimizedMainWindow(QMainWindow):
             event.ignore()
 
     def cleanup(self):
-        """Cleanup resources before closing"""
+        """Comprehensive cleanup with error handling"""
         if self.cleanup_done:
             return
 
-        logger.info("Cleaning up Modern MainWindow")
+        logger.info("Starting MainWindow cleanup")
 
         try:
+            # Cleanup dashboard
+            if self.dashboard and hasattr(self.dashboard, "cleanup"):
+                self.dashboard.cleanup()
+
+            # Cleanup config panel
+            if self.config_panel and hasattr(self.config_panel, "cleanup"):
+                self.config_panel.cleanup()
+
+            # Cleanup log console
+            if self.log_console:
+                self.log_console.console.clear()
+
             # Cleanup controller
             if self.controller and hasattr(self.controller, "cleanup"):
                 self.controller.cleanup()
 
-            # Cleanup UI components
-            if hasattr(self, "log_console"):
-                self.log_console.clear()
-
             self.cleanup_done = True
-            logger.info("Modern MainWindow cleanup completed")
+            logger.info("MainWindow cleanup completed")
 
         except Exception as e:
             logger.error(f"Error during MainWindow cleanup: {e}")
